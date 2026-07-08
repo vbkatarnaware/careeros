@@ -1,0 +1,132 @@
+# Example profile.yaml — copy this shape, then run `careeros start` for a
+# guided interview, or edit directly. See schemas/profile.schema.json for
+# the full contract.
+#
+# The one rule this file exists to enforce: every bullet's `text` is
+# VERBATIM, ready-to-use prose. The resume/cover-letter prompts only ever
+# select and reorder these — they never invent a new sentence. If a fact
+# isn't written here, it doesn't exist for tailoring purposes.
+#
+# This example is a Product Manager, matching templates/config.example.yaml.
+# CareerOS itself is role-agnostic: the gate/evaluate/resume/cover prompts read
+# `role_priorities` and `ranking_notes` as DATA, with no role names hardcoded
+# in the engine — put Software Engineer, Designer, Data Scientist, etc. here
+# and the same pipeline works unchanged. PM is used throughout the examples
+# only for consistency.
+
+version: 1
+
+candidate:
+  full_name: "Alex Rivera"
+  email: "alex.rivera@example.com"
+  phone: "+1-555-0142"
+  location: "Remote (US)"
+  linkedin: "https://www.linkedin.com/in/alex-rivera-example/"
+  portfolio_url: "https://alexrivera.example.com"
+  github: "https://github.com/arivera-example"
+
+headline: "Product Manager (5 yrs) shipping B2B SaaS and growth products end to end, with hands-on AI-automation experience"
+
+targets:
+  - product-manager
+  - ai-product-manager
+  - growth-product-manager
+  - founders-office
+  - product-operations
+  - associate-product-manager
+
+role_priorities:
+  - "Product Manager"
+  - "AI Product Manager"
+  - "Growth Product Manager"
+  - "Founder's Office"
+  - "Product Operations"
+  - "Associate Product Manager"
+
+ranking_notes: >
+  Optimize for long-term product ownership over title inflation. A Product
+  Manager role at a strong Series A/B startup with real 0-to-1 scope ranks
+  above an Associate Product Manager title at a company doing routine backlog
+  administration. AI Product Manager roles get a positive boost when the
+  candidate's real applied-AI/automation background is genuinely relevant to
+  the role, not just because "AI" appears in the title. Founder's Office roles
+  score highly when they involve product, strategy, operations, GTM, or
+  building from scratch. Product Operations roles score highly only with real
+  ownership and product exposure, not pure reporting/coordination work.
+  Associate Product Manager roles get no automatic boost for being junior:
+  judge company quality, real ownership, and learning opportunity, not the
+  level label.
+
+deal_breakers:
+  min_years_ok: 4
+
+location:
+  remote: preferred
+  onsite_ok: ["San Francisco", "New York"]
+  visa_sponsorship_required: false
+
+work_mode_priority:
+  - "global_remote"
+  - "san_francisco_onsite"
+  - "new_york_onsite"
+
+comp:
+  target_lpa: [140000, 180000]
+  floor_lpa: 120000
+  preferred_lpa: 150000
+  currency: "USD"
+
+summary_variants:
+  - id: default
+    text: "Product Manager who ships end to end and uses AI to move faster. Owned a B2B SaaS onboarding product that lifted activation from 40% to 68% at a Series A startup, and led the roadmap for a growth experimentation platform that ran 200+ A/B tests a quarter. Builds working automation to run product and GTM operations, not just specs."
+    jd_tags: []
+
+  - id: growth
+    text: "Growth-focused Product Manager with a track record of moving activation and retention metrics. Led the roadmap for a growth experimentation platform that ran 200+ A/B tests a quarter, and owned a B2B SaaS onboarding product that lifted activation from 40% to 68% through systematic funnel work."
+    jd_tags: [growth, experimentation, activation, retention]
+
+experience:
+  - company: "Example SaaS Inc."
+    role: "Product Manager"
+    location: "Remote"
+    dates: { start: "2023-01", end: "present" }
+    bullets:
+      - text: "Owned a B2B SaaS onboarding product end to end and lifted new-account activation from 40% to 68% by rebuilding the setup flow around the two steps that drove the most drop-off."
+        tags: [product-ownership, activation, b2b, saas]
+        visibility: headline
+      - text: "Built an internal automation layer that triggered lifecycle messaging and CRM updates from product events, replacing a manual weekly export-and-tag process."
+        tags: [ai, automation, gtm, product-ops]
+        visibility: headline
+      - text: "Ran discovery interviews that revealed customers churned at renewal, not onboarding; reprioritized the roadmap toward an in-app value-review feature that cut logo churn by 12%."
+        tags: [customer-discovery, prioritization, retention]
+        visibility: supporting
+
+  - company: "Example Growth Co."
+    role: "Associate Product Manager"
+    location: "Remote"
+    dates: { start: "2020-06", end: "2022-12" }
+    bullets:
+      - text: "Led the roadmap for a growth experimentation platform that ran 200+ A/B tests per quarter across acquisition and activation surfaces, partnering with engineering, design, and data."
+        tags: [growth, experimentation, product-strategy]
+        visibility: headline
+
+projects:
+  - name: "Example Side Project"
+    url: "https://github.com/arivera-example/pmtools"
+    bullets:
+      - text: "Built and open-sourced a lightweight PRD-and-experiment tracker adopted by several small product teams; designed, shipped, and maintained solo end to end."
+        tags: [0-to-1, solo-builder, product-tooling]
+        visibility: headline
+
+skills:
+  - { name: "Product Strategy", category: product, level: hands-on, tags: [product], visibility: headline }
+  - { name: "Discovery", category: product, level: hands-on, tags: [product, customer-discovery], visibility: headline }
+  - { name: "Experimentation", category: product, level: hands-on, tags: [growth, experimentation], visibility: headline }
+  - { name: "Product Analytics", category: data, level: hands-on, tags: [product, analytics], visibility: supporting }
+  - { name: "SQL", category: data, level: hands-on, tags: [analytics, data], visibility: supporting }
+
+education:
+  - degree: "B.S., Business Administration"
+    institution: "Example University"
+    score: null
+    dates: { start: "2015", end: "2019" }

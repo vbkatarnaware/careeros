@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/careeros/schemas/eval.schema.json",
+  "title": "Eval",
+  "description": "The final evaluation for one job. Written ONCE by the `evaluate` stage. This file is a source of truth: every downstream artifact (daily report, resume, cover letter, deep report, application answers) reads this file and never re-scores the job. Rubric and matching methodology are adapted from Career Ops; the JSON-only output (no long markdown) is CareerOS's own choice, made so the daily pipeline stays cheap.",
+  "type": "object",
+  "required": [
+    "id", "score", "confidence", "recommendation",
+    "strengths", "weaknesses", "ats_keywords",
+    "company_summary", "fit_paragraph", "rubric",
+    "prompt_version", "profile_version", "job_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "Same id as the Job it evaluates." },
+    "score": {
+      "type": "number", "minimum": 0, "maximum": 5,
+      "description": "Weighted average of the rubric dimensions, rounded to 1 decimal."
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "recommendation": { "type": "string", "enum": ["apply", "skip"] },
+    "strengths": {
+      "type": "array", "items": { "type": "string" },
+      "minItems": 3, "maxItems": 3,
+      "description": "Exactly the top 3 — deliberately capped so the daily report stays scannable."
+    },
+    "weaknesses": {
+      "type": "array", "items": { "type": "string" },
+      "minItems": 2, "maxItems": 2,
+      "description": "Exactly the top 2 concerns."
+    },
+    "ats_keywords": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Keywords surfaced from the JD, used downstream to guide resume tailoring — never invented, only lifted from the JD text."
+    },
+    "company_summary": {
+      "type": "string",
+      "description": "3 concise lines about the company. Exists so the Level-1 daily report needs zero extra AI calls — it is rendered directly from this field."
+    },
+    "fit_paragraph": {
+      "type": "string",
+      "maxLength": 700,
+      "description": "One paragraph (<=80 words), why this is or isn't a fit. Doubles as the spine of the cover letter."
+    },
+    "rubric": {
+      "type": "object",
+      "description": "Career Ops-derived weighted rubric. Each dimension is 0-5; score is their weighted average.",
+      "required": ["role_fit", "seniority_fit", "skills_match", "domain", "logistics"],
+      "additionalProperties": false,
+      "properties": {
+        "role_fit": { "type": "number", "minimum": 0, "maximum": 5 },
+        "seniority_fit": { "type": "number", "minimum": 0, "maximum": 5 },
+        "skills_match": { "type": "number", "minimum": 0, "maximum": 5 },
+        "domain": { "type": "number", "minimum": 0, "maximum": 5 },
+        "logistics": { "type": "number", "minimum": 0, "maximum": 5 }
+      }
+    },
+    "prompt_version": {
+      "type": "string",
+      "description": "Which prompts/eval_vN.md produced this, e.g. 'v1'. Part of the cache fingerprint."
+    },
+    "profile_version": {
+      "type": "integer",
+      "description": "profile.yaml's own version field at eval time. Part of the cache fingerprint — bump the profile, evals recompute."
+    },
+    "job_hash": {
+      "type": "string",
+      "description": "sha1 of the Job's content. Part of the cache fingerprint — if the posting is byte-identical to a prior run, the cached eval is reused."
+    }
+  }
+}

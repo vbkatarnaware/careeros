@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/careeros/schemas/job.schema.json",
+  "title": "Job",
+  "description": "The universal contract every discovery provider must output. Every provider (Fantastic Jobs, a future Greenhouse/Ashby/Lever/Workday adapter, a custom scraper) normalizes into exactly this shape. The pipeline never knows which provider a Job came from.",
+  "type": "object",
+  "required": ["id", "source", "title", "company", "apply_url"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable identity: sha1(source|company|title|location). Deterministic — same posting always yields the same id, which is what makes dedupe possible."
+    },
+    "source": {
+      "type": "string",
+      "description": "Provider id that discovered this job, e.g. 'fantastic-jobs'."
+    },
+    "title": { "type": "string" },
+    "company": { "type": "string" },
+    "location": { "type": ["string", "null"] },
+    "remote": { "type": ["boolean", "null"] },
+    "seniority": {
+      "type": ["string", "null"],
+      "enum": ["intern", "entry", "mid", "senior", "lead", "principal", "exec", null]
+    },
+    "employment_type": {
+      "type": ["string", "null"],
+      "enum": ["full_time", "part_time", "contract", "internship", null]
+    },
+    "description": {
+      "type": ["string", "null"],
+      "description": "Plain text, truncated at normalize time to a token-conscious length (default 4000 chars)."
+    },
+    "apply_url": { "type": "string" },
+    "ats": {
+      "type": ["string", "null"],
+      "description": "Derived deterministically at normalize time from apply_url's domain. One of the known ATS ids, or 'custom'.",
+      "enum": ["greenhouse", "lever", "ashby", "workday", "custom", null]
+    },
+    "salary": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "currency": { "type": ["string", "null"] },
+        "unit": {
+          "type": ["string", "null"],
+          "enum": ["year", "month", "week", "day", "hour", null],
+          "description": "Pay period the min/max are quoted in, so an annual-equivalent can be computed deterministically."
+        }
+      }
+    },
+    "posted_at": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 date, e.g. 2026-07-05."
+    },
+    "contact": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "linkedin": { "type": ["string", "null"] },
+        "email": { "type": ["string", "null"] }
+      }
+    },
+    "raw_ref": {
+      "type": ["string", "null"],
+      "description": "Pointer back into the raw provider payload for debugging, e.g. '01_discover/raw.json#42'. Never carries the full raw blob forward."
+    }
+  }
+}

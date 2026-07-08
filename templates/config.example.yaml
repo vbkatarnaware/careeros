@@ -1,0 +1,60 @@
+# Example config — copied to .careeros/config.yaml by `careeros init`.
+# Every key here has a built-in default (see careeros/config.py); only
+# override what you need to change.
+
+provider: fantastic-jobs
+threshold: 4.0          # score >= this gets resume/cover/report generated
+gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
+description_max_chars: 4000
+
+prompts:
+  gate: v1
+  eval: v2
+  resume: v1
+  cover: v1
+  deep_report: v1
+  apply: v1
+
+sheets:
+  spreadsheet_id: null          # your Google Sheet's id (from its URL)
+  credentials_path: null        # path to a Google service-account JSON key
+  worksheet: "Jobs"
+
+apify:
+  token_env: APIFY_TOKEN        # single-token env var (back-compat)
+  tokens_env: APIFY_TOKENS      # comma-separated token pool — set this for
+                                 # automatic rotation when one token's monthly
+                                 # budget is exhausted (checked first, falls
+                                 # back to token_env if unset)
+  actor: "fantastic-jobs/career-site-job-listing-api"
+  time_range: "7d"                    # actor timeRange: 1h | 24h | 7d | 6m
+  # "profile" (default): `discover` runs one segmented query per
+  # profile.yaml's work_mode_priority tier (see careeros/pipeline/queryplan.py)
+  # — a single broad query was found to yield far fewer apply-worthy jobs than
+  # targeted per-work-mode ones. "single" restores the classic one-query
+  # behavior driven by title_search/location_search below (also the automatic
+  # fallback if your profile has no work_mode_priority/role_priorities yet).
+  discovery_mode: profile
+  title_search: ["Product Manager"]   # only used in discovery_mode: single
+  location_search: []                 # only used in discovery_mode: single
+  title_exclusion_search: []          # actor titleExclusionSearch (array)
+  location_exclusion_search: []       # actor locationExclusionSearch (array)
+  # Source-side filtering (fetch fewer, more-targeted jobs instead of
+  # fetching broadly and discarding most of it in `constraints` — the
+  # highest-ROI discovery lever found in the 2026-07-08 benchmark).
+  work_arrangement: []           # any of: "On-site" | "Hybrid" | "Remote OK" | "Remote Solely"
+  remove_agency: true            # drop recruiting-agency postings server-side
+  has_salary: null               # true/false to filter on salary presence; null = don't filter
+  # Per-call spend cap (USD) — this is a pay-per-result actor on a metered
+  # free-tier budget; QA hit a raw crash after exhausting it unbounded.
+  max_cost_usd: 1.0
+
+# Approximate FX to your profile's comp currency, used only by the
+# deterministic salary hard-constraint (careeros/pipeline/constraints.py).
+# Unknown/missing salary never rejects — only a confidently-computed,
+# below-floor amount does.
+fx_rates:
+  INR: 1.0
+  USD: 83.0
+  EUR: 90.0
+  GBP: 105.0

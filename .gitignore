@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / OS
+.DS_Store
+.claude/settings.local.json
+
+# user-local state — never committed (created by `careeros init`):
+# real profile.yaml, config.yaml, cache/, runs/, seen.jsonl, secrets.env
+.careeros/
+
+# credentials & secrets — never commit these
+*credentials*.json
+*.env
+.env*
+secrets*

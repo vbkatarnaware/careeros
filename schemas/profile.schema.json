@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/careeros/schemas/profile.schema.json",
+  "title": "Profile",
+  "description": "The candidate's facts — the only other source of truth besides Eval. This is a lean port of Career Ops' career.yml graph: 'fit + facts only' for v1 (adaptive-framing tables, negotiation scripts, and exit-narrative prose are deferred). The governing rule this schema exists to enforce: every 'bullets[].text' is verbatim, ready-to-use prose. Nothing downstream (gate, evaluate, resume, cover) may rewrite it — only select, reorder, and reframe around it. If a fact isn't here, it doesn't exist for tailoring purposes.",
+  "type": "object",
+  "required": ["version", "candidate", "headline", "targets", "experience"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Bump this whenever facts change. Part of every downstream cache fingerprint — bumping it invalidates cached evals/resumes/covers so they regenerate against the new facts."
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["full_name", "email"],
+      "additionalProperties": false,
+      "properties": {
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": ["string", "null"] },
+        "location": { "type": ["string", "null"] },
+        "linkedin": { "type": ["string", "null"] },
+        "portfolio_url": { "type": ["string", "null"] },
+        "github": { "type": ["string", "null"] }
+      }
+    },
+    "headline": {
+      "type": "string",
+      "description": "One-line professional headline. Used as-is in resume rendering and as cheap context for the AI Gate."
+    },
+    "targets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Role archetypes the candidate is open to, e.g. ['product-manager', 'apm', 'ai-agent-pm']. Drives Gate + Evaluate role_fit."
+    },
+    "role_priorities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered role-type preference, tier 1 (index 0) = highest priority, e.g. ['Product Manager', 'AI Product Manager', ...]. This is DATA the generic eval prompt reads to rank role_fit/seniority_fit — the engine has no hardcoded role names, so a different profile (e.g. a Software Engineer's) drives the same prompt toward entirely different priorities. Role fit stays an AI reasoning task; this is guidance, never a keyword filter."
+    },
+    "ranking_notes": {
+      "type": "string",
+      "description": "Free-text nuance the eval prompt applies when scoring role_fit/seniority_fit against role_priorities — e.g. how to treat a step-down in seniority, what makes a 'growth' role vs a title match, when a lower-tier role should still rank highly because of company quality. Optimizes for the candidate's stated long-term goal, not raw job count."
+    },
+    "work_mode_priority": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered work-mode preference, tier 1 (index 0) = highest, e.g. ['global_remote', 'india_remote', 'navi_mumbai_onsite', 'mumbai_onsite']. A RANKING signal (affects ordering/logistics scoring), not a filter — the only work-mode FILTER is the onsite-city hard constraint in deal_breakers/location."
+    },
+    "deal_breakers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onsite_outside": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Cities where on-site/hybrid is acceptable. On-site elsewhere without visa sponsorship is a hard logistics penalty in Evaluate."
+        },
+        "min_years_ok": {
+          "type": "number",
+          "description": "Below this JD-stated years requirement, it's a legitimate target, not a downlevel."
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remote": { "type": "string", "enum": ["preferred", "required", "acceptable", "not_wanted"] },
+        "onsite_ok": { "type": "array", "items": { "type": "string" } },
+        "visa_sponsorship_required": { "type": "boolean" }
+      }
+    },
+    "comp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target_lpa": {
+          "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2,
+          "description": "[min, max] target annual comp in lakhs per annum (or swap units freely — this is just a number pair)."
+        },
+        "floor_lpa": {
+          "type": "number",
+          "description": "Hard reject floor — see careeros/pipeline/constraints.py. Only enforced when a job's salary is confidently known; unknown salary never rejects."
+        },
+        "preferred_lpa": {
+          "type": "number",
+          "description": "At/above this, comp is a positive signal in evaluation ranking (not a hard constraint, unlike floor_lpa)."
+        },
+        "currency": { "type": "string" }
+      }
+    },
+    "summary_variants": {
+      "type": "array",
+      "description": "Pre-written Professional Summary paragraphs. The resume prompt SELECTS one by matching jd_tags — it never composes a new one. Port of career.yml's narrative.summary_variants.",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "jd_tags"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string", "description": "Exact, ready-to-use prose. Copied verbatim into the resume, never edited." },
+          "jd_tags": { "type": "array", "items": { "type": "string" }, "description": "Empty array = generic, matches any JD." }
+        }
+      }
+    },
+    "experience": {
+      "type": "array",
+      "description": "Reverse-chronological work history. Port of career.yml's companies[].",
+      "items": {
+        "type": "object",
+        "required": ["company", "role", "bullets"],
+        "additionalProperties": false,
+        "properties": {
+          "company": { "type": "string" },
+          "role": { "type": "string" },
+          "location": { "type": ["string", "null"] },
+          "dates": {
+            "type": "object",
+            "properties": {
+              "start": { "type": "string" },
+              "end": { "type": "string" }
+            }
+          },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text", "tags", "visibility"],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Exact, ready-to-use CV sentence. This is the ONLY thing a resume-generation prompt may place on the page for this fact — verbatim, never rephrased."
+                },
+                "tags": {
+                  "type": "array", "items": { "type": "string" },
+                  "description": "JD-relevance tags used to rank/select this bullet for a given job."
+                },
+                "visibility": {
+                  "type": "string", "enum": ["headline", "supporting", "hidden"],
+                  "description": "headline = lead with it; supporting = include if there's room; hidden = true but not surfaced by default."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "bullets"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "url": { "type": ["string", "null"] },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text", "tags", "visibility"],
+              "additionalProperties": false,
+              "properties": {
+                "text": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "visibility": { "type": "string", "enum": ["headline", "supporting", "hidden"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "tags", "visibility"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "category": { "type": ["string", "null"] },
+          "level": { "type": ["string", "null"], "enum": ["hands-on", "ai-assisted", "familiar", null] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "visibility": { "type": "string", "enum": ["headline", "supporting", "hidden"] }
+        }
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "degree": { "type": "string" },
+          "institution": { "type": "string" },
+          "score": { "type": ["string", "null"] },
+          "dates": {
+            "type": "object",
+            "properties": { "start": { "type": "string" }, "end": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}
