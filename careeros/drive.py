@@ -52,13 +52,13 @@ def _lazy_imports():
 
 
 def _get_credentials(config: Config):
-    Request, Credentials, InstalledAppFlow, _, _ = _lazy_imports()
-
     client_secret_path = config.drive.get("client_secret_path")
     if not client_secret_path:
         raise DriveError("drive.client_secret_path not set in .careeros/config.yaml")
     if not Path(client_secret_path).exists():
         raise DriveError(f"drive.client_secret_path does not exist: {client_secret_path}")
+
+    Request, Credentials, InstalledAppFlow, _, _ = _lazy_imports()
 
     token_path = Path(config.drive.get("token_path") or ".careeros/drive_token.json")
 
@@ -131,12 +131,12 @@ def upload_run(
     missing deps, misconfiguration) — the caller (cli.py) is responsible for
     catching that and continuing the pipeline regardless.
     """
-    _, _, _, _, MediaInMemoryUpload = _lazy_imports()
-    service = _drive_service(config)
-
     root_id = config.drive.get("root_folder_id")
     if not root_id:
         raise DriveError("drive.root_folder_id not set in .careeros/config.yaml")
+
+    _, _, _, _, MediaInMemoryUpload = _lazy_imports()
+    service = _drive_service(config)
 
     date_folder_id = _find_or_create_folder(service, date, root_id)
 

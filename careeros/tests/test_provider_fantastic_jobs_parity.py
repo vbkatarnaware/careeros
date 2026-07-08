@@ -14,7 +14,7 @@ from pathlib import Path
 from careeros.providers.fantastic_jobs import PROVIDER as REST_PROVIDER
 from careeros.providers.legacy.fantastic_jobs_actor import PROVIDER as ACTOR_PROVIDER
 
-_SAMPLE_PATH = Path(__file__).resolve().parents[2] / ".careeros" / "qa" / "sample_raw.json"
+_SAMPLE_PATH = Path(__file__).resolve().parent / "fixtures" / "sample_raw.json"
 
 
 def _sample_records() -> list[dict]:

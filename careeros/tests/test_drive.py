@@ -94,7 +94,8 @@ def test_upload_run_returns_folder_link_per_selected_job(tmp_path):
     job = make_job(id="job-1", company="Bjak")
     cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
 
-    with patch("careeros.drive._drive_service", return_value=MagicMock()), \
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=MagicMock()), \
          patch("careeros.drive._find_or_create_folder", side_effect=["date-folder", "company-folder"]), \
          patch("careeros.drive._upload_text_file"):
         links = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
@@ -114,7 +115,8 @@ def test_upload_run_skips_missing_artifact_files_without_failing(tmp_path):
     job = make_job(id="job-1", company="Bjak")
     cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
 
-    with patch("careeros.drive._drive_service", return_value=MagicMock()), \
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=MagicMock()), \
          patch("careeros.drive._find_or_create_folder", side_effect=["date-folder", "company-folder"]), \
          patch("careeros.drive._upload_text_file") as mock_upload:
         links = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
@@ -132,7 +134,8 @@ def test_upload_run_empty_selected_jobs_still_uploads_run_json_and_summary(tmp_p
     summary_md.write_text("# summary")
     cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
 
-    with patch("careeros.drive._drive_service", return_value=MagicMock()), \
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=MagicMock()), \
          patch("careeros.drive._find_or_create_folder", return_value="date-folder"), \
          patch("careeros.drive._upload_text_file") as mock_upload:
         links = upload_run(cfg, "2026-07-08", run_json, summary_md, [])
