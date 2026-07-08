@@ -39,16 +39,17 @@ from careeros.config import Config, load_config
 from careeros.lint import format_issues, lint_file, verify_resume_bullets
 from careeros.models import Eval, Job, Profile, dumps
 from careeros.pipeline.dedupe import (
-    append_seen_ids, dedupe_against_history, dedupe_against_sheet_ids, dedupe_in_run,
+    append_seen_ids, dedupe_against_history, dedupe_against_sheet_ids,
+    dedupe_cross_location, dedupe_in_run,
 )
 from careeros.pipeline.constraints import evaluate_constraints
 from careeros.pipeline.normalize import normalize_all
-from careeros.pipeline.queryplan import build_query_plan
+from careeros.pipeline.queryplan import build_query_plan, resolve_tier_limit
 from careeros.pipeline.threshold import select_final
 from careeros.providers.base import ProviderError
 from careeros.providers.registry import get as get_provider
 from careeros.providers.registry import list_providers
-from careeros.report import render_daily_report
+from careeros.report import render_daily_report, render_summary
 from careeros import runmeta
 from careeros import sheets as sheets_mod
 
@@ -56,6 +57,19 @@ app = typer.Typer(add_completion=False, no_args_is_help=True,
                    help="CareerOS — a supreme, high-quality job discovery and recommendation engine.")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _provider_query_cfg(cfg: Config, provider_name: str) -> dict:
+    """Which provider-config block pipeline/queryplan.py's neutral
+    title_search/location_search/work_arrangement keys should overlay onto
+    for `discover`'s segmented-query plan (P2.7) — provider-keyed since
+    query-plan config is provider-specific, not a single generic Config
+    field. `config.api` and `config.apify` share the same key names by
+    design (see config.py), so queryplan.py itself never has to know which
+    provider is active."""
+    if provider_name == "fantastic-jobs-actor":
+        return cfg.apify
+    return cfg.api
 
 
 def _today() -> str:
@@ -95,7 +109,12 @@ def init():
     else:
         typer.echo(f"{profile_path} already exists — left untouched")
 
-    typer.echo("\nNext: set APIFY_TOKEN and Sheets credentials, then run `careeros daily`.")
+    typer.echo(
+        "\nNext: in .careeros/config.yaml, set api.transport to \"direct\" or \"rapidapi\" "
+        "and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY), set up Sheets "
+        "credentials, then run `careeros daily`. (Prefer the legacy Apify actor instead? "
+        "Set provider: fantastic-jobs-actor and APIFY_TOKEN — see providers/README.md.)"
+    )
 
 
 # ── providers / config ───────────────────────────────────────────────────
@@ -124,36 +143,44 @@ def config():
 def discover(
     provider: Optional[str] = typer.Option(None, help="Provider id (default: config.provider)"),
     date: str = typer.Option(None, help="Run date, default today"),
-    limit: int = typer.Option(100, help="Max jobs to fetch PER query"),
+    limit: int = typer.Option(
+        100, help="Default max jobs to fetch per query; overridden per-tier by config.apify.tier_limits"),
     search: str = typer.Option(
         "", help="Manual single-query override — bypasses profile-driven segmentation"),
     dry_run: bool = typer.Option(False, help="Fetch and print, don't write raw.json"),
 ):
     """[dev] Discover: call a provider, write 01_discover/raw.json.
 
-    By default (config.apify.discovery_mode: "profile") this runs one
-    segmented query per profile.work_mode_priority tier — see
-    pipeline/queryplan.py; the discovery benchmark found a single broad query
-    yields far fewer apply-worthy jobs than targeted per-work-mode ones.
-    `discovery_mode: "single"`, `--search`, or a missing profile.yaml all fall
-    back to today's one-query behavior."""
+    By default (discovery_mode: "profile") this runs one segmented query per
+    profile.work_mode_priority tier — see pipeline/queryplan.py; the
+    discovery benchmark found a single broad query yields far fewer
+    apply-worthy jobs than targeted per-work-mode ones. `discovery_mode:
+    "single"`, `--search`, or a missing profile.yaml all fall back to
+    today's one-query behavior."""
     cfg = _config()
     date = date or _today()
     provider_name = provider or cfg.provider
     p = get_provider(provider_name)
+    provider_cfg = _provider_query_cfg(cfg, provider_name)
 
     if search or not cfg.profile_path.exists():
         queries: list[Optional[dict]] = [None]
     else:
-        queries = build_query_plan(_load_profile(cfg), cfg.apify) or [None]
+        queries = build_query_plan(_load_profile(cfg), provider_cfg) or [None]
 
     raw_items: list = []
+    total_cost_usd = 0.0
     start = time.time()
     try:
         for i, query in enumerate(queries):
-            items = p.fetch(cfg, limit=limit, search=search, query=query)
             work_mode = (query or {}).get("_work_mode", "single")
-            typer.echo(f"  [discover] query {i + 1}/{len(queries)} ({work_mode}): {len(items)} items")
+            effective_limit = resolve_tier_limit(work_mode, provider_cfg, limit)
+            items, query_cost = p.fetch(cfg, limit=effective_limit, search=search, query=query)
+            total_cost_usd += query_cost
+            typer.echo(
+                f"  [discover] query {i + 1}/{len(queries)} ({work_mode}, "
+                f"limit={effective_limit}): {len(items)} items (${query_cost:.4f})"
+            )
             raw_items.extend(items)
     except ProviderError as e:
         typer.echo(f"[discover] {e}", err=True)
@@ -162,7 +189,8 @@ def discover(
 
     typer.echo(
         f"[discover] {provider_name}: {len(raw_items)} raw items across "
-        f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'} ({elapsed:.1f}s)"
+        f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'} "
+        f"(${total_cost_usd:.4f}, {elapsed:.1f}s)"
     )
 
     if dry_run:
@@ -178,7 +206,8 @@ def discover(
         }))
 
     runmeta.record_stage(cfg.runs_dir, date, "discover",
-                          count_in=0, count_out=len(raw_items), seconds=elapsed)
+                          count_in=0, count_out=len(raw_items), seconds=elapsed,
+                          apify_cost_usd=total_cost_usd)
 
 
 # ── normalize ─────────────────────────────────────────────────────────────
@@ -221,7 +250,8 @@ def dedupe(
     date: str = typer.Option(None, help="Run date, default today"),
     against_sheet: bool = typer.Option(True, help="Also dedupe against the Sheet's existing Job IDs"),
 ):
-    """[dev] Dedupe: in-run + vs history (+ vs Sheet) -> 03_dedupe/{unique,dropped}.json."""
+    """[dev] Dedupe: in-run + cross-location + vs history (+ vs Sheet) ->
+    03_dedupe/{unique,dropped}.json."""
     cfg = _config()
     date = date or _today()
 
@@ -236,6 +266,7 @@ def dedupe(
 
     start = time.time()
     unique, dropped_in_run = dedupe_in_run(jobs)
+    unique, dropped_cross_location = dedupe_cross_location(unique)
 
     seen_path = cfg.careeros_dir / "seen.jsonl"
     unique, dropped_history = dedupe_against_history(unique, seen_path)
@@ -249,7 +280,7 @@ def dedupe(
             typer.echo(f"[dedupe] Sheets dedupe skipped: {e}")
 
     elapsed = time.time() - start
-    all_dropped = dropped_in_run + dropped_history + dropped_sheet
+    all_dropped = dropped_in_run + dropped_cross_location + dropped_history + dropped_sheet
 
     stage_path = runmeta.stage_dir(cfg.runs_dir, date, "dedupe")
     with open(stage_path / "unique.json", "w") as f:
@@ -258,8 +289,8 @@ def dedupe(
         f.write(dumps([j.to_dict() for j in all_dropped]))
 
     typer.echo(f"[dedupe] {len(jobs)} in -> {len(unique)} unique, {len(all_dropped)} dropped "
-               f"(in-run: {len(dropped_in_run)}, history: {len(dropped_history)}, "
-               f"sheet: {len(dropped_sheet)}) ({elapsed:.1f}s)")
+               f"(in-run: {len(dropped_in_run)}, cross-location: {len(dropped_cross_location)}, "
+               f"history: {len(dropped_history)}, sheet: {len(dropped_sheet)}) ({elapsed:.1f}s)")
     runmeta.record_stage(cfg.runs_dir, date, "dedupe",
                           count_in=len(jobs), count_out=len(unique), seconds=elapsed)
 
@@ -817,6 +848,93 @@ def render_report(job_id: str, date: str = typer.Option(None)):
     typer.echo(f"[render-report] wrote {report_path}")
 
 
+@app.command("summary")
+def summary(date: str = typer.Option(None)):
+    """[dev] Render the day-level executive summary.md — pure template, zero
+    AI. Funnel counts, the Apply (≥threshold) list, the Review (near-miss)
+    list, and cost-per-selected-job — the P2.6 KPI made visible every run."""
+    cfg = _config()
+    date = date or _today()
+
+    import json
+    manifest = runmeta.load_manifest(cfg.runs_dir, date)
+
+    eval_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
+    evals = []
+    for path in eval_dir.glob("*.json"):
+        if path.name.startswith("_"):
+            continue
+        with open(path) as f:
+            evals.append(Eval.from_dict(json.load(f)))
+
+    jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
+    jobs_by_id = {}
+    if jobs_path.exists():
+        with open(jobs_path) as f:
+            jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
+
+    summary_md = render_summary(date, manifest, evals, jobs_by_id, threshold=cfg.threshold)
+    summary_path = runmeta.run_dir(cfg.runs_dir, date) / "summary.md"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(summary_path, "w") as f:
+        f.write(summary_md)
+
+    typer.echo(f"[summary] wrote {summary_path}")
+
+
+# ── drive (optional, config-gated, fail-soft) ────────────────────────────
+
+@app.command("drive")
+def drive_upload(date: str = typer.Option(None, help="Run date, default today")):
+    """[dev] Upload the day's shortlisted (selected) artifacts to Google
+    Drive as an additive backup — off by default (drive.enabled: false).
+    Local Markdown is never replaced or moved. ANY failure here (missing
+    deps, auth, network, quota) is caught and reported as a warning; the
+    rest of the pipeline is never blocked by a Drive failure — that's a hard
+    requirement, not a nicety."""
+    cfg = _config()
+    date = date or _today()
+
+    if not cfg.drive.get("enabled", False):
+        typer.echo("[drive] disabled (set drive.enabled: true in .careeros/config.yaml to use).")
+        return
+
+    import json
+    from careeros.drive import upload_run
+
+    selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
+    jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
+    if not selected_path.exists() or not jobs_path.exists():
+        typer.echo("[drive] Missing select/normalize output — skipping.", err=True)
+        return
+
+    start = time.time()
+    try:
+        with open(selected_path) as f:
+            evals = [Eval.from_dict(d) for d in json.load(f)]
+        with open(jobs_path) as f:
+            jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
+
+        selected_jobs = [
+            (jobs_by_id[e.id], runmeta.artifacts_dir(cfg.runs_dir, date, e.id))
+            for e in evals if e.id in jobs_by_id
+        ]
+        run_dir = runmeta.run_dir(cfg.runs_dir, date)
+        links = upload_run(cfg, date, run_dir / "run.json", run_dir / "summary.md", selected_jobs)
+    except Exception as e:  # deliberately broad — fail-soft is a hard requirement, see docstring
+        typer.echo(f"[drive] WARNING: upload failed, continuing without Drive — {e}", err=True)
+        return
+
+    with open(runmeta.run_dir(cfg.runs_dir, date) / "drive_links.json", "w") as f:
+        f.write(dumps(links))
+
+    typer.echo(f"[drive] uploaded {len(links)}/{len(selected_jobs)} job folder(s) to Drive "
+               f"({time.time() - start:.1f}s).")
+    runmeta.record_stage(cfg.runs_dir, date, "drive",
+                          count_in=len(selected_jobs), count_out=len(links),
+                          seconds=time.time() - start)
+
+
 # ── sheets ────────────────────────────────────────────────────────────────
 
 sheets_app = typer.Typer(help="Google Sheets operations")
@@ -838,6 +956,15 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
     with open(jobs_path) as f:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
+    # Optional hand-off from `careeros drive` (P2.6) — sheets.py has no
+    # import dependency on drive.py; if the file isn't there (Drive disabled,
+    # not yet run, or it failed), every row's Drive Folder cell is just blank.
+    drive_links_path = runmeta.run_dir(cfg.runs_dir, date) / "drive_links.json"
+    drive_links: dict = {}
+    if drive_links_path.exists():
+        with open(drive_links_path) as f:
+            drive_links = json.load(f)
+
     rows = []
     for e in evals:
         job = jobs_by_id[e.id]
@@ -847,6 +974,7 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
             resume_path=str(artifacts / "resume.md"),
             cover_path=str(artifacts / "cover.md"),
             report_path=str(artifacts / "daily_report.md"),
+            drive_folder_link=drive_links.get(e.id, ""),
         ))
 
     sheets_mod.append_rows(cfg, rows)

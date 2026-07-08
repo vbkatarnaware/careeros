@@ -73,6 +73,7 @@ def normalize_one(
         posted_at=mapped.get("posted_at"),
         salary=Salary(**salary_dict) if salary_dict else None,
         contact=Contact(**contact_dict) if contact_dict else None,
+        company_linkedin=mapped.get("company_linkedin"),
         raw_ref=f"01_discover/raw.json#{raw_index}" if raw_index is not None else None,
     )
 

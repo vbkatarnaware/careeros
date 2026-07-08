@@ -6,9 +6,11 @@ code. Adding a provider = write the file, add one line here.
 from __future__ import annotations
 
 from careeros.providers.fantastic_jobs import PROVIDER as FANTASTIC_JOBS
+from careeros.providers.legacy.fantastic_jobs_actor import PROVIDER as FANTASTIC_JOBS_ACTOR
 
 _REGISTRY = {
     FANTASTIC_JOBS.id: FANTASTIC_JOBS,
+    FANTASTIC_JOBS_ACTOR.id: FANTASTIC_JOBS_ACTOR,
 }
 
 

@@ -1,13 +1,34 @@
-# Adding a provider
+# Providers
 
 A provider discovers jobs from one source and hands them to the pipeline in
 a common shape. The pipeline never imports a provider directly — it goes
 through `registry.get(name)` — so adding a new one never touches
 `pipeline/`, `cli.py`, or any other stage.
 
+## Fantastic Jobs: two registered providers, one dataset
+
+CareerOS ships two providers on the SAME Fantastic Jobs dataset (see the
+P2.6/P2.7 architecture review for the full reasoning):
+
+- **`fantastic-jobs`** (`fantastic_jobs.py`) — the official REST API. **Default
+  and actively maintained.** Supports two transports via `config.api.transport`
+  (no default — you must choose): `"direct"` (developer.fantastic.jobs) or
+  `"rapidapi"` (RapidAPI's "Active Jobs DB"). Both proxy the identical
+  dataset and differ only in base URL + auth header; which is cheaper for
+  your volume is a config/commercial decision, not an architectural one.
+- **`fantastic-jobs-actor`** (`legacy/fantastic_jobs_actor.py`) — the Apify
+  actor. **Legacy/reference**, kept for no-code/Zapier/n8n/MCP-style setups.
+  Not the actively maintained path; new discovery features land in the REST
+  provider only.
+
+Both share `to_job_dict()` verbatim (same field names, byte-for-byte —
+enforced by `careeros/tests/test_provider_fantastic_jobs_parity.py`), so
+switching `provider:` between them changes nothing downstream of `discover`.
+
 ## The contract
 
-Copy `fantastic_jobs.py`. You need exactly two methods:
+Copy `fantastic_jobs.py` (or `legacy/fantastic_jobs_actor.py` if you want a
+no-code/actor-style reference instead). You need exactly two methods:
 
 ```python
 class MyProvider:
@@ -46,11 +67,13 @@ source uses a name that isn't covered yet.
 ## Errors: raise ProviderError, don't let the SDK crash raw
 
 If your source has expected, actionable failure modes (missing/expired
-credentials, a paid API's budget exhausted), catch them and raise
-`careeros.providers.base.ProviderError` with a message telling the user what
-to do — the CLI catches this in `discover` and prints it cleanly instead of
-an unhandled traceback. `fantastic_jobs.py` is the reference implementation:
-it also rotates through a comma-separated token pool
+credentials, an unset config choice, a paid API's budget exhausted), catch
+them and raise `careeros.providers.base.ProviderError` with a message
+telling the user what to do — the CLI catches this in `discover` and prints
+it cleanly instead of an unhandled traceback. `fantastic_jobs.py` does this
+for a missing/invalid `config.api.transport` and a missing API key;
+`legacy/fantastic_jobs_actor.py` does it for a missing/exhausted Apify
+token, also rotating through a comma-separated token pool
 (`config.apify.tokens_env`) before giving up, since a single paid-API token
 running out mid-`daily` shouldn't be a hard stop if a spare is configured.
 

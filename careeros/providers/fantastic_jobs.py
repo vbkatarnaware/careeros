@@ -1,45 +1,52 @@
-"""Provider: Fantastic Jobs / Apify (career-site-job-listing-api).
+"""Provider: Fantastic Jobs — official REST API (P2.7).
 
-https://apify.com/fantastic-jobs/career-site-job-listing-api
+https://developer.fantastic.jobs/documentation/how-fantastic-jobs-api-works
+https://developer.fantastic.jobs/api/new-jobs
 
-The only v1 provider. Runs the actor and returns raw dataset items untouched;
-this file's `to_job_dict` maps those into the common pre-Job shape that
-`pipeline/normalize.py` consumes.
+The default, maintained Fantastic Jobs provider. Same underlying dataset and
+the SAME field names as the legacy Apify actor
+(careeros/providers/legacy/fantastic_jobs_actor.py, registered as
+`fantastic-jobs-actor`) — confirmed during the P2.6/P2.7 architecture review:
+`.careeros/qa/sample_raw.json` is already API-shaped (id, source,
+source_type, title, organization, url, locations_derived,
+ai_work_arrangement, ai_salary_*, org_linkedin_slug, ...). `to_job_dict()`
+below is therefore copied verbatim from the actor provider — this migration
+only changes fetch(); normalize/queryplan/gate/evaluate/threshold/artifacts
+never know the difference.
 
-FIELD NAMES VERIFIED LIVE (2026-07-07, build 0.0.64, apify-client 3.0.4).
-The actor's real output is NOT the generic flat shape — it uses:
-  title, organization (company), url (apply link), description_text,
-  locations_derived (LIST of "City, Region, Country" strings),
-  ai_work_arrangement ("Remote"/"Hybrid"/"On-site"), ai_employment_type
-  (LIST of enum strings), date_posted (ISO). Location and work-arrangement
-  are the two that a naive flat mapper drops, which is why this provider uses
-  an explicit mapper rather than only the generic candidate-key lists.
+Two commercial transports, one architecture (config.api.transport):
+  - "direct"   — https://data.fantastic.jobs (developer.fantastic.jobs)
+  - "rapidapi" — RapidAPI's "Active Jobs DB" listing (same vendor, proxied)
+Both return the identical Fantastic Jobs dataset; they differ only in base
+URL and auth header (see `_base_url_and_headers()`). Which is cheaper/has a
+usable free tier is a config/commercial decision, deliberately NOT hardcoded
+here — see the architecture review. `transport` has no default: an unset
+value fails fast with a clear message rather than silently preferring either
+vendor.
 
-Input contract (also verified): the actor takes titleSearch/locationSearch
-(arrays), timeRange (enum: 1h|24h|7d|6m), and limit (integer, MIN 10), plus
-the source-side filters wired below (aiWorkArrangementFilter, removeAgency,
-hasSalary, titleExclusionSearch, locationExclusionSearch) — verified live
-during the 2026-07-08 discovery benchmark. The run-input keys are nothing
-like a generic {"search"} — see fetch().
+Scope (P2.7, feature PARITY only): a single-page fetch of up to `limit`
+jobs per call — mirrors the actor's own single-call, non-paginated
+semantics (its `limit` was always the hard cap on one run). The REST API
+also supports cursor pagination and incremental `date_created_gte` sync;
+both are explicitly OUT of scope here to keep this migration small — see the
+roadmap for when they'd be added.
 
-Cost model: this is a pay-per-result Apify actor on a free-tier account with
-a small monthly budget. QA discovered live that an unhandled budget-exhausted
-call raises a raw `ApifyApiError` ("Maximum charged results must be greater
-than zero" / "you will exceed your remaining usage of $X"). fetch() now:
-(1) rotates through a comma-separated token pool on that specific error,
-(2) caps each call's own spend via `max_total_charge_usd`, and (3) raises a
-clean `ProviderError` — never a bare traceback — once every token is
-exhausted or none are configured.
+NOT LIVE-VERIFIED: no API key was configured in this environment during
+P2.7, so the exact request/response shape below is built from the published
+API reference, not a live call. In particular this assumes the endpoint
+returns a bare JSON array of job objects (as the reference's "Response
+Fields" section documents per-job, with no wrapper key mentioned). Run
+`careeros discover --provider fantastic-jobs --dry-run --limit 3` against a
+real key before relying on this in `daily`, and adjust `fetch()`'s response
+parsing here if the live shape differs.
 """
 
 from __future__ import annotations
 
 import os
-from decimal import Decimal
 from typing import Any
 
-from apify_client import ApifyClient
-from apify_client.errors import ApifyApiError
+import requests
 
 from careeros.config import Config
 from careeros.providers._apify_common import (
@@ -47,26 +54,11 @@ from careeros.providers._apify_common import (
 )
 from careeros.providers.base import ProviderError
 
-ACTOR_ID = "fantastic-jobs/career-site-job-listing-api"
-MIN_LIMIT = 10  # actor rejects limit < 10
+_DIRECT_BASE_URL = "https://data.fantastic.jobs"
+_RAPIDAPI_HOST_DEFAULT = "active-jobs-db.p.rapidapi.com"
+_TIMEOUT_S = 60.0  # matches the API's own documented request timeout
 
-
-def _iter_tokens(apify_cfg: dict[str, Any]) -> list[str]:
-    """Token rotation pool: `tokens_env` (comma-separated, one per account)
-    first, falling back to the single `token_env` var. Never logs values —
-    callers only ever see/record an index, per the security requirement that
-    secrets are never printed."""
-    tokens_env = apify_cfg.get("tokens_env", "APIFY_TOKENS")
-    raw = os.environ.get(tokens_env, "")
-    tokens = [t.strip() for t in raw.split(",") if t.strip()]
-    if tokens:
-        return tokens
-    token_env = apify_cfg.get("token_env", "APIFY_TOKEN")
-    single = os.environ.get(token_env)
-    return [single] if single else []
-
-
-# ai_employment_type enum -> Job.employment_type enum
+# ai_employment_type enum -> Job.employment_type enum (identical to the actor)
 _EMPLOYMENT_MAP = {
     "FULL_TIME": "full_time",
     "PART_TIME": "part_time",
@@ -78,53 +70,93 @@ _EMPLOYMENT_MAP = {
 }
 
 
-def _build_run_input(apify_cfg: dict[str, Any], *, limit: int, search: str) -> dict[str, Any]:
-    """Build the actor's run input from config-driven search + source-side
-    filter params. `search` (the CLI --search string) overrides
-    config.apify.title_search when given.
-
-    The filter fields (aiWorkArrangementFilter/removeAgency/hasSalary/
-    titleExclusionSearch/locationExclusionSearch) are the "source-side
-    filtering" fix from the 2026-07-08 discovery benchmark: fetching fewer,
-    more-targeted jobs server-side is strictly better than fetching broadly
-    and discarding most of it in the deterministic `constraints` stage.
-    """
-    title_search = [search] if search else list(apify_cfg.get("title_search", []) or [])
-    location_search = list(apify_cfg.get("location_search", []) or [])
-    title_exclusion = list(apify_cfg.get("title_exclusion_search", []) or [])
-    location_exclusion = list(apify_cfg.get("location_exclusion_search", []) or [])
-    work_arrangement = list(apify_cfg.get("work_arrangement", []) or [])
-    has_salary = apify_cfg.get("has_salary")
-
-    run_input: dict[str, Any] = {
-        "limit": max(int(limit), MIN_LIMIT),
-        "timeRange": apify_cfg.get("time_range", "7d"),
-        "descriptionType": "text",
-        "includeCompanyDetails": False,
-        "removeAgency": bool(apify_cfg.get("remove_agency", True)),
-    }
-    if title_search:
-        run_input["titleSearch"] = title_search
-    if location_search:
-        run_input["locationSearch"] = location_search
-    if title_exclusion:
-        run_input["titleExclusionSearch"] = title_exclusion
-    if location_exclusion:
-        run_input["locationExclusionSearch"] = location_exclusion
-    if work_arrangement:
-        run_input["aiWorkArrangementFilter"] = work_arrangement
-    if has_salary is not None:
-        run_input["hasSalary"] = bool(has_salary)
-    return run_input
+def _or_exclude_param(terms: list[str], exclusions: list[str]) -> str | None:
+    """Both `title` and `location` are documented as supporting `OR` between
+    terms and a `-term` exclusion syntax IN THE SAME PARAM (no separate
+    exclusion param exists server-side) — so this builds one string for
+    either field, not a `_advanced` boolean expression (kept minimal; no
+    unverified boolean-syntax assumptions)."""
+    included = [t for t in terms if t]
+    excluded = [f"-{t}" for t in exclusions if t]
+    if not included and not excluded:
+        return None
+    value = " OR ".join(included) if included else ""
+    if excluded:
+        value = f"{value} {' '.join(excluded)}".strip()
+    return value
 
 
-def _merge_query(apify_cfg: dict[str, Any], query: dict[str, Any] | None) -> dict[str, Any]:
-    """Overlay a segmented-discovery query spec (pipeline/queryplan.py) onto
-    the base apify config for one `fetch()` call. `_work_mode` is a
-    debug/logging-only key on the spec, never an actor field — dropped here."""
+def _merge_query(api_cfg: dict[str, Any], query: dict[str, Any] | None) -> dict[str, Any]:
+    """Same overlay pattern as the legacy actor's `_merge_query`: layers a
+    segmented-discovery spec (pipeline/queryplan.py) onto the base api
+    config for one `fetch()` call. `_work_mode` is debug-only, dropped here."""
     if not query:
-        return apify_cfg
-    return {**apify_cfg, **{k: v for k, v in query.items() if not k.startswith("_")}}
+        return api_cfg
+    return {**api_cfg, **{k: v for k, v in query.items() if not k.startswith("_")}}
+
+
+def _base_url_and_headers(api_cfg: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    transport = api_cfg.get("transport")
+    if transport == "direct":
+        key_env = api_cfg.get("api_key_env", "FANTASTIC_API_KEY")
+        key = os.environ.get(key_env)
+        if not key:
+            raise ProviderError(
+                f"No direct Fantastic.jobs API key configured — set {key_env}. "
+                "See providers/README.md."
+            )
+        base_url = api_cfg.get("base_url") or _DIRECT_BASE_URL
+        return base_url, {"Authorization": f"Bearer {key}"}
+    if transport == "rapidapi":
+        key_env = api_cfg.get("rapidapi_key_env", "RAPIDAPI_KEY")
+        key = os.environ.get(key_env)
+        if not key:
+            raise ProviderError(
+                f"No RapidAPI key configured — set {key_env}. See providers/README.md."
+            )
+        host = api_cfg.get("rapidapi_host") or _RAPIDAPI_HOST_DEFAULT
+        base_url = api_cfg.get("rapidapi_base_url") or f"https://{host}"
+        return base_url, {"X-RapidAPI-Key": key, "X-RapidAPI-Host": host}
+    raise ProviderError(
+        'config.api.transport is not set — choose "direct" (developer.fantastic.jobs) '
+        'or "rapidapi" (RapidAPI marketplace). This is a config/commercial choice, not '
+        "an architectural one; see providers/README.md."
+    )
+
+
+def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[str, Any]:
+    """Mirrors the legacy actor's `_build_run_input`, mapped onto the
+    official API's own param names (per developer.fantastic.jobs's
+    /api/new-jobs reference)."""
+    title_search = [search] if search else list(api_cfg.get("title_search", []) or [])
+    location_search = list(api_cfg.get("location_search", []) or [])
+    title_exclusion = list(api_cfg.get("title_exclusion_search", []) or [])
+    location_exclusion = list(api_cfg.get("location_exclusion_search", []) or [])
+    work_arrangement = list(api_cfg.get("work_arrangement", []) or [])
+    has_salary = api_cfg.get("has_salary")
+    remove_agency = api_cfg.get("remove_agency", True)
+
+    params: dict[str, Any] = {
+        "limit": max(int(limit), 1),
+        "time_frame": api_cfg.get("time_range", "7d"),
+        "description_format": "text",
+    }
+    title = _or_exclude_param(title_search, title_exclusion)
+    if title:
+        params["title"] = title
+    location = _or_exclude_param(location_search, location_exclusion)
+    if location:
+        params["location"] = location
+    if work_arrangement:
+        params["ai_work_arrangement"] = work_arrangement
+    if has_salary is not None:
+        params["has_salary"] = bool(has_salary)
+    if remove_agency:
+        # Actor parity: removeAgency=True -> exclude. False means "don't
+        # filter" (no agency-only mode is exercised here), so the param is
+        # simply omitted rather than sent as "only".
+        params["organization_agency"] = "exclude"
+    return params
 
 
 class FantasticJobsProvider:
@@ -133,62 +165,44 @@ class FantasticJobsProvider:
     def fetch(
         self, config: Config, *, limit: int = 100, search: str = "",
         query: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """`query`, when given (see pipeline/queryplan.py), overrides the
-        matching config.apify keys for this one call only — e.g. a segmented
-        discovery plan's per-work-mode location_search/work_arrangement. No
-        new field-mapping logic: it's merged straight into the same dict
-        `_build_run_input` already reads, so every existing filter keeps
-        working unchanged for both the segmented and legacy single-query paths.
-        """
-        apify_cfg = config.apify
-        tokens = _iter_tokens(apify_cfg)
-        if not tokens:
+    ) -> tuple[list[dict[str, Any]], float]:
+        """Single-page REST fetch — see the module docstring for the
+        deliberate parity scope (no pagination/incremental sync in P2.7).
+
+        Returns `(items, cost_usd)`. `cost_usd` is always 0.0: unlike the
+        Apify actor's pay-per-result billing, both REST transports are
+        subscription/credit-metered, not priced per call, so there is no
+        real per-call USD figure to report (0.0 is the documented contract
+        for a non-metered-per-call source — see providers/base.py)."""
+        api_cfg = config.api
+        effective_cfg = _merge_query(api_cfg, query)
+        base_url, headers = _base_url_and_headers(effective_cfg)
+        endpoint = effective_cfg.get("endpoint", "active-ats")
+        params = _build_params(effective_cfg, limit=limit, search=search)
+
+        try:
+            resp = requests.get(
+                f"{base_url}/v1/{endpoint}", headers=headers, params=params, timeout=_TIMEOUT_S,
+            )
+        except requests.RequestException as e:
+            raise ProviderError(f"fantastic-jobs: request failed — {e}") from e
+
+        if resp.status_code == 429:
             raise ProviderError(
-                f"No Apify token configured — set {apify_cfg.get('tokens_env', 'APIFY_TOKENS')} "
-                f"(comma-separated, for rotation) or {apify_cfg.get('token_env', 'APIFY_TOKEN')} "
-                "(single token). See providers/README.md."
+                "fantastic-jobs: rate limit / quota exceeded (HTTP 429) — "
+                "check your plan's remaining credits."
             )
+        if resp.status_code != 200:
+            raise ProviderError(f"fantastic-jobs: HTTP {resp.status_code} — {resp.text[:300]}")
 
-        effective_cfg = _merge_query(apify_cfg, query)
-
-        actor_id = apify_cfg.get("actor", ACTOR_ID)
-        run_input = _build_run_input(effective_cfg, limit=limit, search=search)
-        max_cost = apify_cfg.get("max_cost_usd")
-        max_total_charge_usd = Decimal(str(max_cost)) if max_cost is not None else None
-
-        last_error: Exception | None = None
-        for index, token in enumerate(tokens):
-            client = ApifyClient(token)
-            try:
-                run = client.actor(actor_id).call(
-                    run_input=run_input, max_total_charge_usd=max_total_charge_usd
-                )
-            except ApifyApiError as e:
-                # Budget/consent errors (exhausted monthly usage, or the
-                # "Maximum charged results must be greater than zero" state
-                # observed live when usage is already at the cap) — try the
-                # next token in the pool rather than crashing.
-                last_error = e
-                print(f"  [fantastic-jobs] token index {index} failed ({e}); trying next token…")
-                continue
-
-            dataset_id = (
-                run.get("defaultDatasetId") if isinstance(run, dict)
-                else getattr(run, "default_dataset_id", None)
-            )
-            if not dataset_id:
-                raise ProviderError("fantastic-jobs: actor run returned no dataset id")
-            return list(client.dataset(dataset_id).iterate_items())
-
-        raise ProviderError(
-            f"All {len(tokens)} configured Apify token(s) failed (exhausted budget or invalid) — "
-            f"last error: {last_error}. Add a fresh token to "
-            f"{apify_cfg.get('tokens_env', 'APIFY_TOKENS')} or wait for the monthly reset."
-        )
+        items = resp.json()
+        if not isinstance(items, list):
+            raise ProviderError("fantastic-jobs: unexpected response shape (expected a JSON array)")
+        return items, 0.0
 
     def to_job_dict(self, raw: dict[str, Any]) -> dict[str, Any] | None:
-        # Flat fields still map cleanly via the shared candidate lists.
+        # Copied verbatim from the legacy actor provider — same dataset,
+        # same field names (see module docstring).
         title = pick_field(raw, TITLE_KEYS)
         url = pick_field(raw, URL_KEYS)
         if not title or not url.startswith("http"):
@@ -202,11 +216,23 @@ class FantasticJobsProvider:
             "location": _first_location(raw),
             "remote": _remote_from_arrangement(raw.get("ai_work_arrangement")),
             "employment_type": _first_employment_type(raw.get("ai_employment_type")),
-            "seniority": None,  # actor gives a years-range (e.g. "2-5"), not a level enum
+            # API's own `seniority`/`ai_experience_level` fields are a future
+            # enrichment, not in P2.7's parity scope — matches the actor.
+            "seniority": None,
             "posted_at": _pick_posted(raw),
             "salary": _salary_from_ai_fields(raw),
             "contact": _contact_from_ai_fields(raw),
+            "company_linkedin": _company_linkedin_from_slug(raw),
         }
+
+
+# ── field mappers — copied verbatim from providers/legacy/fantastic_jobs_actor.py ──
+
+def _company_linkedin_from_slug(raw: dict[str, Any]) -> str | None:
+    slug = raw.get("org_linkedin_slug")
+    if not isinstance(slug, str) or not slug.strip():
+        return None
+    return f"https://www.linkedin.com/company/{slug.strip()}"
 
 
 def _first_location(raw: dict[str, Any]) -> str | None:
@@ -245,11 +271,6 @@ def _pick_posted(raw: dict[str, Any]) -> str | None:
     return None
 
 
-# ai_salary_unit_text observed values not exhaustively verified live (the QA
-# sample had all-null salary fields); normalized case-insensitively with a
-# generous alias list. An unrecognized unit maps to None, which
-# constraints.annual_inr() already treats as "don't reject on this salary" —
-# safe by construction, never a false hard-reject.
 _SALARY_UNIT_MAP = {
     "year": "year", "years": "year", "yearly": "year", "annual": "year", "annually": "year", "per year": "year",
     "month": "month", "months": "month", "monthly": "month", "per month": "month",
@@ -260,10 +281,6 @@ _SALARY_UNIT_MAP = {
 
 
 def _salary_from_ai_fields(raw: dict[str, Any]) -> dict[str, Any] | None:
-    """Fantastic Jobs exposes ai_salary_min_value/ai_salary_max_value/
-    ai_salary_value (single point)/ai_salary_currency/ai_salary_unit_text.
-    Returns None (not an all-None dict) when nothing usable is present, so
-    Job.salary stays None and constraints.annual_inr() skips it cleanly."""
     min_v = raw.get("ai_salary_min_value")
     max_v = raw.get("ai_salary_max_value")
     point_v = raw.get("ai_salary_value")
@@ -280,11 +297,6 @@ def _salary_from_ai_fields(raw: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _contact_from_ai_fields(raw: dict[str, Any]) -> dict[str, Any] | None:
-    """ai_hiring_manager_name/ai_hiring_manager_email_address are the only
-    per-job contact fields this actor exposes (verified live: both were
-    present, if null, in the QA sample). `org_linkedin_slug` is the
-    COMPANY's LinkedIn, not a personal contact, so it is deliberately not
-    mapped to contact.linkedin — no field for that was observed."""
     name = raw.get("ai_hiring_manager_name")
     email = raw.get("ai_hiring_manager_email_address")
     if not name and not email:

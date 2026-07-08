@@ -133,6 +133,7 @@ def record_stage(
     cache_hits: int = 0,
     cache_misses: int = 0,
     estimated_tokens: int = 0,
+    apify_cost_usd: float = 0.0,
     errors: Optional[list[str]] = None,
 ) -> None:
     """Append one stage's outcome to run.json. Called by every stage's
@@ -151,6 +152,7 @@ def record_stage(
         "cache_hits": cache_hits,
         "cache_misses": cache_misses,
         "estimated_tokens": estimated_tokens,
+        "apify_cost_usd": round(apify_cost_usd, 4),
         "errors": errors or [],
     }
     if prompt_version:
@@ -160,9 +162,20 @@ def record_stage(
     totals["estimated_tokens_total"] = sum(
         s.get("estimated_tokens", 0) for s in manifest["stages"].values()
     )
+    # LOWER BOUND, not settled final spend — found live (2026-07-08) that the
+    # actor's own usageTotalUsd can undercount the real account-level delta
+    # (some charges settle asynchronously). Directionally useful; not a bill.
+    totals["apify_cost_usd_total"] = round(
+        sum(s.get("apify_cost_usd", 0.0) for s in manifest["stages"].values()), 4
+    )
     for stage_name, label in _TOTALS_LABELS.items():
         if stage_name in manifest["stages"]:
             totals[label] = manifest["stages"][stage_name]["count_out"]
+
+    if totals.get("selected"):
+        totals["cost_per_selected_job_usd"] = round(
+            totals["apify_cost_usd_total"] / totals["selected"], 4
+        )
 
     save_manifest(runs_root, date, manifest)
 

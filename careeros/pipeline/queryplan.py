@@ -7,9 +7,28 @@ India-remote vs onsite barely overlapped). Title segmentation wasn't the
 lever — the actor's `titleSearch` is an OR-array, so every target role fits in
 one query already — work-mode/location was.
 
-So: one query per `profile.work_mode_priority` tier, each searching all of
-`profile.role_priorities` at once. For a 4-tier profile that's 4 Apify calls,
-not a cartesian product — cost- and complexity-bounded by construction.
+So: one query per REMOTE work-mode tier, plus ONE consolidated query covering
+every onsite city the profile accepts, each searching all of
+`profile.role_priorities` at once. For a typical profile that's still 3-4
+Apify calls total, not a cartesian product — cost- and complexity-bounded by
+construction.
+
+The P2.6 benchmark (2026-07-08) added two refinements, both evidence-backed:
+- **Onsite cities are merged into ONE query** instead of one call per city —
+  confirmed live that `locationSearch` with multiple cities returns their
+  union in a single call, so N onsite tiers no longer cost N actor calls.
+- **Remote geography is fully generic**, not hardcoded to India. Any tier
+  named `"<place>_remote"` derives `place` from the tier name itself
+  (`"india_remote"` -> "India", `"united_kingdom_remote"` -> "United Kingdom").
+  This is what makes CareerOS role/geo-agnostic: a Software Engineer profile
+  based in Germany just writes `germany_remote` in `work_mode_priority` and
+  gets a correctly-scoped query with zero code changes. Known limitation:
+  ALL-CAPS country codes don't title-case cleanly (`"us_remote"` -> "Us", not
+  "US") — spell country names out (`"united_states_remote"`) for reliable
+  matching; `location_search` also isn't strictly exact-match server-side (the
+  benchmark saw some out-of-scope leakage even for named cities), which is
+  exactly why the deterministic `constraints` stage re-checks location
+  regardless of what discovery returns.
 
 Each returned spec is a plain dict using the exact keys
 `providers/fantastic_jobs.py`'s `_build_run_input()` already understands
@@ -23,32 +42,8 @@ from typing import Any
 
 from careeros.models import Profile
 
-# work_mode_priority tier -> (locationSearch, aiWorkArrangementFilter).
-# Only the profile's own onsite_ok cities are ever used for the onsite tiers
-# (see _onsite_query), so a profile that only lists "Mumbai" never gets a
-# spurious "Navi Mumbai" query.
 _REMOTE_ARRANGEMENT = ["Remote OK", "Remote Solely"]
 _ONSITE_ARRANGEMENT = ["On-site", "Hybrid"]
-
-
-def _global_remote_query() -> dict[str, Any]:
-    return {"location_search": [], "work_arrangement": _REMOTE_ARRANGEMENT}
-
-
-def _india_remote_query() -> dict[str, Any]:
-    return {"location_search": ["India"], "work_arrangement": _REMOTE_ARRANGEMENT}
-
-
-def _onsite_query(city: str) -> dict[str, Any]:
-    return {"location_search": [city], "work_arrangement": _ONSITE_ARRANGEMENT}
-
-
-_TIER_BUILDERS = {
-    "global_remote": _global_remote_query,
-    "india_remote": _india_remote_query,
-    # onsite tiers are handled specially in build_query_plan since they need
-    # the profile's own city name, not a hardcoded one.
-}
 
 _CARRY_THROUGH_KEYS = (
     "remove_agency", "has_salary", "title_exclusion_search", "location_exclusion_search",
@@ -84,30 +79,43 @@ def build_query_plan(profile: Profile, apify_cfg: dict[str, Any]) -> list[dict[s
 
     plan: list[dict[str, Any]] = []
     seen_specs: set[tuple] = set()
-    for tier in work_modes:
-        builder = _TIER_BUILDERS.get(tier)
-        if builder is not None:
-            tier_filters = builder()
-        elif tier.endswith("_onsite"):
-            # e.g. "navi_mumbai_onsite" -> "Navi Mumbai" — only if that city
-            # is actually one the candidate accepts onsite (profile-driven,
-            # never a guessed city name).
-            city_guess = tier[: -len("_onsite")].replace("_", " ").title()
-            match = next((c for c in onsite_ok if c.lower() == city_guess.lower()), None)
-            if match is None:
-                continue
-            tier_filters = _onsite_query(match)
-        else:
-            continue  # unrecognized tier — skip rather than guess
+    has_onsite_tier = False
 
-        query = _base_query(apify_cfg, role_priorities)
-        query.update(tier_filters)
-        query["_work_mode"] = tier  # debug/logging only, not an actor field
-
-        dedup_key = (tuple(query["location_search"]), tuple(query["work_arrangement"]))
+    def _add(work_mode: str, location_search: list[str], work_arrangement: list[str]) -> None:
+        dedup_key = (tuple(location_search), tuple(work_arrangement))
         if dedup_key in seen_specs:
-            continue
+            return
         seen_specs.add(dedup_key)
+        query = _base_query(apify_cfg, role_priorities)
+        query.update({"location_search": location_search, "work_arrangement": work_arrangement})
+        query["_work_mode"] = work_mode  # debug/logging only, not an actor field
         plan.append(query)
 
+    for tier in work_modes:
+        if tier == "global_remote":
+            _add(tier, [], _REMOTE_ARRANGEMENT)
+        elif tier.endswith("_remote"):
+            # Generic geography, profile-driven — e.g. "india_remote" -> "India",
+            # "united_kingdom_remote" -> "United Kingdom". No place is hardcoded.
+            place = tier[: -len("_remote")].replace("_", " ").title()
+            if place:
+                _add(tier, [place], _REMOTE_ARRANGEMENT)
+        elif tier.endswith("_onsite"):
+            has_onsite_tier = True  # consolidated once below, not per tier
+        # unrecognized tier shape: skip rather than guess
+
+    if has_onsite_tier and onsite_ok:
+        _add("onsite", list(onsite_ok), _ONSITE_ARRANGEMENT)
+
     return plan or [_base_query(apify_cfg, role_priorities) | {"location_search": []}]
+
+
+def resolve_tier_limit(work_mode: str, apify_cfg: dict[str, Any], default_limit: int) -> int:
+    """Per-tier `limit` override, keyed by the same `_work_mode` tag
+    `build_query_plan` puts on each spec — falls back to `default_limit` (the
+    CLI's --limit) for any tier not explicitly listed in
+    `apify_cfg["tier_limits"]`. Deliberately NOT pre-tuned with opinionated
+    per-tier defaults in `config.py` (see its comment there) — this function
+    just resolves whatever the user has configured for themselves."""
+    tier_limits = apify_cfg.get("tier_limits", {}) or {}
+    return tier_limits.get(work_mode, default_limit)

@@ -15,6 +15,9 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    # "fantastic-jobs" (REST, default, maintained) or "fantastic-jobs-actor"
+    # (legacy Apify actor — reference/no-code backend, see
+    # providers/legacy/fantastic_jobs_actor.py). See `providers` command.
     "provider": "fantastic-jobs",
     "threshold": 4.0,
     "gate_batch_size": 50,
@@ -73,6 +76,73 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # cost so one run can't silently exhaust a token's monthly budget —
         # the real failure mode hit during QA. None = no cap.
         "max_cost_usd": 1.0,
+        # Optional per-work-mode-tier limit override, keyed by the same tier
+        # strings as profile.work_mode_priority (e.g. {"global_remote": 15}).
+        # Falls back to `discover --limit` for any tier not listed here.
+        # Deliberately NOT pre-tuned with opinionated defaults (e.g. "lower
+        # global_remote") — which tiers convert well is candidate-specific
+        # (a different profile/role could see the opposite pattern), so
+        # tuning this is left to each user's own observed run.json history,
+        # not baked into the shared engine.
+        "tier_limits": {},
+    },
+    # P2.7: the default `fantastic-jobs` provider's config (careeros/
+    # providers/fantastic_jobs.py) — the official Fantastic Jobs REST API,
+    # NOT the legacy Apify actor above (that block, `apify:`, is only read
+    # by `provider: fantastic-jobs-actor`).
+    "api": {
+        # "direct" (developer.fantastic.jobs) or "rapidapi" (RapidAPI's
+        # "Active Jobs DB"). NO DEFAULT — deliberately unset. Which transport
+        # is cheaper/has a usable free tier is a config/commercial decision,
+        # not an architectural one (see the P2.6/P2.7 architecture review);
+        # `fetch()` fails fast with a clear message until you choose one.
+        "transport": None,
+        # transport: direct
+        "base_url": "https://data.fantastic.jobs",
+        "api_key_env": "FANTASTIC_API_KEY",
+        # transport: rapidapi — verify the exact host/path against your own
+        # RapidAPI dashboard; not live-verified during P2.7.
+        "rapidapi_base_url": None,
+        "rapidapi_host": "active-jobs-db.p.rapidapi.com",
+        "rapidapi_key_env": "RAPIDAPI_KEY",
+        # "active-ats" (career sites/ATS — actor-parity scope) or
+        # "active-jb" (+ LinkedIn/YC/Wellfound — future multi-source work,
+        # not exercised by P2.7).
+        "endpoint": "active-ats",
+        # Everything below mirrors `apify:`'s search-filter keys exactly —
+        # pipeline/queryplan.py's segmented-discovery specs use these same
+        # neutral key names regardless of which provider is active, so this
+        # provider's config block has to match them for the query-plan
+        # overlay in fetch()'s `_merge_query` to keep working unchanged.
+        "discovery_mode": "profile",
+        "time_range": "7d",                    # -> time_frame: 1h | 24h | 7d | 6m
+        "title_search": [],
+        "location_search": [],
+        "title_exclusion_search": [],
+        "location_exclusion_search": [],
+        "work_arrangement": [],
+        "remove_agency": True,
+        "has_salary": None,
+        "tier_limits": {},
+    },
+    # Optional Google Drive artifact backup (P2.6). ADDITIVE only — local
+    # Markdown under .careeros/runs/ stays the source of truth end to end;
+    # Drive is never read back by any pipeline stage. Uses an OAuth DESKTOP
+    # client (not a service account), so uploads land in the configured
+    # user's own personal Drive quota — appropriate for a personal daily-use
+    # CLI. Default OFF so a fresh OSS clone never needs Drive to work.
+    "drive": {
+        "enabled": False,
+        # Path to an OAuth 2.0 "Desktop app" client secret JSON (from Google
+        # Cloud Console). NOT a service-account key.
+        "client_secret_path": None,
+        # Where the one-time browser-consent refresh token is cached after
+        # the first successful auth — reused silently on every later run.
+        "token_path": ".careeros/drive_token.json",
+        # The Drive folder date-folders are created directly inside (i.e.
+        # this IS your "CareerOS/" root — point it at a folder you already
+        # created/shared, no extra nesting is added).
+        "root_folder_id": None,
     },
 }
 
@@ -86,7 +156,9 @@ class Config:
     prompts: dict[str, str] = field(default_factory=dict)
     sheets: dict[str, Any] = field(default_factory=dict)
     apify: dict[str, Any] = field(default_factory=dict)
+    api: dict[str, Any] = field(default_factory=dict)
     fx_rates: dict[str, float] = field(default_factory=dict)
+    drive: dict[str, Any] = field(default_factory=dict)
 
     @property
     def careeros_dir(self) -> Path:
@@ -134,5 +206,7 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         prompts=merged["prompts"],
         sheets=merged["sheets"],
         apify=merged["apify"],
+        api=merged["api"],
         fx_rates=merged["fx_rates"],
+        drive=merged["drive"],
     )

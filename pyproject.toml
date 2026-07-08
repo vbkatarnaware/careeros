@@ -1,6 +1,6 @@
 [project]
 name = "careeros"
-version = "0.1.0"
+version = "1.0.0"
 description = "A supreme, high-quality job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,13 +9,17 @@ dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
     "jsonschema>=4.20",
-    "apify-client>=3.0,<4",
+    "requests>=2.31",       # default provider: careeros/providers/fantastic_jobs.py (REST)
+    "apify-client>=3.0,<4", # legacy provider: careeros/providers/legacy/fantastic_jobs_actor.py
     "gspread>=6.0",
     "google-auth>=2.28",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Optional Google Drive artifact backup (P2.6, drive.enabled: true). Not a
+# core dependency — a fresh OSS clone never needs these to run `daily`.
+drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0"]
 
 [project.scripts]
 careeros = "careeros.cli:app"

@@ -75,8 +75,8 @@ separated from the inherited, non-recomputed fit judgment.
            │
    ┌───────┴───────┬──────────────────┐
    ▼               ▼                  ▼
- Apify          Google Sheets     (Drive — later)
- [deterministic] [deterministic]
+ Fantastic Jobs   Google Sheets    Drive (optional)
+ [deterministic]  [deterministic]  [deterministic]
 ```
 
 CareerOS has no server and no database. The filesystem is the message bus:
@@ -86,9 +86,11 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
 
 ## Pipeline
 
-1. **Discover** — call a provider (Fantastic Jobs / Apify for v1), by default
-   as one segmented query per profile work-mode tier rather than a single
-   broad fetch (`pipeline/queryplan.py`). Deterministic.
+1. **Discover** — call a provider (Fantastic Jobs REST API by default; a
+   legacy Apify-actor provider is also available — see
+   `careeros/providers/README.md`), by default as one segmented query per
+   profile work-mode tier rather than a single broad fetch
+   (`pipeline/queryplan.py`). Deterministic.
 2. **Normalize** — map to the universal `Job` schema. Deterministic.
 3. **Dedupe** — drop jobs already seen this run, in a prior run, or already
    in the Sheet. Deterministic.
@@ -105,8 +107,16 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
 8. **Artifacts** — resume + cover letter (selected from `profile.yaml`,
    never invented, cache-checked) + a daily report (rendered from the eval
    JSON, zero AI).
-9. **Sheets** — append one row per selected job. You open the Sheet and
-   start applying.
+9. **Summary** — a deterministic `summary.md` (funnel, the Apply list, the
+   Review/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
+   per interview-worthy job, supply-aware — a day with 0 selected is a
+   legitimate outcome, not a failure, and CareerOS never lowers the quality
+   bar just to hit a job count.
+10. **Drive** *(optional, off by default)* — additive backup of shortlisted
+    artifacts to Google Drive via your own OAuth desktop grant. Any failure
+    here only warns; it never blocks the rest of the pipeline.
+11. **Sheets** — append one row per selected job (with a Drive Folder link if
+    step 10 ran). You open the Sheet and start applying.
 
 Two more commands exist outside the daily loop, deliberately:
 
@@ -133,8 +143,8 @@ Developer/debug commands — each stage runnable standalone against a run
 directory, without re-running the whole pipeline:
 
 `discover` · `normalize` · `dedupe` · `constraints` · `gate` · `evaluate` ·
-`threshold` · `artifacts` · `sheets append` · `render-report` ·
-`lint <file>` · `verify-resume <file>`
+`threshold` · `artifacts` · `summary` · `drive` · `sheets append` ·
+`render-report` · `lint <file>` · `verify-resume <file>`
 
 ## Folder structure
 
@@ -152,15 +162,60 @@ careeros/
 └── .careeros/            # your local state (gitignored): profile, cache, runs
 ```
 
-## Example run
+## Installation
+
+Requires Python 3.11+.
+
+```
+git clone https://github.com/<you>/careeros.git
+cd careeros
+pip install -e .
+```
+
+That installs the `careeros` CLI plus the default REST provider's dependency
+(`requests`). Two things you'll also need, neither installed by pip:
+
+- **A host coding CLI** (Claude Code, Codex, Gemini CLI, OpenCode, …) — this
+  is what actually runs `/careeros daily` and performs the AI Gate/Evaluate
+  reasoning steps. CareerOS's own Python package is the deterministic half;
+  see [Architecture](#architecture).
+- **A Fantastic Jobs API key** (default provider) — see Quickstart below.
+
+## Quickstart
 
 ```
 $ careeros init
 Wrote .careeros/config.yaml
-Wrote .careeros/profile.yaml
+Wrote .careeros/profile.yaml (seeded template — edit with your own facts,
+  or run `careeros start` for the guided interview)
 
-$ careeros start        # or hand-edit .careeros/profile.yaml directly
+Next: in .careeros/config.yaml, set api.transport to "direct" or "rapidapi"
+and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY), set up
+Sheets credentials, then run `careeros daily`.
+```
 
+Then:
+
+1. **Set the discovery provider's credentials.** `careeros` ships defaulted
+   to `provider: fantastic-jobs` — the official Fantastic Jobs REST API
+   (recommended for all new users). Pick one transport in
+   `.careeros/config.yaml`'s `api:` block and export the matching key:
+   - `api.transport: direct` → `export FANTASTIC_API_KEY=...` ([developer.fantastic.jobs](https://developer.fantastic.jobs))
+   - `api.transport: rapidapi` → `export RAPIDAPI_KEY=...` (RapidAPI's "Active Jobs DB")
+
+   *(Prefer a no-code/Zapier-style setup instead? Set `provider:
+   fantastic-jobs-actor` and `export APIFY_TOKEN=...` — the legacy Apify
+   actor backend, kept as a reference/advanced option; see
+   `careeros/providers/README.md`.)*
+2. **Set up your profile**: `careeros start` (guided interview) or hand-edit
+   `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
+3. **Set up Google Sheets**: a spreadsheet id + service-account credentials
+   path in `config.yaml`'s `sheets:` block (the daily results destination).
+4. **Run it**: `/careeros daily` inside your host coding CLI.
+
+## Example run
+
+```
 $ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
   [discover] query 1/4 (global_remote): 22 items
   [discover] query 2/4 (india_remote): 9 items
@@ -185,11 +240,35 @@ cover letters generated.
 
 One append-only `Jobs` worksheet:
 
-`Date · Company · Role · Score · Confidence · Recommendation · Apply URL ·
-Resume Path · Cover Letter Path · Report Path · Source · Hiring Contact ·
-Contact LinkedIn · Contact Email · Job ID`
+`Date · Company · Company LinkedIn · Role · Score · Confidence ·
+Recommendation · Apply URL · Resume Path · Cover Letter Path · Report Path ·
+Source · Hiring Contact · Contact LinkedIn · Contact Email · Drive Folder ·
+Job ID`
 
-`Job ID` is the join key `prep`/`apply` use to look a row back up.
+`Job ID` is the join key `prep`/`apply` use to look a row back up. `Company
+LinkedIn` and `Drive Folder` are populated when the underlying data exists
+(Fantastic Jobs exposes the former on ~100% of postings at zero extra cost;
+the latter only if Drive backup — see below — is enabled and succeeds).
+
+## Google Drive backup (optional)
+
+Off by default. When `drive.enabled: true`, `careeros drive` uploads each
+shortlisted job's resume/cover/report — plus the day's `run.json` and
+`summary.md` — into `<your root folder>/YYYY-MM-DD/<Company>/` as an
+**additive** backup; your local `.careeros/runs/` Markdown is never moved,
+replaced, or read back by any pipeline stage. Needs the optional extra:
+
+```
+pip install -e ".[drive]"
+```
+
+and an OAuth **Desktop app** client secret (Google Cloud Console →
+Credentials → Create Credentials → OAuth client ID → Desktop app) — not a
+service account, since uploads land in your own personal Drive quota. The
+first run opens a one-time browser consent; after that, a cached refresh
+token (`drive.token_path`, gitignored) makes every later run silent. Any
+Drive failure (auth, network, quota) only prints a warning — discovery,
+evaluation, Sheets, and every other stage run exactly as if Drive were off.
 
 ## Caching and prompt versioning
 
@@ -202,7 +281,9 @@ cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 ## What's built today (v1 vertical slice)
 
 The full pipeline runs end to end: profile-driven segmented discovery through
-a real Apify provider, deterministic normalize/dedupe/constraints/threshold,
+the Fantastic Jobs REST API (a legacy Apify-actor provider remains available
+— see `careeros/providers/README.md`), deterministic
+normalize/dedupe/constraints/threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, a zero-cost daily report
 render, and Google Sheets append. `careeros init` seeds an example
@@ -215,6 +296,9 @@ first real run.
 - Google Drive upload + PDF rendering for resume/cover (Markdown only today)
 - Direct-API providers for Greenhouse, Ashby, Lever, Workday (no Apify
   actor needed — see `careeros/providers/README.md`)
+- LinkedIn/Wellfound/YC via the Fantastic Jobs REST API's `active-jb`
+  endpoint, and incremental (`date_created_gte`) discovery — both explicitly
+  deferred out of the P2.7 REST migration to keep it a pure parity swap
 - Per-ATS application-question scraping (today: paste them manually)
 - Richer profile sections (adaptive framing, negotiation scripts) — kept
   out of v1 deliberately to stay lean
@@ -235,11 +319,13 @@ pytest careeros/tests/
 
 Unit tests cover the deterministic logic that's genuinely subtle: hard
 constraints (`constraints.py`), threshold selection, cache-key stability,
-dedupe, the resume-truthfulness verbatim check, and the provider's
-source-side-filter/token-rotation wiring — the pure functions most likely to
+dedupe, the resume-truthfulness verbatim check, both Fantastic Jobs
+providers' source-side-filter/transport/token-rotation wiring, and a parity
+test asserting the REST and legacy-actor providers map identical raw
+records to an identical `Job` dict — the pure functions most likely to
 silently regress. They do not (yet) cover `normalize.py`, `sheets.py`, or
 `report.py`; contributions there are welcome. CI (`.github/workflows/ci.yml`)
-runs the suite on Python 3.10 and 3.12 for every push and PR.
+runs the suite on Python 3.11 and 3.12 for every push and PR.
 
 ## Attribution
 

@@ -19,9 +19,10 @@ from careeros.config import Config
 from careeros.models import Eval, Job
 
 SHEET_HEADERS = [
-    "Date", "Company", "Role", "Score", "Confidence", "Recommendation",
+    "Date", "Company", "Company LinkedIn", "Role", "Score", "Confidence", "Recommendation",
     "Apply URL", "Resume Path", "Cover Letter Path", "Report Path",
-    "Source", "Hiring Contact", "Contact LinkedIn", "Contact Email", "Job ID",
+    "Source", "Hiring Contact", "Contact LinkedIn", "Contact Email",
+    "Drive Folder", "Job ID",
 ]
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -61,16 +62,22 @@ def read_existing_job_ids(config: Config) -> set[str]:
 def job_to_row(
     date: str, job: Job, evaluation: Eval,
     resume_path: str, cover_path: str, report_path: str,
+    drive_folder_link: str = "",
 ) -> list[Any]:
+    """`drive_folder_link` is blank unless the optional Drive backup (P2.6,
+    `drive.enabled: true`) ran successfully for this job — sheets.py has no
+    import dependency on drive.py; the caller (cli.py) resolves the link and
+    passes it in, keeping the two modules decoupled."""
     contact = job.contact
     return [
-        date, job.company, job.title,
+        date, job.company, job.company_linkedin or "", job.title,
         evaluation.score, evaluation.confidence, evaluation.recommendation,
         job.apply_url, resume_path, cover_path, report_path,
         job.source,
         contact.name if contact else "",
         contact.linkedin if contact else "",
         contact.email if contact else "",
+        drive_folder_link,
         job.id,
     ]
 

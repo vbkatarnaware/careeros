@@ -64,6 +64,10 @@
         "email": { "type": ["string", "null"] }
       }
     },
+    "company_linkedin": {
+      "type": ["string", "null"],
+      "description": "The employer's LinkedIn company page URL, when the provider exposes it (e.g. Fantastic Jobs' org_linkedin_slug, present on ~100% of postings at zero extra cost). Free context for outreach research; never the same as contact.linkedin, which is a personal profile."
+    },
     "raw_ref": {
       "type": ["string", "null"],
       "description": "Pointer back into the raw provider payload for debugging, e.g. '01_discover/raw.json#42'. Never carries the full raw blob forward."

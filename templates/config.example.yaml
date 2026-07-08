@@ -2,6 +2,9 @@
 # Every key here has a built-in default (see careeros/config.py); only
 # override what you need to change.
 
+# "fantastic-jobs" (REST, default, maintained — see the `api:` block below)
+# or "fantastic-jobs-actor" (legacy Apify actor — see the `apify:` block;
+# kept as a reference/no-code backend, not the actively maintained path).
 provider: fantastic-jobs
 threshold: 4.0          # score >= this gets resume/cover/report generated
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
@@ -20,6 +23,37 @@ sheets:
   credentials_path: null        # path to a Google service-account JSON key
   worksheet: "Jobs"
 
+# Config for the DEFAULT `fantastic-jobs` provider (the official Fantastic
+# Jobs REST API). Only read when provider: fantastic-jobs (above).
+api:
+  # REQUIRED — no default. "direct" (developer.fantastic.jobs) or "rapidapi"
+  # (RapidAPI's "Active Jobs DB"). Both return the identical dataset; pick
+  # whichever has the better price/free-tier for your volume — see the
+  # P2.6/P2.7 architecture review. `careeros discover` fails fast with a
+  # clear message if this is left unset.
+  transport: null
+  # transport: direct
+  base_url: "https://data.fantastic.jobs"
+  api_key_env: FANTASTIC_API_KEY   # set this env var to your developer.fantastic.jobs key
+  # transport: rapidapi — verify the exact host against your own RapidAPI
+  # dashboard for the "Active Jobs DB" listing before relying on this default.
+  rapidapi_host: active-jobs-db.p.rapidapi.com
+  rapidapi_key_env: RAPIDAPI_KEY   # set this env var to your RapidAPI key
+  endpoint: active-ats             # active-ats (career sites) | active-jb (+ LinkedIn/YC/Wellfound, future)
+  discovery_mode: profile
+  time_range: "7d"                 # 1h | 24h | 7d | 6m
+  title_search: ["Product Manager"]
+  location_search: []
+  title_exclusion_search: []
+  location_exclusion_search: []
+  work_arrangement: []             # any of: "On-site" | "Hybrid" | "Remote OK" | "Remote Solely"
+  remove_agency: true
+  has_salary: null
+  tier_limits: {}
+
+# LEGACY — only read when provider: fantastic-jobs-actor. Kept for no-code/
+# Zapier/n8n/MCP-style setups; not the actively maintained discovery path
+# (see providers/legacy/fantastic_jobs_actor.py).
 apify:
   token_env: APIFY_TOKEN        # single-token env var (back-compat)
   tokens_env: APIFY_TOKENS      # comma-separated token pool — set this for
@@ -48,6 +82,16 @@ apify:
   # Per-call spend cap (USD) — this is a pay-per-result actor on a metered
   # free-tier budget; QA hit a raw crash after exhausting it unbounded.
   max_cost_usd: 1.0
+  # Optional per-work-mode-tier limit override (keys = your own
+  # profile.work_mode_priority tier names). Any tier not listed here uses
+  # `discover --limit`. Deliberately ships EMPTY — which tiers are worth a
+  # bigger fetch is specific to your own profile and conversion history
+  # (check run.json's cost-per-selected-job over a few days), not something
+  # CareerOS should assume for you. Example shape, commented out:
+  # tier_limits:
+  #   global_remote: 15
+  #   india_remote: 25
+  tier_limits: {}
 
 # Approximate FX to your profile's comp currency, used only by the
 # deterministic salary hard-constraint (careeros/pipeline/constraints.py).
@@ -58,3 +102,24 @@ fx_rates:
   USD: 83.0
   EUR: 90.0
   GBP: 105.0
+
+# Optional Google Drive backup of the day's shortlisted artifacts (P2.6).
+# ADDITIVE only — your local .careeros/runs/ Markdown stays the source of
+# truth; Drive is never read back by any pipeline stage. Off by default so a
+# fresh clone works with zero Drive setup. Needs `pip install -e ".[drive]"`.
+drive:
+  enabled: false
+  # An OAuth 2.0 "Desktop app" client secret JSON from Google Cloud Console
+  # (Credentials -> Create Credentials -> OAuth client ID -> Desktop app).
+  # NOT a service-account key — uploads use YOUR OWN Drive quota via a
+  # one-time browser consent, not a service account (which can't write into
+  # a personal Drive the way your own OAuth grant can).
+  client_secret_path: null
+  # Where the refresh token is cached after the first consent — reused
+  # silently on every later run, no browser needed again.
+  token_path: ".careeros/drive_token.json"
+  # The Drive folder date-folders are created directly inside — point this
+  # at a folder you already created/shared (its id is the last segment of
+  # its drive.google.com/drive/folders/<id> URL). No extra "CareerOS/"
+  # nesting is added on top of it.
+  root_folder_id: null

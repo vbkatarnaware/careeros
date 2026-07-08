@@ -1,9 +1,11 @@
 """The provider contract.
 
-A provider is one file exposing `fetch(config) -> list[dict]`, where each
-dict is a RAW record in whatever shape that provider's source returns. The
-pipeline's `normalize` stage (careeros/pipeline/normalize.py) is what turns
-raw records into `Job` objects — a provider itself never constructs a `Job`.
+A provider is one file exposing `fetch(config) -> (list[dict], float)`, where
+each dict is a RAW record in whatever shape that provider's source returns,
+and the float is that call's real cost in USD (0.0 for a free/non-metered
+source). The pipeline's `normalize` stage (careeros/pipeline/normalize.py) is
+what turns raw records into `Job` objects — a provider itself never
+constructs a `Job`.
 
 This split matters: normalize.py holds ALL of CareerOS's field-mapping logic
 in one place, so adding a provider means writing a `fetch()` that returns
@@ -28,9 +30,10 @@ class ProviderError(RuntimeError):
 class Provider(Protocol):
     id: str
 
-    def fetch(self, config: Config, **kwargs: Any) -> list[dict[str, Any]]:
-        """Return raw job records exactly as the source returns them.
-        No normalization, no field renaming — that's normalize.py's job.
+    def fetch(self, config: Config, **kwargs: Any) -> tuple[list[dict[str, Any]], float]:
+        """Return (raw job records exactly as the source returns them, cost
+        in USD for this call). No normalization, no field renaming — that's
+        normalize.py's job. A free source just returns 0.0 for the cost.
 
         Common optional kwargs (a provider may ignore any it doesn't need):
         `limit` (max records), `search` (a single manual query override), and

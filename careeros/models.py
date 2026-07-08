@@ -59,6 +59,7 @@ class Job:
     salary: Optional[Salary] = None
     posted_at: Optional[str] = None
     contact: Optional[Contact] = None
+    company_linkedin: Optional[str] = None
     raw_ref: Optional[str] = None
 
     @staticmethod

@@ -16,17 +16,27 @@ careeros discover --date {today}
 ```
 
 By default this runs one segmented query per `profile.yaml`'s
-`work_mode_priority` tier (e.g. global-remote, India-remote, Mumbai-onsite),
-each searching all `role_priorities` at once — see
-`careeros/pipeline/queryplan.py`. Prints a line per query with its own count,
-then the combined total. Set `apify.discovery_mode: single` in
-`.careeros/config.yaml` to fall back to one broad query instead.
+`work_mode_priority` tier (e.g. global-remote, India-remote — all onsite
+cities in `location.onsite_ok` are consolidated into a single query, not one
+per city), each searching all `role_priorities` at once — see
+`careeros/pipeline/queryplan.py`. Prints a line per query with its own limit
+and count, then the combined total. Set `discovery_mode: single` under
+whichever block your active provider reads (`api:` for the default REST
+provider, `apify:` for the legacy actor) in `.careeros/config.yaml` to fall
+back to one broad query instead. Each tier uses `--limit` by default;
+`tier_limits` (same block) can override the limit for a specific tier (e.g.
+give a historically high-converting tier more headroom) — check `run.json`'s
+cost-per-selected-job over a few days before tuning this, rather than
+guessing.
 
-Reports N raw items fetched. If N is 0 and no Apify token is configured (see
-`APIFY_TOKENS`/`APIFY_TOKEN`), tell the candidate and stop — nothing
-downstream can run without jobs. If a query fails with a clean provider error
-(e.g. a token's budget exhausted), it's already tried rotating through every
-configured token — report the message to the candidate rather than retrying.
+Reports N raw items fetched. If N is 0, check credentials for whichever
+provider is active (`config.provider`): the default REST provider needs
+`api.transport` set plus `FANTASTIC_API_KEY`/`RAPIDAPI_KEY`; the legacy
+actor (`fantastic-jobs-actor`) needs `APIFY_TOKENS`/`APIFY_TOKEN`. Tell the
+candidate and stop — nothing downstream can run without jobs. If a query
+fails with a clean provider error (e.g. the actor's token budget exhausted),
+it's already tried rotating through every configured token — report the
+message to the candidate rather than retrying.
 
 ## Step 2 — Normalize (deterministic)
 
@@ -40,9 +50,12 @@ careeros normalize --date {today}
 careeros dedupe --date {today}
 ```
 
-Drops jobs already seen in a prior run or already in the Sheet. Report the
-counts (in-run / vs-history / vs-sheet) so the candidate can sanity-check
-volume.
+Drops jobs already seen in a prior run or already in the Sheet, plus the same
+role posted separately per country (segmented discovery can surface one
+posting multiple times — e.g. the same role tagged for Poland/Bulgaria/Spain
+— which this collapses to one entry, keeping the highest work-mode-priority
+copy). Report the counts (in-run / cross-location / vs-history / vs-sheet) so
+the candidate can sanity-check volume.
 
 ## Step 4 — Constraints (deterministic hard deal-breakers)
 
@@ -149,22 +162,50 @@ zero AI):
 careeros render-report {job-id} --date {today}
 ```
 
-## Step 9 — Sheets (deterministic)
+## Step 9 — Day summary (deterministic, zero AI)
+
+```
+careeros summary --date {today}
+```
+
+Renders `.careeros/runs/{today}/summary.md` — funnel counts, the Apply
+(≥threshold) list, the Review (near-miss, threshold-0.5 to threshold) list,
+and cost-per-selected-job, all computed from `run.json` + the day's Eval
+JSONs. This is the P2.6 KPI made visible every run: **maximize interview-
+worthy jobs per dollar, never a fixed daily quota** — 0 selected on a given
+day is a legitimate, supply-limited outcome, not a failure to report as one.
+Runs BEFORE Drive/Sheets below since both may include/link it.
+
+## Step 10 — Drive backup (optional, off by default)
+
+```
+careeros drive --date {today}
+```
+
+Only runs if `drive.enabled: true` in `.careeros/config.yaml` (otherwise
+prints one line and exits — nothing to do). Uploads shortlisted jobs'
+resume/cover/report plus `run.json`/`summary.md` to Drive as an ADDITIVE
+backup; local Markdown is never moved or replaced. **Any failure here (auth,
+network, quota) is caught and reported as a warning — never let a Drive
+problem block Sheets or stop the pipeline.** Writes
+`.careeros/runs/{today}/drive_links.json` on success, which Sheets (next
+step) reads to populate the Drive Folder column.
+
+## Step 11 — Sheets (deterministic)
 
 ```
 careeros sheets append --date {today}
 ```
 
-Appends one row per selected job and records their ids to
-`.careeros/seen.jsonl` so tomorrow's `dedupe` skips them automatically.
+Appends one row per selected job (including a Drive Folder link if Step 10
+ran successfully) and records their ids to `.careeros/seen.jsonl` so
+tomorrow's `dedupe` skips them automatically.
 
-## Step 10 — Summary
+## Step 12 — Report to the candidate
 
-Tell the candidate, briefly: how many jobs discovered / deduped / eligible
-(post-constraints) / gated / evaluated / selected, and the top 2-3 by score
-with a one-line reason each. Point them at the Sheet. Do not dump full
-report/resume/cover text into the chat — the artifacts are the deliverable,
-the summary is just a pointer to them.
+Read `summary.md` back and relay it, briefly. Point them at the Sheet. Do not
+dump full report/resume/cover text into the chat — the artifacts are the
+deliverable, `summary.md` is the day-level pointer to them.
 
 ## On failure
 
