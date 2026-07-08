@@ -1,5 +1,9 @@
 # CareerOS
 
+[![CI](https://github.com/vbkatarnaware/careeros/actions/workflows/ci.yml/badge.svg)](https://github.com/vbkatarnaware/careeros/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/vbkatarnaware/careeros)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+
 A supreme, high-quality job discovery and recommendation engine. Not an
 application bot.
 
