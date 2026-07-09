@@ -57,13 +57,3 @@ class Cache:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(value, f, indent=2, sort_keys=True)
-
-    def stats(self) -> dict[str, int]:
-        """Count cached entries per stage — surfaced in run.json for visibility
-        into how much a `daily` run actually cost vs. reused."""
-        if not self.cache_dir.exists():
-            return {}
-        return {
-            d.name: len(list(d.glob("*.json")))
-            for d in self.cache_dir.iterdir() if d.is_dir()
-        }

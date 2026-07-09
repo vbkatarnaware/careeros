@@ -4,7 +4,7 @@ only overrides what it actually cares about."""
 
 from __future__ import annotations
 
-from careeros.models import Job, Profile, Salary
+from careeros.models import Job, Profile
 
 
 def make_job(**overrides) -> Job:

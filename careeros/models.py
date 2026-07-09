@@ -191,10 +191,6 @@ class Profile:
         kwargs = {k: v for k, v in d.items() if k != "experience"}
         return Profile(experience=experience, **kwargs)
 
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
-
 
 def dumps(obj: Any) -> str:
     """Canonical JSON serialization for anything written to the run-dir.

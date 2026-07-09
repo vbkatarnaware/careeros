@@ -16,13 +16,14 @@ description_max_chars: 4000
 goals:
   interviews_per_week: null   # e.g. 5 — leave null until you have a target
 
+# Only stages actually read via config (gate, eval, resume, cover). deep_report
+# and apply are invoked by skills/prep.md and skills/apply.md, which read
+# their prompt files directly by a hardcoded path, not through this config.
 prompts:
   gate: v1
   eval: v2
   resume: v1
   cover: v1
-  deep_report: v1
-  apply: v1
 
 sheets:
   spreadsheet_id: null          # your Google Sheet's id (from its URL)

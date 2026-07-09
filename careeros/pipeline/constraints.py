@@ -21,8 +21,8 @@ Two objective rules:
 
 Used in two places for a belt-and-suspenders guarantee: as its own pipeline
 stage (so hard-rejects never reach the AI gate, saving tokens), and re-checked
-inside threshold.select (so even if the AI mislabels a job "apply", the
-deterministic rule still removes it).
+inside threshold.partition_evals (so even if the AI mislabels a job "apply",
+the deterministic rule still removes it).
 """
 
 from __future__ import annotations

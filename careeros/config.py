@@ -35,13 +35,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "gate_batch_size": 50,
     "description_max_chars": 4000,
+    # Only stages actually read via cfg.prompts.get()/cfg.prompt_path() belong
+    # here (gate, eval, resume, cover) — deep_report and apply are invoked by
+    # skills/prep.md and skills/apply.md, which read their prompt files
+    # directly by a hardcoded path, not through this config.
     "prompts": {
         "gate": "v1",
         "eval": "v2",
         "resume": "v1",
         "cover": "v1",
-        "deep_report": "v1",
-        "apply": "v1",
     },
     # Approximate FX to INR for salary constraint checks. A margin is applied
     # in constraints.py so a borderline conversion never wrongly hard-rejects.

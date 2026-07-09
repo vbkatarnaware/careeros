@@ -401,14 +401,16 @@ pytest careeros/tests/
 ```
 
 Unit tests cover the deterministic logic that's genuinely subtle: hard
-constraints (`constraints.py`), threshold selection, cache-key stability,
-dedupe, the resume-truthfulness verbatim check, both Fantastic Jobs
-providers' source-side-filter/transport/token-rotation wiring, and a parity
+constraints (`constraints.py`), two-tier threshold selection, cache-key
+stability, dedupe, the resume-truthfulness verbatim check, both Fantastic
+Jobs providers' source-side-filter/transport/token-rotation wiring, a parity
 test asserting the REST and legacy-actor providers map identical raw
-records to an identical `Job` dict — the pure functions most likely to
-silently regress. They do not (yet) cover `normalize.py`, `sheets.py`, or
-`report.py`; contributions there are welcome. CI (`.github/workflows/ci.yml`)
-runs the suite on Python 3.11 and 3.12 for every push and PR.
+records to an identical `Job` dict, the Sheets name-keyed read/write and
+additive header migration, the daily-summary render, Drive artifact
+upload/backfill/idempotency, and PDF rendering — the pure functions most
+likely to silently regress. They do not (yet) cover `normalize.py`;
+contributions there are welcome. CI (`.github/workflows/ci.yml`) runs the
+suite on Python 3.11 and 3.12 for every push and PR.
 
 ## Attribution
 

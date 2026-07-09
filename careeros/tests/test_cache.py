@@ -60,18 +60,3 @@ def test_cache_put_then_get_roundtrips(tmp_path):
     value = {"score": 4.2, "recommendation": "apply"}
     cache.put("evaluate", "key1", value)
     assert cache.get("evaluate", "key1") == value
-
-
-def test_cache_stats_counts_entries_per_stage(tmp_path):
-    cache = Cache(tmp_path)
-    cache.put("evaluate", "k1", {"a": 1})
-    cache.put("evaluate", "k2", {"a": 2})
-    cache.put("resume", "k3", {"content": "..."})
-    stats = cache.stats()
-    assert stats["evaluate"] == 2
-    assert stats["resume"] == 1
-
-
-def test_cache_stats_empty_dir_returns_empty_dict(tmp_path):
-    cache = Cache(tmp_path / "does-not-exist")
-    assert cache.stats() == {}
