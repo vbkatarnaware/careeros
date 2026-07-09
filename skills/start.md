@@ -89,23 +89,35 @@ safe default (500 records/week).
 
 Then run `careeros config` and read its printed quota-guard recommendation
 block (it looks like: *"Quota guard — plan: free (500 records/week) ...
-Recommended: limit N/request..."*). Present it plainly:
+Recommended: limit N/request..."*). Its arithmetic is: **plan's weekly
+record quota ÷ active discovery days ÷ number of query tiers your profile
+generates** (one tier per `work_mode_priority` entry — see
+`pipeline/queryplan.py`). Present it plainly, spelling out that arithmetic
+so it's not a magic number:
 
 ```
-Based on your goal of {interviews_per_week} interviews/week and the
-{plan} plan, we recommend a daily discovery limit of {N} records/query.
+Free plan: 500 records/week ÷ 7 active days ÷ {N tiers} query tier(s)
+≈ {N} records/query — this is the most your quota can sustain daily without
+hitting a mid-week cutoff.
 
-Use this recommended limit?  (Y/n)
+Recommended limit: {N}   Accept? (Y/n)
+Or enter your own value: _
 ```
 
-- If yes: leave `api.limit` unset (null) in config.yaml — the guard already
-  applies this recommendation as its default whenever the value is null.
+- If yes: leave `api.limit` unset (null) in config.yaml — `discover` computes
+  and applies this exact recommendation as its default whenever the value is
+  null and the weekly quota is known (P2.9; see `careeros/budget.py
+  recommend()` / `cli.py discover`'s base-limit resolution).
 - If no: ask **"Enter your preferred daily discovery limit:"**, accept any
   positive integer, and write it to `api.limit` in config.yaml. If the
   number they choose is likely to exceed their weekly quota, say so plainly
   (re-run `careeros config` after writing it — the guard will print a
   warning if so) but **write whatever they chose anyway** — the guard
   recommends and warns, it never overrides the candidate's own choice.
+- Either way, mention this can be changed later by editing `api.limit` in
+  `.careeros/config.yaml` directly (see the README's Configuration section),
+  or via `careeros doctor`, which shows the current vs. recommended limit on
+  every run.
 
 ## Step 6 — Deal-breakers and logistics
 

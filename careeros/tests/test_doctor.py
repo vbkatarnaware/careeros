@@ -6,6 +6,7 @@ existing test file needed this pattern before)."""
 
 from __future__ import annotations
 
+from careeros import budget
 from careeros.cli import _CheckStatus, _run_doctor_checks
 from careeros.config import Config
 
@@ -211,6 +212,66 @@ def test_drive_enabled_missing_root_folder_id_fails(tmp_path, monkeypatch):
     status, detail = _status_for(results, "Google Drive")
     assert status == _CheckStatus.FAIL
     assert "root_folder_id" in detail
+
+
+def test_no_last_discovery_error_shows_pass(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last discovery run")
+    assert status == _CheckStatus.PASS
+    assert "no recorded failures" in detail
+
+
+def test_last_discovery_error_surfaces_as_warning_from_local_state_only(tmp_path, monkeypatch):
+    """P2.9: doctor reads the persisted last-failure file — no live API call."""
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    budget.record_last_error(tmp_path / ".careeros", "2026-07-09", "API key rejected (HTTP 401)")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last discovery run")
+    assert status == _CheckStatus.WARN
+    assert "2026-07-09" in detail
+    assert "API key rejected" in detail
+
+
+def test_discovery_limit_warns_when_current_exceeds_recommended(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)  # no work_mode_priority -> 1 query tier
+    monkeypatch.setenv("X", "k")
+    # api.limit unset -> DEFAULT_LIMIT (100); recommended = 500 // 7 // 1 = 71
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "plan": "free"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Discovery limit")
+    assert status == _CheckStatus.WARN
+    assert "current=100" in detail
+    assert "recommended=71" in detail
+
+
+def test_discovery_limit_passes_when_within_recommendation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both",
+                     "plan": "free", "limit": 50})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Discovery limit")
+    assert status == _CheckStatus.PASS
+    assert "current=50" in detail
+
+
+def test_discovery_limit_not_shown_when_plan_unknown(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"})  # no plan
+    results = _run_doctor_checks(cfg)
+    status, _ = _status_for(results, "Discovery limit")
+    assert status is None
 
 
 def test_no_failures_means_a_fully_configured_setup_is_all_clear(tmp_path, monkeypatch):

@@ -208,6 +208,42 @@ def record_consumption(state: dict[str, Any], records: int, requests: int = 1) -
     return state
 
 
+# ── last-error diagnostics (P2.9) — local state only, no live API call ──────
+# A separate file from BUDGET_FILENAME's rolling-week counter so its schema
+# (asserted exactly in test_budget.py) never has to change.
+
+LAST_ERROR_FILENAME = "last_discovery_error.json"
+
+
+def _last_error_path(careeros_dir: Path) -> Path:
+    return Path(careeros_dir) / LAST_ERROR_FILENAME
+
+
+def record_last_error(careeros_dir: Path, date: str, message: str) -> None:
+    """Persist the most recent `discover` failure so `careeros doctor` can
+    show a plain-English diagnosis without making a live API call (which
+    would spend quota on every doctor run). Overwritten on every failed
+    attempt; cleared by `clear_last_error` on the next success."""
+    Path(careeros_dir).mkdir(parents=True, exist_ok=True)
+    _last_error_path(careeros_dir).write_text(json.dumps({"date": date, "message": message}))
+
+
+def load_last_error(careeros_dir: Path) -> Optional[dict[str, Any]]:
+    path = _last_error_path(careeros_dir)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def clear_last_error(careeros_dir: Path) -> None:
+    path = _last_error_path(careeros_dir)
+    if path.exists():
+        path.unlink()
+
+
 def check_before_run(
     state: dict[str, Any], quota: Optional[int]
 ) -> tuple[bool, Optional[str]]:

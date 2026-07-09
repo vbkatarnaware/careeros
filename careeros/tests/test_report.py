@@ -112,3 +112,71 @@ def test_summary_apply_list_sorted_by_score_descending():
     evals = [make_eval(id="a", score=4.1), make_eval(id="b", score=4.6)]
     md = render_summary("2026-07-08", {"totals": {}}, evals, [], jobs, threshold=4.0)
     assert md.index("**4.6** B") < md.index("**4.1** A")
+
+
+# ── P2.9 Discovery KPI block ─────────────────────────────────────────────────
+
+def test_discovery_kpi_shows_apply_conversion_rate():
+    manifest = {"totals": {"discovered": 46}}
+    ev = make_eval(id="job-1")
+    job = make_job(id="job-1")
+    md = render_summary("2026-07-08", manifest, [ev], [], {"job-1": job}, threshold=4.0)
+    assert "Apply conversion: 1/46 discovered (2.2%)" in md
+    assert "Apply+Consider yield: 1/46 discovered (2.2%)" in md
+
+
+def test_discovery_kpi_conversion_uses_apply_and_consider_together_for_yield():
+    manifest = {"totals": {"discovered": 20}}
+    apply_ev = make_eval(id="a")
+    consider_ev = make_eval(id="b", score=3.6, recommendation="skip")
+    jobs = {"a": make_job(id="a"), "b": make_job(id="b", apply_url="https://x/2")}
+    md = render_summary("2026-07-08", manifest, [apply_ev], [consider_ev], jobs, threshold=4.0)
+    assert "Apply conversion: 1/20 discovered (5.0%)" in md
+    assert "Apply+Consider yield: 2/20 discovered (10.0%)" in md
+
+
+def test_discovery_kpi_handles_zero_discovered_without_crashing():
+    md = render_summary("2026-07-08", {"totals": {}}, [], [], {}, threshold=4.0)
+    assert "no jobs discovered this run" in md
+
+
+def test_discovery_kpi_shows_ats_vs_job_board_split():
+    stats = {"ats_count": 44, "jb_count": 2, "top_platforms": []}
+    md = render_summary("2026-07-08", {"totals": {"discovered": 46}}, [], [], {},
+                        threshold=4.0, discovery_stats=stats)
+    assert "44 ATS-direct, 2 job board" in md
+
+
+def test_discovery_kpi_shows_top_platforms():
+    stats = {"ats_count": 20, "jb_count": 0, "top_platforms": [("greenhouse", 15), ("ashby", 2)]}
+    md = render_summary("2026-07-08", {"totals": {"discovered": 20}}, [], [], {},
+                        threshold=4.0, discovery_stats=stats)
+    assert "greenhouse (15), ashby (2)" in md
+
+
+def test_discovery_kpi_shows_requests_and_records_with_quota():
+    stats = {
+        "ats_count": 46, "jb_count": 0, "top_platforms": [],
+        "requests_this_run": 3, "requests_this_week": 6,
+        "records_this_run": 46, "records_this_week": 46, "records_quota": 500,
+    }
+    md = render_summary("2026-07-08", {"totals": {"discovered": 46}}, [], [], {},
+                        threshold=4.0, discovery_stats=stats)
+    assert "API requests: 3 this run, 6 this week" in md
+    assert "API records: 46 this run, 46/500 this week (9%) — 454 remaining before Monday reset" in md
+
+
+def test_discovery_kpi_records_without_quota_configured():
+    stats = {
+        "ats_count": 10, "jb_count": 0, "top_platforms": [],
+        "records_this_run": 10, "records_this_week": 10, "records_quota": None,
+    }
+    md = render_summary("2026-07-08", {"totals": {"discovered": 10}}, [], [], {},
+                        threshold=4.0, discovery_stats=stats)
+    assert "no weekly quota configured" in md
+
+
+def test_discovery_kpi_heading_present_with_graceful_fallback_when_no_data():
+    md = render_summary("2026-07-08", {"totals": {}}, [], [], {}, threshold=4.0)
+    assert "## Discovery KPI" in md
+    assert "no jobs discovered this run" in md

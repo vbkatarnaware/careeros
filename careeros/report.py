@@ -14,6 +14,8 @@ report (see skills/prep.md) is where actual reasoning/research happens.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from careeros.models import Eval, Job
 
 
@@ -51,11 +53,70 @@ def render_daily_report(job: Job, evaluation: Eval, resume_path: str, cover_path
 """
 
 
+def _discovery_kpi_block(
+    totals: dict, num_apply: int, num_consider: int, discovery_stats: Optional[dict],
+) -> str:
+    """P2.9 Discovery KPI block: Apply conversion (the discovery-quality
+    metric tracked against the 5-interviews/week KPI over time), ATS vs job
+    board source split, and requests/records used vs quota — all read-only
+    over data other stages already wrote (raw.json, run.json,
+    discovery_budget.json). Adds no new fetch; this IS the evidence a future
+    (frozen) discovery decision would need."""
+    discovered = totals.get("discovered")
+    lines: list[str] = []
+
+    if discovered:
+        apply_rate = num_apply / discovered
+        yield_rate = (num_apply + num_consider) / discovered
+        lines.append(f"- Apply conversion: {num_apply}/{discovered} discovered ({apply_rate:.1%})")
+        lines.append(
+            f"- Apply+Consider yield: {num_apply + num_consider}/{discovered} discovered ({yield_rate:.1%})"
+        )
+    else:
+        lines.append("- Apply conversion: _no jobs discovered this run_")
+
+    if discovery_stats:
+        ats = discovery_stats.get("ats_count")
+        jb = discovery_stats.get("jb_count")
+        if ats is not None or jb is not None:
+            lines.append(f"- Sources: {ats or 0} ATS-direct, {jb or 0} job board (LinkedIn/YC/Wellfound)")
+
+        platforms = discovery_stats.get("top_platforms")
+        if platforms:
+            plist = ", ".join(f"{name} ({count})" for name, count in platforms)
+            lines.append(f"- Top platforms: {plist}")
+
+        req_run = discovery_stats.get("requests_this_run")
+        req_week = discovery_stats.get("requests_this_week")
+        if req_run is not None:
+            lines.append(f"- API requests: {req_run} this run, {req_week} this week")
+
+        rec_run = discovery_stats.get("records_this_run")
+        rec_week = discovery_stats.get("records_this_week")
+        if rec_run is not None:
+            quota = discovery_stats.get("records_quota")
+            if quota:
+                pct = rec_week / quota
+                remaining = max(0, quota - rec_week)
+                lines.append(
+                    f"- API records: {rec_run} this run, {rec_week}/{quota} this week "
+                    f"({pct:.0%}) — {remaining} remaining before Monday reset"
+                )
+            else:
+                lines.append(
+                    f"- API records: {rec_run} this run, {rec_week} this week "
+                    "(no weekly quota configured — set api.plan)"
+                )
+
+    return "\n".join(lines) if lines else "_No discovery data recorded yet._"
+
+
 def render_summary(
     date: str, manifest: dict,
     apply_evals: list[Eval], consider_evals: list[Eval],
     jobs_by_id: dict[str, Job],
     threshold: float = 4.0, consider_threshold: float = 3.5,
+    discovery_stats: Optional[dict] = None,
 ) -> str:
     """Day-level executive summary (P2.6). Same zero-AI philosophy as
     render_daily_report — a pure render of run.json + the day's ALREADY-
@@ -86,6 +147,8 @@ def render_summary(
     selected = sorted(apply_evals, key=lambda e: -e.score)
     near_miss = sorted(consider_evals, key=lambda e: -e.score)
 
+    discovery_kpi = _discovery_kpi_block(totals, len(selected), len(near_miss), discovery_stats)
+
     def _label(e: Eval) -> str:
         job = jobs_by_id.get(e.id)
         return f"{job.company} — {job.title}" if job else e.id
@@ -113,6 +176,9 @@ def render_summary(
 
 ## Funnel
 {funnel}
+
+## Discovery KPI
+{discovery_kpi}
 
 ## Apply — score ≥ {threshold:.1f} ({len(selected)})
 {apply_section}

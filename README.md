@@ -128,7 +128,12 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
    Consider/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
    per interview-worthy job, supply-aware — a day with 0 selected is a
    legitimate outcome, not a failure, and CareerOS never lowers the quality
-   bar just to hit a job count.
+   bar just to hit a job count. It also includes a **Discovery KPI** block
+   (P2.9): Apply conversion (Apply ÷ Discovered — the discovery-quality
+   metric tracked over time against the interviews/week goal), the ATS vs.
+   job-board source split, and requests/records used against your weekly
+   quota. All of it is read from files other stages already wrote — no new
+   API calls.
 10. **Drive** *(optional, off by default)* — additive backup of Apply-tier
     artifacts (Resume/Cover as PDF, Evaluation, Deep Report if present) into
     one flat Drive folder via your own OAuth desktop grant. Idempotent
@@ -153,7 +158,7 @@ Two more commands exist outside the daily loop, deliberately:
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
 | `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive. Never modifies anything |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus (P2.9) your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call). Never modifies anything |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
 | `careeros apply <job-id>` | Detect ATS, draft answers to pasted questions |
@@ -236,8 +241,12 @@ Then:
    opens by asking you to paste your CV (optional; `skip` to answer
    questions instead), then extracts your facts into `.careeros/profile.yaml`
    and asks your interviews/week goal + Fantastic Jobs plan to recommend a
-   daily discovery limit. Or hand-edit `.careeros/profile.yaml` directly —
-   see `templates/profile.example.yaml`.
+   daily discovery limit — shown with its arithmetic (plan's weekly quota ÷
+   active days ÷ your profile's query tiers), so you can accept it or enter
+   your own value. Or hand-edit `.careeros/profile.yaml` directly — see
+   `templates/profile.example.yaml`. **Change the limit anytime later** by
+   editing `api.limit` in `.careeros/config.yaml`, or check `careeros doctor`
+   for the current-vs-recommended comparison.
 3. **Set up Google Sheets** (the daily results destination): a spreadsheet id
    + service-account credentials path in `config.yaml`'s `sheets:` block.
    First time with Google Cloud? Follow the click-by-click walkthrough in
@@ -247,7 +256,12 @@ Then:
    Drive backup is covered there too.)
 4. **Check your setup**: `careeros doctor` — a green/red checklist for
    Python version, profile, discovery credentials, Sheets, and Drive. Fixes
-   nothing itself; just tells you exactly what's missing.
+   nothing itself; just tells you exactly what's missing. If `discover` ever
+   fails, it now classifies *why* — an invalid/expired API key, a network or
+   Fantastic Jobs outage, transient rate-limiting, or your request/record
+   quota being exhausted are each reported with a distinct, plain-English
+   next action instead of a generic error; `doctor` also shows the last
+   failure from local state, with no extra API call.
 5. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Example run

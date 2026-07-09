@@ -184,17 +184,67 @@ def _endpoint_limits(effective_cfg: dict[str, Any], endpoints: tuple[str, ...], 
 def _fetch_one_endpoint(
     base_url: str, headers: dict[str, str], endpoint: str, params: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Every failure mode is classified into a plain-English cause + next
+    action (P2.9) — never a generic "request failed"/"HTTP 500" dead end.
+    Weekly RECORD quota exhaustion is caught earlier, pre-call, by
+    `budget.check_before_run` (that's OUR guard); the cases here are what the
+    API itself reports mid-call: invalid/expired key, its own request/job
+    quota, transient rate-limiting, and network/service outages — each
+    distinct because the user's next action differs (rotate a key vs. wait
+    for a reset vs. just retry)."""
     try:
         resp = requests.get(
             f"{base_url}/v1/{endpoint}", headers=headers, params=params, timeout=_TIMEOUT_S,
         )
+    except requests.Timeout as e:
+        raise ProviderError(
+            f"fantastic-jobs ({endpoint}): timed out reaching Fantastic Jobs — this looks like a "
+            "network or service outage, not a configuration problem. Retry in a few minutes."
+        ) from e
+    except requests.ConnectionError as e:
+        raise ProviderError(
+            f"fantastic-jobs ({endpoint}): couldn't connect to Fantastic Jobs — this looks like a "
+            "network or service outage, not a configuration problem. Check your connection and "
+            "retry later."
+        ) from e
     except requests.RequestException as e:
         raise ProviderError(f"fantastic-jobs ({endpoint}): request failed — {e}") from e
 
-    if resp.status_code == 429:
+    if resp.status_code in (401, 403):
         raise ProviderError(
-            f"fantastic-jobs ({endpoint}): rate limit / quota exceeded (HTTP 429) — "
-            "check your plan's remaining credits."
+            f"fantastic-jobs ({endpoint}): API key rejected (HTTP {resp.status_code}) — your "
+            "FANTASTIC_API_KEY (or RAPIDAPI_KEY) is invalid, expired, or lacks access. Check/rotate "
+            "it — see providers/README.md."
+        )
+    if resp.status_code == 429:
+        # x-ratelimit-*-remaining headers (per Fantastic Jobs' own docs)
+        # distinguish a hard billing-period quota from ordinary transient
+        # rate-limiting — the next action differs (wait for reset/upgrade vs.
+        # just retry), so don't collapse them into one message.
+        remaining_requests = resp.headers.get("x-ratelimit-requests-remaining")
+        remaining_jobs = resp.headers.get("x-ratelimit-jobs-remaining")
+        if remaining_requests == "0":
+            raise ProviderError(
+                f"fantastic-jobs ({endpoint}): request quota exhausted for this billing period "
+                "(HTTP 429, x-ratelimit-requests-remaining: 0) — wait for it to reset, or upgrade "
+                "your plan."
+            )
+        if remaining_jobs == "0":
+            raise ProviderError(
+                f"fantastic-jobs ({endpoint}): job/record quota exhausted for this billing period "
+                "(HTTP 429, x-ratelimit-jobs-remaining: 0) — wait for it to reset, or upgrade your "
+                "plan. (CareerOS's own weekly record guard should normally catch this before it "
+                "happens — see `careeros doctor`.)"
+            )
+        raise ProviderError(
+            f"fantastic-jobs ({endpoint}): rate limited (HTTP 429) — usually transient. "
+            "Wait a moment and retry."
+        )
+    if 500 <= resp.status_code < 600:
+        raise ProviderError(
+            f"fantastic-jobs ({endpoint}): Fantastic Jobs returned a server error "
+            f"(HTTP {resp.status_code}) — this looks like a service outage on their end, not a "
+            "configuration problem. Retry later."
         )
     if resp.status_code != 200:
         raise ProviderError(f"fantastic-jobs ({endpoint}): HTTP {resp.status_code} — {resp.text[:300]}")

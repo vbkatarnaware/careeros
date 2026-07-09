@@ -231,6 +231,40 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                                          'api.transport not set — choose "direct" or "rapidapi" in config.yaml'))
         endpoint = cfg.api.get("endpoint", "both")
         results.append(_check_result(_CheckStatus.PASS, "Discovery endpoint", f"endpoint={endpoint}"))
+
+        # Last discovery failure (P2.9) — LOCAL STATE ONLY: read from the file
+        # `discover` wrote on its last failed attempt. Never a live API call,
+        # so `doctor` never spends quota just by being run.
+        last_error = budget.load_last_error(cfg.careeros_dir)
+        if last_error:
+            results.append(_check_result(_CheckStatus.WARN, "Last discovery run",
+                                         f"failed on {last_error.get('date')}: {last_error.get('message')}"))
+        else:
+            results.append(_check_result(_CheckStatus.PASS, "Last discovery run", "no recorded failures"))
+
+        # Recommended vs configured discovery limit (P2.9) — same formula
+        # `careeros config`/`start` already print, surfaced here too so
+        # `doctor` is a one-stop diagnostic. Display only; never mutates.
+        if cfg.profile_path.exists():
+            try:
+                num_queries = len(build_query_plan(_load_profile(cfg), cfg.api)) or 1
+            except Exception:
+                num_queries = 1
+            rec = budget.recommend(cfg.api, cfg.goals, num_queries)
+            if rec.quota and rec.recommended_per_request is not None:
+                if rec.configured_limit > rec.recommended_per_request:
+                    results.append(_check_result(
+                        _CheckStatus.WARN, "Discovery limit",
+                        f"current={rec.configured_limit}, recommended={rec.recommended_per_request} "
+                        f"(plan {rec.plan}: {rec.quota} records/wk ÷ {rec.active_days} active days ÷ "
+                        f"{num_queries} query tier(s)) — edit api.limit in .careeros/config.yaml, or "
+                        "re-run `careeros start`."
+                    ))
+                else:
+                    results.append(_check_result(
+                        _CheckStatus.PASS, "Discovery limit",
+                        f"current={rec.configured_limit}, recommended={rec.recommended_per_request} — within quota"
+                    ))
     elif cfg.provider == "fantastic-jobs-actor":
         token_env = cfg.apify.get("token_env", "APIFY_TOKEN")
         tokens_env = cfg.apify.get("tokens_env", "APIFY_TOKENS")
@@ -336,7 +370,9 @@ def discover(
 
     # api.limit is the user's default per-query record cap; an explicit
     # --limit still wins, and tier_limits still override per work-mode tier.
-    base_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
+    explicit_limit = provider_cfg.get("limit")
+    has_explicit_limit = limit is not None or (isinstance(explicit_limit, int) and explicit_limit > 0)
+    base_limit = limit if limit is not None else (explicit_limit or 100)
 
     # ── Quota guard (P2.8). REST provider only — the legacy actor has its own
     # per-call USD cost model. Recommend + explain + warn + prevent, but never
@@ -349,8 +385,18 @@ def discover(
         # query TIERS. The HTTP call count (tiers × endpoints) is tracked
         # separately for the informational request counter.
         num_endpoints = 2 if provider_cfg.get("endpoint", "both") == "both" else 1
-        http_requests = len(queries) * num_endpoints
         rec = budget.recommend(cfg.api, cfg.goals, len(queries), cli_default_limit=base_limit)
+        # P2.9: with no explicit limit (CLI --limit or api.limit) and a known
+        # weekly quota (e.g. plan: free), USE the computed recommendation as
+        # the actual per-query fetch limit instead of the hardcoded 100 —
+        # closing the gap between what `careeros config`/`start` already
+        # recommend and what `discover` actually fetches. Recompute `rec` so
+        # the printed lines describe what's ACTUALLY about to run, not a
+        # hypothetical 100-record default. An explicit limit is NEVER touched.
+        if not has_explicit_limit and rec.recommended_per_request is not None:
+            base_limit = rec.recommended_per_request
+            rec = budget.recommend(cfg.api, cfg.goals, len(queries), cli_default_limit=base_limit)
+        http_requests = len(queries) * num_endpoints
         for line in rec.lines():
             typer.echo(f"[discover] {line}")
         quota = budget.weekly_quota(cfg.api)
@@ -377,8 +423,12 @@ def discover(
             )
             raw_items.extend(items)
     except ProviderError as e:
+        # P2.9: persist the classified failure so `careeros doctor` can show
+        # it later without a live API call (see budget.record_last_error).
+        budget.record_last_error(cfg.careeros_dir, date, str(e))
         typer.echo(f"[discover] {e}", err=True)
         raise typer.Exit(1)
+    budget.clear_last_error(cfg.careeros_dir)
     elapsed = time.time() - start
 
     # The API was consumed regardless of --dry-run, so record it against the
@@ -691,8 +741,16 @@ def _evaluate_prepare(cfg: Config, date: str) -> None:
         key = eval_cache_key(job_hash, profile.version, prompt_version)
         cached = cache.get("evaluate", key)
         if cached:
+            # The cache key is content-based (job_hash excludes `source`), so a
+            # cache hit can carry a STALE `id` from whenever this content was
+            # first evaluated under a different Job.id (e.g. before the P2.7
+            # actor->REST provider migration, since `source` feeds Job.id but
+            # not content_hash). Eval.id must be today's actual job_id or every
+            # downstream stage (threshold/artifacts/drive/sheets/summary) fails
+            # to find the matching Job — found live 2026-07-10 on a real cache
+            # hit (Motive PM) that silently displaced today's own evaluation.
             with open(stage_dir / f"{job_id}.json", "w") as f:
-                f.write(dumps(cached))
+                f.write(dumps({**cached, "id": job_id}))
             cache_hits += 1
         else:
             to_evaluate.append({"job": job, "job_hash": job_hash})
@@ -1058,6 +1116,48 @@ def render_report(job_id: str, date: str = typer.Option(None)):
     typer.echo(f"[render-report] wrote {report_path}")
 
 
+def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
+    """P2.9 Discovery KPI join — read-only over files `discover` already
+    wrote plus the rolling-week budget state. Fetches nothing, mutates
+    nothing; the join key is raw item `source_type`/`source` (present on
+    every Fantastic Jobs item — see providers/fantastic_jobs.py). Requests
+    this run are recomputed deterministically from raw.json's `queries` list
+    length × endpoint count (both already persisted at discover time), so no
+    new per-run request count needs to be stored."""
+    import json
+
+    raw_path = runmeta.stage_dir(cfg.runs_dir, date, "discover") / "raw.json"
+    if not raw_path.exists():
+        return None
+    with open(raw_path) as f:
+        raw = json.load(f)
+    items = raw.get("items", [])
+
+    ats_count = sum(1 for it in items if it.get("source_type") == "ats")
+    jb_count = len(items) - ats_count
+
+    platform_counts: dict[str, int] = {}
+    for it in items:
+        src = it.get("source")
+        if src:
+            platform_counts[src] = platform_counts.get(src, 0) + 1
+    top_platforms = sorted(platform_counts.items(), key=lambda kv: -kv[1])[:5]
+
+    stats: dict = {"ats_count": ats_count, "jb_count": jb_count, "top_platforms": top_platforms}
+
+    if raw.get("provider") == "fantastic-jobs":
+        num_queries = len(raw.get("queries", []))
+        num_endpoints = 2 if cfg.api.get("endpoint", "both") == "both" else 1
+        state = budget.load_state(cfg.careeros_dir, date)
+        stats["requests_this_run"] = num_queries * num_endpoints
+        stats["requests_this_week"] = state.get("requests", 0)
+        stats["records_this_run"] = len(items)
+        stats["records_this_week"] = state.get("records", 0)
+        stats["records_quota"] = budget.weekly_quota(cfg.api)
+
+    return stats
+
+
 @app.command("summary")
 def summary(date: str = typer.Option(None)):
     """[dev] Render the day-level executive summary.md — pure template, zero
@@ -1092,8 +1192,11 @@ def summary(date: str = typer.Option(None)):
         with open(jobs_path) as f:
             jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
+    discovery_stats = _build_discovery_stats(cfg, date)
+
     summary_md = render_summary(date, manifest, apply_evals, consider_evals, jobs_by_id,
-                                threshold=cfg.threshold, consider_threshold=cfg.consider_threshold)
+                                threshold=cfg.threshold, consider_threshold=cfg.consider_threshold,
+                                discovery_stats=discovery_stats)
     summary_path = runmeta.run_dir(cfg.runs_dir, date) / "summary.md"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as f:

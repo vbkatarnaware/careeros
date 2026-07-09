@@ -120,6 +120,47 @@ def test_load_state_tolerates_corrupt_file(tmp_path):
     assert state == {"week_start": "2026-07-06", "records": 0, "requests": 0}
 
 
+# ── last-error diagnostics (P2.9) ────────────────────────────────────────────
+
+def test_load_last_error_none_when_no_file(tmp_path):
+    assert budget.load_last_error(tmp_path) is None
+
+
+def test_record_and_load_last_error_roundtrip(tmp_path):
+    budget.record_last_error(tmp_path, "2026-07-10", "API key rejected (HTTP 401)")
+    err = budget.load_last_error(tmp_path)
+    assert err == {"date": "2026-07-10", "message": "API key rejected (HTTP 401)"}
+
+
+def test_record_last_error_creates_careeros_dir(tmp_path):
+    nested = tmp_path / "not-yet-created"
+    budget.record_last_error(nested, "2026-07-10", "boom")
+    assert budget.load_last_error(nested) is not None
+
+
+def test_clear_last_error_removes_the_file(tmp_path):
+    budget.record_last_error(tmp_path, "2026-07-10", "boom")
+    budget.clear_last_error(tmp_path)
+    assert budget.load_last_error(tmp_path) is None
+
+
+def test_clear_last_error_is_a_noop_when_nothing_recorded(tmp_path):
+    budget.clear_last_error(tmp_path)  # must not raise
+    assert budget.load_last_error(tmp_path) is None
+
+
+def test_record_last_error_overwrites_previous(tmp_path):
+    budget.record_last_error(tmp_path, "2026-07-09", "first failure")
+    budget.record_last_error(tmp_path, "2026-07-10", "second failure")
+    err = budget.load_last_error(tmp_path)
+    assert err == {"date": "2026-07-10", "message": "second failure"}
+
+
+def test_load_last_error_tolerates_corrupt_file(tmp_path):
+    (tmp_path / budget.LAST_ERROR_FILENAME).write_text("{not json")
+    assert budget.load_last_error(tmp_path) is None
+
+
 # ── prevent (check_before_run) ──────────────────────────────────────────────
 
 def test_check_no_quota_never_prevents():
