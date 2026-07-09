@@ -105,15 +105,21 @@ def init():
     if not profile_path.exists():
         shutil.copy(REPO_ROOT / "templates" / "profile.example.yaml", profile_path)
         typer.echo(f"Wrote {profile_path} (seeded template — edit with your own facts,"
-                    " or run `careeros start` for the guided interview)")
+                    " or run `/careeros start` for the guided onboarding)")
     else:
         typer.echo(f"{profile_path} already exists — left untouched")
 
     typer.echo(
-        "\nNext: in .careeros/config.yaml, set api.transport to \"direct\" or \"rapidapi\" "
-        "and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY), set up Sheets "
-        "credentials, then run `careeros daily`. (Prefer the legacy Apify actor instead? "
-        "Set provider: fantastic-jobs-actor and APIFY_TOKEN — see providers/README.md.)"
+        "\nNext:\n"
+        "  1. In .careeros/config.yaml, set api.transport to \"direct\" or \"rapidapi\" "
+        "and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY). (Prefer the "
+        "legacy Apify actor instead? Set provider: fantastic-jobs-actor and APIFY_TOKEN "
+        "— see providers/README.md.)\n"
+        "  2. Run `/careeros start` inside your host coding CLI — paste your CV "
+        "(or `skip`), set your interviews/week goal and plan, and set up Sheets "
+        "credentials (see docs/google-setup.md).\n"
+        "  3. Run `careeros doctor` to confirm everything's ready.\n"
+        "  4. Run `/careeros daily`."
     )
 
 
@@ -151,6 +157,148 @@ def config():
         # reason in tiers (reqs), not ×endpoints.
         rec = budget.recommend(cfg.api, cfg.goals, reqs)
         typer.echo("\n".join(rec.lines()))
+
+
+# ── doctor ────────────────────────────────────────────────────────────────
+
+class _CheckStatus:
+    PASS = "PASS"
+    WARN = "WARN"
+    FAIL = "FAIL"
+
+
+def _check_result(status: str, label: str, detail: str = "") -> tuple[str, str, str]:
+    return (status, label, detail)
+
+
+def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
+    """Pure(ish) — reads env vars, config, and the filesystem; makes no
+    network calls and changes nothing. Each check is independent so one
+    failure never hides the rest."""
+    import os
+    import sys as _sys
+
+    results: list[tuple[str, str, str]] = []
+
+    # Python version
+    if _sys.version_info >= (3, 11):
+        results.append(_check_result(_CheckStatus.PASS, "Python version",
+                                     f"{_sys.version_info.major}.{_sys.version_info.minor} (>= 3.11 required)"))
+    else:
+        results.append(_check_result(_CheckStatus.FAIL, "Python version",
+                                     f"{_sys.version_info.major}.{_sys.version_info.minor} — CareerOS needs Python 3.11+"))
+
+    # .careeros/ scaffolding
+    if not cfg.careeros_dir.exists():
+        results.append(_check_result(_CheckStatus.FAIL, ".careeros/ scaffolding",
+                                     "not found — run `careeros init` first"))
+        return results  # nothing else is checkable yet
+    results.append(_check_result(_CheckStatus.PASS, ".careeros/ scaffolding", str(cfg.careeros_dir)))
+
+    # Profile
+    if not cfg.profile_path.exists():
+        results.append(_check_result(_CheckStatus.FAIL, "Profile (.careeros/profile.yaml)",
+                                     "not found — run `/careeros start` or hand-edit the template"))
+    else:
+        try:
+            _load_profile(cfg)
+            results.append(_check_result(_CheckStatus.PASS, "Profile (.careeros/profile.yaml)", "present and valid"))
+        except Exception as e:
+            results.append(_check_result(_CheckStatus.FAIL, "Profile (.careeros/profile.yaml)",
+                                         f"invalid — {type(e).__name__}: {e}"))
+
+    # Discovery provider credentials
+    if cfg.provider == "fantastic-jobs":
+        transport = cfg.api.get("transport")
+        if transport == "direct":
+            key_env = cfg.api.get("api_key_env", "FANTASTIC_API_KEY")
+            if os.environ.get(key_env):
+                results.append(_check_result(_CheckStatus.PASS, "Discovery credentials",
+                                             f"transport=direct, {key_env} is set"))
+            else:
+                results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials",
+                                             f"transport=direct but {key_env} is not set"))
+        elif transport == "rapidapi":
+            key_env = cfg.api.get("rapidapi_key_env", "RAPIDAPI_KEY")
+            if os.environ.get(key_env):
+                results.append(_check_result(_CheckStatus.PASS, "Discovery credentials",
+                                             f"transport=rapidapi, {key_env} is set"))
+            else:
+                results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials",
+                                             f"transport=rapidapi but {key_env} is not set"))
+        else:
+            results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials",
+                                         'api.transport not set — choose "direct" or "rapidapi" in config.yaml'))
+        endpoint = cfg.api.get("endpoint", "both")
+        results.append(_check_result(_CheckStatus.PASS, "Discovery endpoint", f"endpoint={endpoint}"))
+    elif cfg.provider == "fantastic-jobs-actor":
+        token_env = cfg.apify.get("token_env", "APIFY_TOKEN")
+        tokens_env = cfg.apify.get("tokens_env", "APIFY_TOKENS")
+        if os.environ.get(tokens_env) or os.environ.get(token_env):
+            results.append(_check_result(_CheckStatus.PASS, "Discovery credentials (legacy actor)",
+                                         f"{tokens_env} or {token_env} is set"))
+        else:
+            results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials (legacy actor)",
+                                         f"neither {tokens_env} nor {token_env} is set"))
+
+    # Sheets
+    spreadsheet_id = cfg.sheets.get("spreadsheet_id")
+    creds_path = cfg.sheets.get("credentials_path")
+    if not spreadsheet_id or not creds_path:
+        results.append(_check_result(_CheckStatus.FAIL, "Google Sheets",
+                                     "sheets.spreadsheet_id and/or sheets.credentials_path not set in config.yaml "
+                                     "— see docs/google-setup.md"))
+    elif not Path(creds_path).exists():
+        results.append(_check_result(_CheckStatus.FAIL, "Google Sheets",
+                                     f"sheets.credentials_path does not exist: {creds_path}"))
+    else:
+        results.append(_check_result(_CheckStatus.PASS, "Google Sheets",
+                                     f"spreadsheet_id set, credentials file found"))
+
+    # Drive (optional — only checked if enabled)
+    if cfg.drive.get("enabled"):
+        client_secret_path = cfg.drive.get("client_secret_path")
+        root_folder_id = cfg.drive.get("root_folder_id")
+        if not client_secret_path or not Path(client_secret_path).exists():
+            results.append(_check_result(_CheckStatus.FAIL, "Google Drive (enabled)",
+                                         f"client_secret_path missing or not found: {client_secret_path}"))
+        elif not root_folder_id:
+            results.append(_check_result(_CheckStatus.FAIL, "Google Drive (enabled)",
+                                         "drive.root_folder_id not set in config.yaml"))
+        else:
+            try:
+                import google_auth_oauthlib  # noqa: F401
+                results.append(_check_result(_CheckStatus.PASS, "Google Drive (enabled)",
+                                             "credentials configured, [drive] extra installed"))
+            except ImportError:
+                results.append(_check_result(_CheckStatus.FAIL, "Google Drive (enabled)",
+                                             'credentials configured but [drive] extra not installed — '
+                                             'run: pip install -e ".[drive]"'))
+    else:
+        results.append(_check_result(_CheckStatus.WARN, "Google Drive", "disabled (drive.enabled: false) — optional"))
+
+    return results
+
+
+@app.command()
+def doctor():
+    """First-run checklist: Python version, profile, discovery credentials,
+    Sheets, and (if enabled) Drive. Checks only — never modifies anything.
+    Exits non-zero if any check FAILs, so it's safe to gate a first `daily`
+    run on `careeros doctor && careeros daily`-style scripting."""
+    cfg = _config()
+    results = _run_doctor_checks(cfg)
+
+    icon = {_CheckStatus.PASS: "✓", _CheckStatus.WARN: "!", _CheckStatus.FAIL: "✗"}
+    for status, label, detail in results:
+        typer.echo(f"[{icon[status]}] {label:32} {detail}")
+
+    fails = [r for r in results if r[0] == _CheckStatus.FAIL]
+    typer.echo("")
+    if fails:
+        typer.echo(f"{len(fails)} check(s) failed — fix the items marked [✗] above before running `daily`.")
+        raise typer.Exit(1)
+    typer.echo("All checks passed. You're ready to run `/careeros daily`.")
 
 
 # ── discover ──────────────────────────────────────────────────────────────
@@ -1149,12 +1297,17 @@ def scan():
 
 @app.command()
 def start():
-    """Guided profile interview -> .careeros/profile.yaml."""
+    """Guided onboarding -> .careeros/profile.yaml + discovery goal/plan."""
     typer.echo(
-        "`careeros start` is a host-CLI skill (an interactive interview needs "
-        "the agent's reasoning to ask good follow-ups).\n\n"
+        "`careeros start` is a host-CLI skill (an interactive onboarding "
+        "needs the agent's reasoning to extract facts from your CV and ask "
+        "good follow-ups).\n\n"
         "Run it as `/careeros start`. Playbook: "
         f"{REPO_ROOT / 'skills' / 'start.md'}\n\n"
+        "It opens by asking you to paste your CV (optional — type `skip` to "
+        "build your profile by answering questions instead), then captures "
+        "your interviews/week goal and Fantastic Jobs plan to recommend a "
+        "daily discovery limit.\n\n"
         "For now, you can also hand-edit .careeros/profile.yaml directly "
         "(seeded from templates/profile.example.yaml by `careeros init`)."
     )

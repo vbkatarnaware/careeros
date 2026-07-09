@@ -149,11 +149,12 @@ Two more commands exist outside the daily loop, deliberately:
 | Command | Description |
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
-| `careeros start` | Guided interview → `.careeros/profile.yaml` |
+| `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan. Opens by asking for your CV (optional — `skip` to answer questions instead) |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive. Never modifies anything |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
 | `careeros apply <job-id>` | Detect ATS, draft answers to pasted questions |
-| `careeros config` | Show resolved config |
+| `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
 
 Developer/debug commands — each stage runnable standalone against a run
@@ -227,8 +228,12 @@ Then:
    `export APIFY_TOKENS=tok1,tok2,...` — a comma-separated rotation pool that
    is preferred over `APIFY_TOKEN` and auto-rotates when a token's budget is
    exhausted.)*
-2. **Set up your profile**: `careeros start` (guided interview) or hand-edit
-   `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
+2. **Set up your profile**: `/careeros start` inside your host coding CLI —
+   opens by asking you to paste your CV (optional; `skip` to answer
+   questions instead), then extracts your facts into `.careeros/profile.yaml`
+   and asks your interviews/week goal + Fantastic Jobs plan to recommend a
+   daily discovery limit. Or hand-edit `.careeros/profile.yaml` directly —
+   see `templates/profile.example.yaml`.
 3. **Set up Google Sheets** (the daily results destination): a spreadsheet id
    + service-account credentials path in `config.yaml`'s `sheets:` block.
    First time with Google Cloud? Follow the click-by-click walkthrough in
@@ -236,7 +241,10 @@ Then:
    service account, downloading the key, and the easily-missed step of
    *sharing your Sheet with the service account's email*. (Optional Google
    Drive backup is covered there too.)
-4. **Run it**: `/careeros daily` inside your host coding CLI.
+4. **Check your setup**: `careeros doctor` — a green/red checklist for
+   Python version, profile, discovery credentials, Sheets, and Drive. Fixes
+   nothing itself; just tells you exactly what's missing.
+5. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Example run
 
