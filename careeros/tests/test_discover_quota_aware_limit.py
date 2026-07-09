@@ -72,9 +72,10 @@ def test_explicit_config_limit_is_never_overridden(tmp_path, monkeypatch):
     assert fake.limits == [15]
 
 
-def test_unknown_plan_keeps_hardcoded_default(tmp_path, monkeypatch):
-    """No known quota (plan unset) -> nothing to recommend from, so the
-    guard stays purely informational and the old 100 default holds."""
+def test_unset_plan_defaults_to_free_tier_recommendation(tmp_path, monkeypatch):
+    """P2.9.1: no api.plan configured -> assume Free (the safe OSS default)
+    and compute a real recommendation, instead of silently fetching at the
+    old hardcoded 100 default."""
     monkeypatch.chdir(tmp_path)
     fake = _FakeProvider()
     monkeypatch.setitem(registry._REGISTRY, "fake-fj", fake)
@@ -83,4 +84,25 @@ def test_unknown_plan_keeps_hardcoded_default(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["discover"])
     assert result.exit_code == 0, result.output
+    # No profile.yaml -> single fallback query (1 tier); free tier assumed:
+    # 500 // 7 // 1 = 71
+    assert fake.limits == [71]
+    assert "Assuming the Free plan" in result.output
+
+
+def test_explicit_unknown_plan_keeps_hardcoded_default(tmp_path, monkeypatch):
+    """An EXPLICITLY-set plan with no verified quota (e.g. a typo'd or
+    not-yet-supported plan name) stays purely informational — the free
+    default only applies when api.plan is unset entirely."""
+    monkeypatch.chdir(tmp_path)
+    fake = _FakeProvider()
+    monkeypatch.setitem(registry._REGISTRY, "fake-fj", fake)
+    (tmp_path / ".careeros").mkdir()
+    (tmp_path / ".careeros" / "config.yaml").write_text(
+        "provider: fake-fj\napi:\n  endpoint: both\n  plan: paid\n"
+    )
+
+    result = runner.invoke(app, ["discover"])
+    assert result.exit_code == 0, result.output
     assert fake.limits == [100]
+    assert "Assuming the Free plan" not in result.output

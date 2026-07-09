@@ -26,9 +26,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Only the free tier's weekly record quota is publicly known/verified. Other
-# plans are None on purpose: the guard stays purely informational until the
-# user sets `api.weekly_record_quota` themselves, rather than inventing an
-# unverified paid-tier number.
+# EXPLICITLY-set plans are None on purpose: the guard stays purely
+# informational for those until the user sets `api.weekly_record_quota`
+# themselves, rather than inventing an unverified paid-tier number. An UNSET
+# plan is different (P2.9.1): most new OSS users are on the free tier, so
+# `weekly_quota()` assumes "free" rather than silently falling back to a
+# hardcoded 100-record default that risks an unexpected mid-week 429 for
+# anyone who never touched api.plan.
 PLAN_WEEKLY_RECORD_QUOTA: dict[str, Optional[int]] = {
     "free": 500,
     "rapidapi": None,
@@ -40,15 +44,26 @@ DEFAULT_LIMIT = 100  # mirrors the `discover --limit` default in cli.py
 BUDGET_FILENAME = "discovery_budget.json"
 
 
+def plan_is_assumed(api_cfg: dict[str, Any]) -> bool:
+    """True when the user never configured api.plan or api.weekly_record_quota
+    and "free" is being assumed as the safe OSS default, rather than a
+    deliberate choice. Callers use this to show a one-time disclosure."""
+    explicit_quota = api_cfg.get("weekly_record_quota")
+    has_explicit_quota = isinstance(explicit_quota, int) and explicit_quota > 0
+    return not api_cfg.get("plan") and not has_explicit_quota
+
+
 def weekly_quota(api_cfg: dict[str, Any]) -> Optional[int]:
     """The records/week ceiling: an explicit `api.weekly_record_quota` wins;
-    otherwise it's derived from `api.plan`; otherwise None (guard is
-    informational, no hard ceiling)."""
+    otherwise it's derived from `api.plan`, defaulting to "free" (500) when
+    plan is unset — see the module-level note on PLAN_WEEKLY_RECORD_QUOTA.
+    Still None for an EXPLICITLY-set plan with no verified number (paid/
+    rapidapi/enterprise) — that stays a deliberate, informational-only case."""
     explicit = api_cfg.get("weekly_record_quota")
     if isinstance(explicit, int) and explicit > 0:
         return explicit
-    plan = api_cfg.get("plan")
-    return PLAN_WEEKLY_RECORD_QUOTA.get(plan) if plan else None
+    plan = api_cfg.get("plan") or "free"
+    return PLAN_WEEKLY_RECORD_QUOTA.get(plan)
 
 
 def effective_limit(api_cfg: dict[str, Any], cli_default: int = DEFAULT_LIMIT) -> int:
@@ -67,6 +82,7 @@ def _active_days(api_cfg: dict[str, Any]) -> int:
 @dataclass
 class Recommendation:
     plan: Optional[str]
+    plan_is_assumed: bool
     quota: Optional[int]
     active_days: int
     requests_per_run: int
@@ -79,7 +95,15 @@ class Recommendation:
     over_quota: bool
 
     def lines(self) -> list[str]:
-        """A short, plain-language explanation block for `discover`/`config`."""
+        """A short, plain-language explanation block for `discover`/`config`.
+        Leads with the one-time assumed-plan disclosure when applicable —
+        see `plan_is_assumed`."""
+        out: list[str] = []
+        if self.plan_is_assumed:
+            out.append(
+                "api.plan is not configured. Assuming the Free plan. Run "
+                "`careeros start` or edit config.yaml if you're on a different plan."
+            )
         plan_txt = self.plan or "unset"
         quota_txt = f"{self.quota} records/week" if self.quota else "unknown quota"
         goal_txt = (
@@ -87,7 +111,7 @@ class Recommendation:
             if self.goal_interviews_per_week
             else ""
         )
-        out = [f"Quota guard — plan: {plan_txt} ({quota_txt}){goal_txt}"]
+        out.append(f"Quota guard — plan: {plan_txt} ({quota_txt}){goal_txt}")
         out.append(
             f"  {self.requests_per_run} request(s)/run × limit {self.configured_limit}"
             f" ≈ {self.configured_records_per_day} records/day"
@@ -143,7 +167,8 @@ def recommend(
     over = bool(quota) and configured_weekly > quota
     goal = (goals or {}).get("interviews_per_week")
     return Recommendation(
-        plan=api_cfg.get("plan"),
+        plan=api_cfg.get("plan") or ("free" if quota else None),
+        plan_is_assumed=plan_is_assumed(api_cfg),
         quota=quota,
         active_days=active_days,
         requests_per_run=requests_per_run,

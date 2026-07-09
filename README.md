@@ -240,13 +240,18 @@ Then:
 2. **Set up your profile**: `/careeros start` inside your host coding CLI —
    opens by asking you to paste your CV (optional; `skip` to answer
    questions instead), then extracts your facts into `.careeros/profile.yaml`
-   and asks your interviews/week goal + Fantastic Jobs plan to recommend a
-   daily discovery limit — shown with its arithmetic (plan's weekly quota ÷
-   active days ÷ your profile's query tiers), so you can accept it or enter
-   your own value. Or hand-edit `.careeros/profile.yaml` directly — see
-   `templates/profile.example.yaml`. **Change the limit anytime later** by
-   editing `api.limit` in `.careeros/config.yaml`, or check `careeros doctor`
-   for the current-vs-recommended comparison.
+   and asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
+   Custom quota) to recommend a daily discovery limit, explained in plain
+   English against your own search preferences (e.g. *"CareerOS will run 3
+   discovery searches every day. On the Free plan, the recommended limit is
+   23 records per search."*) — accept it or enter your own value. **If you
+   skip this or never set `api.plan`, CareerOS assumes the Free plan by
+   default** (500 records/week) rather than silently over-fetching — you'll
+   see a one-time note about the assumption on `discover`/`careeros config`,
+   and `careeros doctor` always shows current-vs-recommended. Or hand-edit
+   `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
+   **Change the limit anytime later** by editing `api.limit`/`api.plan` in
+   `.careeros/config.yaml`.
 3. **Set up Google Sheets** (the daily results destination): a spreadsheet id
    + service-account credentials path in `config.yaml`'s `sheets:` block.
    First time with Google Cloud? Follow the click-by-click walkthrough in

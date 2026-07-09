@@ -82,27 +82,57 @@ changes scoring; it's context for the discovery quota recommendation below
 and, later, for measuring your real application-to-interview conversion
 (see the roadmap's P3 outcome-tracking phase).
 
-Ask: **"Which Fantastic Jobs plan are you on — free, RapidAPI, a paid
-direct-API plan, or enterprise?"** → `.careeros/config.yaml`'s `api.plan`.
-If they don't know or haven't signed up for a paid tier yet, `free` is a
-safe default (500 records/week).
+Ask: **"Which Fantastic Jobs plan are you on?"** and offer exactly these
+choices (P2.9.1):
+1. **Free** (500 records/week) — the default for most new users.
+2. **Paid** (RapidAPI, a paid direct-API plan, or enterprise) — ask which,
+   and whether they know their own weekly record allotment.
+3. **Custom quota** — they type their own weekly record number directly
+   (writes `api.weekly_record_quota`, not `api.plan`).
+
+**Always write their choice to config.yaml explicitly** — even if they pick
+Free, write `api.plan: free` rather than leaving it unset. This matters:
+CareerOS now assumes Free by default whenever `api.plan` is unset (so a
+skipped question never silently over-fetches), but an explicit choice here
+means the candidate's config states their real plan instead of relying on
+that default, and the assumed-plan disclosure line never has to show up on
+their `discover` runs.
 
 Then run `careeros config` and read its printed quota-guard recommendation
 block (it looks like: *"Quota guard — plan: free (500 records/week) ...
-Recommended: limit N/request..."*). Its arithmetic is: **plan's weekly
-record quota ÷ active discovery days ÷ number of query tiers your profile
-generates** (one tier per `work_mode_priority` entry — see
-`pipeline/queryplan.py`). Present it plainly, spelling out that arithmetic
-so it's not a magic number:
+Recommended: limit N/request..."*). Under the hood its arithmetic is: plan's
+weekly record quota ÷ active discovery days ÷ number of query tiers this
+candidate's own profile generates (one tier per `work_mode_priority` entry
+— see `pipeline/queryplan.py`; **this count is never hardcoded, it's
+whatever that candidate's own `work_mode_priority` list produces** — a
+remote-only candidate with one entry gets 1 search, a candidate with four
+tiers gets 4, and so on).
+
+**Present this to the candidate in plain English, not as raw arithmetic.**
+Turn each `_work_mode` value into a short human label — `global_remote` →
+"Remote", `{place}_remote` → the place name (title-cased, e.g. `india_remote`
+→ "India"), `onsite` → "Onsite" — and list only the tiers this candidate
+actually has:
 
 ```
-Free plan: 500 records/week ÷ 7 active days ÷ {N tiers} query tier(s)
-≈ {N} records/query — this is the most your quota can sustain daily without
-hitting a mid-week cutoff.
+Based on your search preferences ({tier labels, comma-separated}), CareerOS
+will run {N} discovery search{"es" if N != 1 else ""} every day. On the
+{plan} plan ({quota} records/week), the recommended limit is {per-search}
+records per search (≈{daily} records/day).
 
-Recommended limit: {N}   Accept? (Y/n)
+Recommended limit: {per-search}   Accept? (Y/n)
 Or enter your own value: _
 ```
+
+For example, a candidate with `work_mode_priority: [global_remote,
+india_remote, mumbai_onsite]` (3 tiers) on the Free plan sees: *"Based on
+your search preferences (Remote, India, Onsite), CareerOS will run 3
+discovery searches every day. On the Free plan (500 records/week), the
+recommended limit is 23 records per search (≈69 records/day)."* A candidate
+with only `work_mode_priority: [global_remote]` (1 tier) sees: *"CareerOS
+will run 1 discovery search every day. Recommended limit: 71 records per
+search."* Never hardcode the tier count or labels — always derive them from
+this candidate's own configured tiers.
 
 - If yes: leave `api.limit` unset (null) in config.yaml — `discover` computes
   and applies this exact recommendation as its default whenever the value is

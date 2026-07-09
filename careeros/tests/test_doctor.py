@@ -264,14 +264,31 @@ def test_discovery_limit_passes_when_within_recommendation(tmp_path, monkeypatch
     assert "current=50" in detail
 
 
-def test_discovery_limit_not_shown_when_plan_unknown(tmp_path, monkeypatch):
+def test_discovery_limit_shown_with_assumed_free_plan_when_plan_unset(tmp_path, monkeypatch):
+    """P2.9.1: an unset plan now assumes Free rather than being purely
+    informational, so the Discovery limit row shows using that assumption,
+    clearly flagged as assumed rather than an explicit user choice."""
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     monkeypatch.setenv("X", "k")
     cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"})  # no plan
     results = _run_doctor_checks(cfg)
-    status, _ = _status_for(results, "Discovery limit")
-    assert status is None
+    status, detail = _status_for(results, "Discovery limit")
+    assert status == _CheckStatus.WARN
+    assert "current=100" in detail
+    assert "recommended=71" in detail
+    assert "assumed default" in detail
+
+
+def test_discovery_limit_no_assumed_note_when_plan_explicit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "plan": "free"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Discovery limit")
+    assert status == _CheckStatus.WARN
+    assert "assumed default" not in detail
 
 
 def test_no_failures_means_a_fully_configured_setup_is_all_clear(tmp_path, monkeypatch):

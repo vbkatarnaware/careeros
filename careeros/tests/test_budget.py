@@ -22,8 +22,27 @@ def test_weekly_quota_unknown_for_paid_without_explicit():
     assert budget.weekly_quota({"plan": "paid"}) is None
 
 
-def test_weekly_quota_none_when_no_plan():
-    assert budget.weekly_quota({}) is None
+def test_weekly_quota_defaults_to_free_when_no_plan():
+    """P2.9.1: an unset plan assumes Free (the safe OSS default) rather than
+    silently falling back to a hardcoded 100-record fetch limit."""
+    assert budget.weekly_quota({}) == 500
+
+
+def test_weekly_quota_explicit_quota_wins_even_without_plan():
+    assert budget.weekly_quota({"weekly_record_quota": 1200}) == 1200
+
+
+def test_plan_is_assumed_true_when_nothing_configured():
+    assert budget.plan_is_assumed({}) is True
+
+
+def test_plan_is_assumed_false_when_plan_explicit():
+    assert budget.plan_is_assumed({"plan": "free"}) is False
+    assert budget.plan_is_assumed({"plan": "paid"}) is False
+
+
+def test_plan_is_assumed_false_when_explicit_quota_set():
+    assert budget.plan_is_assumed({"weekly_record_quota": 1200}) is False
 
 
 def test_effective_limit_prefers_api_limit():
@@ -67,10 +86,37 @@ def test_recommend_flags_over_quota_and_never_mutates():
 
 
 def test_recommend_informational_when_quota_unknown():
+    """An EXPLICITLY-set plan with no verified quota (paid/rapidapi/
+    enterprise) stays purely informational — only an UNSET plan gets the
+    free-tier default (see test_recommend_defaults_unset_plan_to_free)."""
     rec = budget.recommend({"plan": "paid"}, {}, requests_per_run=1)
     assert rec.quota is None
     assert rec.recommended_per_request is None
+    assert rec.plan_is_assumed is False
     assert any("No weekly quota known" in ln for ln in rec.lines())
+
+
+def test_recommend_defaults_unset_plan_to_free():
+    """P2.9.1: no api.plan configured -> assume free, compute a real
+    recommendation instead of leaving the guard purely informational."""
+    rec = budget.recommend({}, {}, requests_per_run=1)
+    assert rec.plan == "free"
+    assert rec.plan_is_assumed is True
+    assert rec.quota == 500
+    assert rec.recommended_per_request == 71
+
+
+def test_recommend_assumed_plan_shows_one_time_disclosure():
+    rec = budget.recommend({}, {}, requests_per_run=1)
+    assert any(
+        "api.plan is not configured. Assuming the Free plan." in ln for ln in rec.lines()
+    )
+
+
+def test_recommend_explicit_free_plan_has_no_disclosure():
+    rec = budget.recommend({"plan": "free"}, {}, requests_per_run=1)
+    assert rec.plan_is_assumed is False
+    assert not any("Assuming the Free plan" in ln for ln in rec.lines())
 
 
 # ── rolling-week state ──────────────────────────────────────────────────────

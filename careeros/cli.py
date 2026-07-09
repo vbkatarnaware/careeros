@@ -252,11 +252,12 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                 num_queries = 1
             rec = budget.recommend(cfg.api, cfg.goals, num_queries)
             if rec.quota and rec.recommended_per_request is not None:
+                plan_note = f"{rec.plan} — assumed default, set api.plan to silence" if rec.plan_is_assumed else rec.plan
                 if rec.configured_limit > rec.recommended_per_request:
                     results.append(_check_result(
                         _CheckStatus.WARN, "Discovery limit",
                         f"current={rec.configured_limit}, recommended={rec.recommended_per_request} "
-                        f"(plan {rec.plan}: {rec.quota} records/wk ÷ {rec.active_days} active days ÷ "
+                        f"(plan {plan_note}: {rec.quota} records/wk ÷ {rec.active_days} active days ÷ "
                         f"{num_queries} query tier(s)) — edit api.limit in .careeros/config.yaml, or "
                         "re-run `careeros start`."
                     ))
