@@ -66,7 +66,7 @@ experience is exactly the failure mode this rule exists to prevent.
 
 ## Experience
 
-### {company} — {role}
+### {company}: {role}
 {dates.start} – {dates.end}
 - {selected bullet text, verbatim}
 - {selected bullet text, verbatim}

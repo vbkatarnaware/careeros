@@ -48,7 +48,7 @@ handle a genuine gap, not the model.
 `artifacts/<job-id>/answers.md`:
 
 ```markdown
-# Application Answers — {job.title} at {job.company}
+# Application Answers: {job.title} at {job.company}
 
 ## {question 1 text}
 {answer}
