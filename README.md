@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/github/license/vbkatarnaware/careeros)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 
-A supreme, high-quality job discovery and recommendation engine. Not an
+An AI-powered, deterministic job discovery and recommendation engine. Not an
 application bot.
 
 CareerOS finds jobs, scores them against your real experience, and writes
@@ -94,7 +94,15 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
    legacy Apify-actor provider is also available — see
    `careeros/providers/README.md`), by default as one segmented query per
    profile work-mode tier rather than a single broad fetch
-   (`pipeline/queryplan.py`). Deterministic.
+   (`pipeline/queryplan.py`). The REST provider queries **both** Fantastic
+   sources by default — `active-ats` (career sites/ATS: Greenhouse, Lever,
+   Ashby…) and `active-jb` (+ LinkedIn/YC/Wellfound) — merged and deduped.
+   A production acceptance audit (full 107-job population) found the two
+   sources score an equal ~8% ≥4.0 rate but are 92% disjoint, so querying
+   both roughly doubles interview-worthy jobs found at the **same** quota
+   (the per-tier record allocation is split 50/50, not doubled). Set
+   `api.endpoint` to `active-ats` or `active-jb` to use one source.
+   Deterministic.
 2. **Normalize** — map to the universal `Job` schema. Deterministic.
 3. **Dedupe** — drop jobs already seen this run, in a prior run, or already
    in the Sheet. Deterministic.
@@ -105,9 +113,14 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
 6. **Evaluate** — the real reasoning step. Scores against a Career
    Ops-derived rubric, writes structured JSON only (no long report). This
    file is the source of truth for everything downstream.
-7. **Threshold** — jobs scoring ≥ your configured bar (default 4.0) AND
-   recommended "apply" AND still passing the constraints re-check get
-   artifacts generated; everything evaluated still appears in the Sheet.
+7. **Threshold** — two tiers, both configurable. **Apply** (score ≥ 4.0 AND
+   recommended "apply" AND passing the constraints re-check) gets the full
+   pipeline: resume, cover letter, report, Drive, and a Sheet row. **Consider**
+   (3.5 ≤ score < 4.0) gets a Sheet row only — score plus a one-line reason it
+   fell short — with **no** AI artifacts and no Drive, so near-misses stay
+   visible at zero extra AI cost. Below 3.5 is omitted from the Sheet. A hard
+   constraint failure (location/salary deal-breaker) is always omitted, never
+   shown as Consider.
 8. **Artifacts** — resume + cover letter (selected from `profile.yaml`,
    never invented, cache-checked) + a daily report (rendered from the eval
    JSON, zero AI).
@@ -210,11 +223,19 @@ Then:
    *(Prefer a no-code/Zapier-style setup instead? Set `provider:
    fantastic-jobs-actor` and `export APIFY_TOKEN=...` — the legacy Apify
    actor backend, kept as a reference/advanced option; see
-   `careeros/providers/README.md`.)*
+   `careeros/providers/README.md`. For multiple accounts, set
+   `export APIFY_TOKENS=tok1,tok2,...` — a comma-separated rotation pool that
+   is preferred over `APIFY_TOKEN` and auto-rotates when a token's budget is
+   exhausted.)*
 2. **Set up your profile**: `careeros start` (guided interview) or hand-edit
    `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
-3. **Set up Google Sheets**: a spreadsheet id + service-account credentials
-   path in `config.yaml`'s `sheets:` block (the daily results destination).
+3. **Set up Google Sheets** (the daily results destination): a spreadsheet id
+   + service-account credentials path in `config.yaml`'s `sheets:` block.
+   First time with Google Cloud? Follow the click-by-click walkthrough in
+   **[docs/google-setup.md](docs/google-setup.md)** — it covers creating the
+   service account, downloading the key, and the easily-missed step of
+   *sharing your Sheet with the service account's email*. (Optional Google
+   Drive backup is covered there too.)
 4. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Example run
@@ -231,13 +252,13 @@ $ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
 [constraints] 47 in -> 41 eligible, 6 hard-rejected (0.0s)
 [gate:finalize] 41 in -> 19 kept, 22 dropped.
 [evaluate:finalize] 19 evaluations valid and cached.
-[threshold] 19 evaluated -> 4 >= 4.0 (top: 4.6)
+[threshold] 19 evaluated -> 4 APPLY (>= 4.0), 6 CONSIDER ([3.5, 4.0))
 [artifacts:finalize] 4 job(s), 8 artifact(s) verified, 8 newly cached.
-[sheets:append] wrote 4 row(s).
+[sheets:append] wrote 10 row(s) (4 Apply, 6 Consider).
 
 4 jobs scored above threshold. Top match: Senior PM at Acme (4.6) — strong
 role fit, remote, comp in range. See your Sheet for all 4 with resumes and
-cover letters generated.
+cover letters generated, plus 6 near-misses under Consider for visibility.
 ```
 
 ## Google Sheets schema
@@ -245,9 +266,15 @@ cover letters generated.
 One append-only `Jobs` worksheet:
 
 `Date · Company · Company LinkedIn · Role · Score · Confidence ·
-Recommendation · Apply URL · Resume Path · Cover Letter Path · Report Path ·
-Source · Hiring Contact · Contact LinkedIn · Contact Email · Drive Folder ·
-Job ID`
+Recommendation · Tier · Apply URL · Resume Path · Cover Letter Path ·
+Report Path · Source · Hiring Contact · Contact LinkedIn · Contact Email ·
+Drive Folder · Notes · Job ID`
+
+`Tier` is `Apply` or `Consider` (see Pipeline step 7); a Consider row has
+blank artifact/Drive cells and a `Notes` reason it scored below 4.0. Columns
+are located by header **name**, not position, and any missing column is added
+automatically — so a Sheet created by an earlier version self-migrates on the
+next run without losing data or breaking dedupe.
 
 `Job ID` is the join key `prep`/`apply` use to look a row back up. `Company
 LinkedIn` and `Drive Folder` are populated when the underlying data exists
@@ -300,9 +327,10 @@ first real run.
 - Google Drive upload + PDF rendering for resume/cover (Markdown only today)
 - Direct-API providers for Greenhouse, Ashby, Lever, Workday (no Apify
   actor needed — see `careeros/providers/README.md`)
-- LinkedIn/Wellfound/YC via the Fantastic Jobs REST API's `active-jb`
-  endpoint, and incremental (`date_created_gte`) discovery — both explicitly
-  deferred out of the P2.7 REST migration to keep it a pure parity swap
+- Incremental (`date_created_gte`) discovery — deferred out of the P2.7 REST
+  migration to keep it a pure parity swap. (LinkedIn/Wellfound/YC via the
+  `active-jb` endpoint is now **live** — the default `endpoint: both` queries
+  it alongside `active-ats`; see Pipeline step 1.)
 - Per-ATS application-question scraping (today: paste them manually)
 - Richer profile sections (adaptive framing, negotiation scripts) — kept
   out of v1 deliberately to stay lean

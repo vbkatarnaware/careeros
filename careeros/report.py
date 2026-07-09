@@ -52,15 +52,28 @@ def render_daily_report(job: Job, evaluation: Eval, resume_path: str, cover_path
 
 
 def render_summary(
-    date: str, manifest: dict, evals: list[Eval], jobs_by_id: dict[str, Job],
-    threshold: float = 4.0,
+    date: str, manifest: dict,
+    apply_evals: list[Eval], consider_evals: list[Eval],
+    jobs_by_id: dict[str, Job],
+    threshold: float = 4.0, consider_threshold: float = 3.5,
 ) -> str:
     """Day-level executive summary (P2.6). Same zero-AI philosophy as
-    render_daily_report — a pure render of run.json + the day's Eval JSONs,
-    no additional AI cost. Exists because the per-job daily_report.md has no
-    day-at-a-glance view, and because the P2.6 KPI (cost per interview-worthy
-    job, supply-aware — never a fixed daily quota) needs to be visible
-    somewhere every run, not computed by hand from run.json.
+    render_daily_report — a pure render of run.json + the day's ALREADY-
+    PARTITIONED eval lists, no additional AI cost.
+
+    `apply_evals`/`consider_evals` must be the SAME lists `threshold`
+    (`pipeline/threshold.py:partition_evals`) already computed and persisted
+    to `07_select/selected.json`/`consider.json` — this function must never
+    re-derive the apply/consider split from raw evals itself (score+
+    recommendation only, no hard-constraints check), or the summary can
+    disagree with what actually got artifacts/Sheet rows (a real bug: a job
+    with a hard deal-breaker but a high AI score would show here as Apply/
+    Consider while `partition_evals` correctly omitted it everywhere else).
+
+    Exists because the per-job daily_report.md has no day-at-a-glance view,
+    and because the P2.6 KPI (cost per interview-worthy job, supply-aware —
+    never a fixed daily quota) needs to be visible somewhere every run, not
+    computed by hand from run.json.
     """
     totals = manifest.get("totals", {})
 
@@ -70,20 +83,8 @@ def render_summary(
     ]
     funnel = "\n".join(f"- {label}: {totals[key]}" for label, key in funnel_rows if key in totals) or "_No stages recorded yet._"
 
-    selected = sorted(
-        [e for e in evals if e.score >= threshold and e.recommendation == "apply"],
-        key=lambda e: -e.score,
-    )
-    # No recommendation=="apply" filter here, unlike `selected` above: per
-    # eval_v2.md's own rule, ANY job scoring below threshold is recommended
-    # "skip" regardless of how close it came — so a near-miss job's
-    # recommendation is always "skip" by design, never "apply". Filtering on
-    # it here would make this section permanently empty (a real bug this
-    # exact live-verification run caught, 2026-07-08).
-    near_miss = sorted(
-        [e for e in evals if threshold - 0.5 <= e.score < threshold],
-        key=lambda e: -e.score,
-    )
+    selected = sorted(apply_evals, key=lambda e: -e.score)
+    near_miss = sorted(consider_evals, key=lambda e: -e.score)
 
     def _label(e: Eval) -> str:
         job = jobs_by_id.get(e.id)
@@ -116,7 +117,7 @@ def render_summary(
 ## Apply — score ≥ {threshold:.1f} ({len(selected)})
 {apply_section}
 
-## Review — near miss, {threshold - 0.5:.1f}–{threshold - 0.1:.1f} ({len(near_miss)})
+## Consider — near miss, {consider_threshold:.1f}–{threshold - 0.1:.1f} ({len(near_miss)})
 {near_miss_section}
 
 ## Cost

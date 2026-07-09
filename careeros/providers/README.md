@@ -16,6 +16,15 @@ P2.6/P2.7 architecture review for the full reasoning):
   `"rapidapi"` (RapidAPI's "Active Jobs DB"). Both proxy the identical
   dataset and differ only in base URL + auth header; which is cheaper for
   your volume is a config/commercial decision, not an architectural one.
+  Also queries **both** upstream endpoints by default via `config.api.endpoint:
+  "both"` — `active-ats` (career sites/ATS) and `active-jb` (+LinkedIn/YC/
+  Wellfound), merged, with the per-tier record allocation split 50/50 (not
+  doubled). This is the P2.8 Final Discovery Acceptance Audit's frozen
+  default — see `.careeros/qa/acceptance_audit_report.md` for the evidence
+  (full 107-job population: both sources score an equal ~8% ≥4.0 rate but are
+  92% disjoint, so "both" roughly doubles interview-worthy jobs at the same
+  quota cost). Set `endpoint` to `active-ats` or `active-jb` for a single
+  source, and `endpoint_allocation` to change the split ratio on a paid plan.
 - **`fantastic-jobs-actor`** (`legacy/fantastic_jobs_actor.py`) — the Apify
   actor. **Legacy/reference**, kept for no-code/Zapier/n8n/MCP-style setups.
   Not the actively maintained path; new discovery features land in the REST

@@ -1,7 +1,7 @@
 [project]
 name = "careeros"
 version = "1.0.0"
-description = "A supreme, high-quality job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
+description = "An AI-powered, deterministic job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

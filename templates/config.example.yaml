@@ -6,9 +6,15 @@
 # or "fantastic-jobs-actor" (legacy Apify actor — see the `apify:` block;
 # kept as a reference/no-code backend, not the actively maintained path).
 provider: fantastic-jobs
-threshold: 4.0          # score >= this gets resume/cover/report generated
+threshold: 4.0          # APPLY: score >= this -> full pipeline (resume/cover/report + Drive + Sheet)
+consider_threshold: 3.5 # CONSIDER: this <= score < threshold -> Sheet row only (score + reason, no AI artifacts). Below this = omitted
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
 description_max_chars: 4000
+
+# Your job-search target. Used only as CONTEXT in the discovery quota-guard's
+# recommendation (see the api: block below) — it never changes scoring.
+goals:
+  interviews_per_week: null   # e.g. 5 — leave null until you have a target
 
 prompts:
   gate: v1
@@ -39,7 +45,13 @@ api:
   # dashboard for the "Active Jobs DB" listing before relying on this default.
   rapidapi_host: active-jobs-db.p.rapidapi.com
   rapidapi_key_env: RAPIDAPI_KEY   # set this env var to your RapidAPI key
-  endpoint: active-ats             # active-ats (career sites) | active-jb (+ LinkedIn/YC/Wellfound, future)
+  endpoint: both                   # both (DEFAULT, frozen) | active-ats (career sites) | active-jb (+LinkedIn/YC/Wellfound)
+  # "both" queries active-ats AND active-jb every run — the P2.8 acceptance
+  # audit (full 107-job population) found the two sources score a statistically
+  # identical ~8% >=4.0 rate but are 92% disjoint, so "both" roughly doubles
+  # interview-worthy jobs found at the SAME quota: the per-tier record
+  # allocation is SPLIT 50/50 across the two endpoints (it is NOT doubled).
+  endpoint_allocation: null        # null = equal 50/50; override on a paid plan, e.g. {active-ats: 0.3, active-jb: 0.7}
   discovery_mode: profile
   time_range: "7d"                 # 1h | 24h | 7d | 6m
   title_search: ["Product Manager"]
@@ -50,6 +62,12 @@ api:
   remove_agency: true
   has_salary: null
   tier_limits: {}
+  # ── Quota guard (advisory). CareerOS recommends a daily limit and warns
+  # before you exhaust your weekly record quota, but never changes these. ──
+  plan: null                       # free | rapidapi | paid | enterprise  (free -> 500 records/week)
+  weekly_record_quota: null        # set for a paid plan so the guard knows your ceiling
+  active_days_per_week: 7          # how the weekly quota is spread when recommending a daily limit
+  limit: null                      # your per-query record cap; null -> 100. Guard warns if it blows the quota
 
 # LEGACY — only read when provider: fantastic-jobs-actor. Kept for no-code/
 # Zapier/n8n/MCP-style setups; not the actively maintained discovery path

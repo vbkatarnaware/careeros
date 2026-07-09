@@ -1,4 +1,4 @@
-"""Provider: Fantastic Jobs — official REST API (P2.7).
+"""Provider: Fantastic Jobs — official REST API (P2.7 migration, P2.8-frozen).
 
 https://developer.fantastic.jobs/documentation/how-fantastic-jobs-api-works
 https://developer.fantastic.jobs/api/new-jobs
@@ -24,21 +24,24 @@ here — see the architecture review. `transport` has no default: an unset
 value fails fast with a clear message rather than silently preferring either
 vendor.
 
-Scope (P2.7, feature PARITY only): a single-page fetch of up to `limit`
-jobs per call — mirrors the actor's own single-call, non-paginated
-semantics (its `limit` was always the hard cap on one run). The REST API
-also supports cursor pagination and incremental `date_created_gte` sync;
-both are explicitly OUT of scope here to keep this migration small — see the
-roadmap for when they'd be added.
+Endpoints & the P2.8-frozen default (config.api.endpoint):
+  - "both" (DEFAULT) — queries active-ats (career sites/ATS) AND active-jb
+    (+ LinkedIn/YC/Wellfound) every run, splitting the per-tier record
+    allocation 50/50 so it costs the SAME quota as one endpoint. The P2.8
+    Final Discovery Acceptance Audit (full 107-job population,
+    `.careeros/qa/acceptance_audit_report.md`) found the two sources score a
+    statistically identical ~8% >=4.0 rate but are 92% disjoint, so "both"
+    roughly doubles interview-worthy jobs found at the same cost.
+  - "active-ats" / "active-jb" — a single source (halves the sources, same
+    per-tier record count). Selectable but no longer the recommended default.
+Discovery is frozen on "both" (P2.8); see the roadmap. Each fetch is
+single-page (up to the endpoint's split of `limit`); cursor pagination and
+incremental `date_created_gte` sync remain out of scope (roadmap).
 
-NOT LIVE-VERIFIED: no API key was configured in this environment during
-P2.7, so the exact request/response shape below is built from the published
-API reference, not a live call. In particular this assumes the endpoint
-returns a bare JSON array of job objects (as the reference's "Response
-Fields" section documents per-job, with no wrapper key mentioned). Run
-`careeros discover --provider fantastic-jobs --dry-run --limit 3` against a
-real key before relying on this in `daily`, and adjust `fetch()`'s response
-parsing here if the live shape differs.
+LIVE-VERIFIED (P2.8): fetch() was exercised against a real direct-transport
+key — active-ats, active-jb, and "both" all return a bare JSON array of job
+objects that `to_job_dict()` maps cleanly (see the acceptance audit). Two
+transports, one architecture; "rapidapi" shares the same response shape.
 """
 
 from __future__ import annotations
@@ -159,6 +162,49 @@ def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[s
     return params
 
 
+_BOTH_ENDPOINTS = ("active-ats", "active-jb")
+
+
+def _endpoint_limits(effective_cfg: dict[str, Any], endpoints: tuple[str, ...], total_limit: int) -> dict[str, int]:
+    """Split the per-tier record allocation across the active endpoints. The
+    P2.8-frozen default is an EQUAL split (50/50 for "both"), so "both" costs
+    the SAME total records as a single endpoint — the two sources share the
+    weekly quota rather than doubling it. Users on a paid plan can override the
+    split via `api.endpoint_allocation` (e.g. {"active-ats": 0.3, "active-jb":
+    0.7}); weights are normalized. Deterministic — no auto-rebalancing (that's
+    P3)."""
+    if len(endpoints) == 1:
+        return {endpoints[0]: max(1, total_limit)}
+    alloc = effective_cfg.get("endpoint_allocation") or {}
+    weights = {ep: float(alloc.get(ep, 1.0)) for ep in endpoints}
+    wsum = sum(weights.values()) or float(len(endpoints))
+    return {ep: max(1, int(round(total_limit * weights[ep] / wsum))) for ep in endpoints}
+
+
+def _fetch_one_endpoint(
+    base_url: str, headers: dict[str, str], endpoint: str, params: dict[str, Any],
+) -> list[dict[str, Any]]:
+    try:
+        resp = requests.get(
+            f"{base_url}/v1/{endpoint}", headers=headers, params=params, timeout=_TIMEOUT_S,
+        )
+    except requests.RequestException as e:
+        raise ProviderError(f"fantastic-jobs ({endpoint}): request failed — {e}") from e
+
+    if resp.status_code == 429:
+        raise ProviderError(
+            f"fantastic-jobs ({endpoint}): rate limit / quota exceeded (HTTP 429) — "
+            "check your plan's remaining credits."
+        )
+    if resp.status_code != 200:
+        raise ProviderError(f"fantastic-jobs ({endpoint}): HTTP {resp.status_code} — {resp.text[:300]}")
+
+    items = resp.json()
+    if not isinstance(items, list):
+        raise ProviderError(f"fantastic-jobs ({endpoint}): unexpected response shape (expected a JSON array)")
+    return items
+
+
 class FantasticJobsProvider:
     id = "fantastic-jobs"
 
@@ -169,6 +215,21 @@ class FantasticJobsProvider:
         """Single-page REST fetch — see the module docstring for the
         deliberate parity scope (no pagination/incremental sync in P2.7).
 
+        `config.api.endpoint` selects the source: "active-ats" (career
+        sites/ATS), "active-jb" (+ LinkedIn/YC/Wellfound), or **"both"**
+        (P2.8 production default — see the Final Discovery Acceptance Audit,
+        `.careeros/qa/acceptance_audit_report.md`: on a full 107-job
+        population, ats and jb scored a statistically identical ~8% >=4.0
+        rate but are 92% disjoint, so querying both roughly DOUBLES the
+        interview-worthy jobs found per run at the same per-job quality).
+
+        For "both", the per-tier record allocation `limit` is SPLIT across the
+        two endpoints (50/50 by default; see `_endpoint_limits`), so "both"
+        consumes the same total records as a single endpoint — the sources
+        share the weekly quota, they don't double it. Each endpoint is one
+        HTTP call; the raw union is returned, and downstream normalize+dedupe
+        (job-id-keyed) collapses the small real overlap (no extra dedup here).
+
         Returns `(items, cost_usd)`. `cost_usd` is always 0.0: unlike the
         Apify actor's pay-per-result billing, both REST transports are
         subscription/credit-metered, not priced per call, so there is no
@@ -177,27 +238,14 @@ class FantasticJobsProvider:
         api_cfg = config.api
         effective_cfg = _merge_query(api_cfg, query)
         base_url, headers = _base_url_and_headers(effective_cfg)
-        endpoint = effective_cfg.get("endpoint", "active-ats")
-        params = _build_params(effective_cfg, limit=limit, search=search)
+        endpoint = effective_cfg.get("endpoint", "both")
 
-        try:
-            resp = requests.get(
-                f"{base_url}/v1/{endpoint}", headers=headers, params=params, timeout=_TIMEOUT_S,
-            )
-        except requests.RequestException as e:
-            raise ProviderError(f"fantastic-jobs: request failed — {e}") from e
-
-        if resp.status_code == 429:
-            raise ProviderError(
-                "fantastic-jobs: rate limit / quota exceeded (HTTP 429) — "
-                "check your plan's remaining credits."
-            )
-        if resp.status_code != 200:
-            raise ProviderError(f"fantastic-jobs: HTTP {resp.status_code} — {resp.text[:300]}")
-
-        items = resp.json()
-        if not isinstance(items, list):
-            raise ProviderError("fantastic-jobs: unexpected response shape (expected a JSON array)")
+        endpoints = _BOTH_ENDPOINTS if endpoint == "both" else (endpoint,)
+        ep_limits = _endpoint_limits(effective_cfg, endpoints, limit)
+        items: list[dict[str, Any]] = []
+        for ep in endpoints:
+            ep_params = _build_params(effective_cfg, limit=ep_limits[ep], search=search)
+            items.extend(_fetch_one_endpoint(base_url, headers, ep, ep_params))
         return items, 0.0
 
     def to_job_dict(self, raw: dict[str, Any]) -> dict[str, Any] | None:

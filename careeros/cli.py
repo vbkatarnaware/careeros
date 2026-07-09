@@ -26,7 +26,6 @@ job can never slip through as "apply" even if the AI mislabels it.
 from __future__ import annotations
 
 import shutil
-import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -34,6 +33,7 @@ from typing import Optional
 import typer
 import yaml
 
+from careeros import budget
 from careeros.cache import Cache, artifact_cache_key, eval_cache_key
 from careeros.config import Config, load_config
 from careeros.lint import format_issues, lint_file, verify_resume_bullets
@@ -45,7 +45,7 @@ from careeros.pipeline.dedupe import (
 from careeros.pipeline.constraints import evaluate_constraints
 from careeros.pipeline.normalize import normalize_all
 from careeros.pipeline.queryplan import build_query_plan, resolve_tier_limit
-from careeros.pipeline.threshold import select_final
+from careeros.pipeline.threshold import partition_evals
 from careeros.providers.base import ProviderError
 from careeros.providers.registry import get as get_provider
 from careeros.providers.registry import list_providers
@@ -54,7 +54,7 @@ from careeros import runmeta
 from careeros import sheets as sheets_mod
 
 app = typer.Typer(add_completion=False, no_args_is_help=True,
-                   help="CareerOS — a supreme, high-quality job discovery and recommendation engine.")
+                   help="CareerOS — an AI-powered, deterministic job discovery and recommendation engine.")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -131,10 +131,26 @@ def config():
     """Print the resolved config."""
     cfg = _config()
     typer.echo(yaml.dump({
-        "provider": cfg.provider, "threshold": cfg.threshold,
+        "provider": cfg.provider,
+        "endpoint": cfg.api.get("endpoint", "both"),
+        "threshold_apply": cfg.threshold,
+        "threshold_consider": cfg.consider_threshold,
         "gate_batch_size": cfg.gate_batch_size, "prompts": cfg.prompts,
         "sheets": cfg.sheets,
     }, sort_keys=False))
+
+    # Discovery quota guard preview (REST provider only). Advisory — shows the
+    # recommendation you'd see at `discover` time so you can tune api.limit up
+    # front. Never changes anything.
+    if cfg.provider != "fantastic-jobs-actor":
+        try:
+            reqs = len(build_query_plan(_load_profile(cfg), cfg.api)) if cfg.profile_path.exists() else 1
+        except Exception:
+            reqs = 1
+        # "both" splits the per-tier allocation across endpoints, so records
+        # reason in tiers (reqs), not ×endpoints.
+        rec = budget.recommend(cfg.api, cfg.goals, reqs)
+        typer.echo("\n".join(rec.lines()))
 
 
 # ── discover ──────────────────────────────────────────────────────────────
@@ -143,11 +159,13 @@ def config():
 def discover(
     provider: Optional[str] = typer.Option(None, help="Provider id (default: config.provider)"),
     date: str = typer.Option(None, help="Run date, default today"),
-    limit: int = typer.Option(
-        100, help="Default max jobs to fetch per query; overridden per-tier by config.apify.tier_limits"),
+    limit: Optional[int] = typer.Option(
+        None, help="Per-query max records; default from config.api.limit, else 100. Overridden per-tier by tier_limits"),
     search: str = typer.Option(
         "", help="Manual single-query override — bypasses profile-driven segmentation"),
     dry_run: bool = typer.Option(False, help="Fetch and print, don't write raw.json"),
+    ignore_budget: bool = typer.Option(
+        False, "--ignore-budget", help="Bypass the weekly quota guard for this run"),
 ):
     """[dev] Discover: call a provider, write 01_discover/raw.json.
 
@@ -168,13 +186,41 @@ def discover(
     else:
         queries = build_query_plan(_load_profile(cfg), provider_cfg) or [None]
 
+    # api.limit is the user's default per-query record cap; an explicit
+    # --limit still wins, and tier_limits still override per work-mode tier.
+    base_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
+
+    # ── Quota guard (P2.8). REST provider only — the legacy actor has its own
+    # per-call USD cost model. Recommend + explain + warn + prevent, but never
+    # rewrite api.limit; the user owns the final number (see careeros/budget.py).
+    guard_on = provider_cfg is cfg.api
+    budget_state: dict = {}
+    if guard_on:
+        # "both" SPLITS base_limit across the 2 endpoints, so records/tier stays
+        # = base_limit regardless of endpoint count — reason the record budget in
+        # query TIERS. The HTTP call count (tiers × endpoints) is tracked
+        # separately for the informational request counter.
+        num_endpoints = 2 if provider_cfg.get("endpoint", "both") == "both" else 1
+        http_requests = len(queries) * num_endpoints
+        rec = budget.recommend(cfg.api, cfg.goals, len(queries), cli_default_limit=base_limit)
+        for line in rec.lines():
+            typer.echo(f"[discover] {line}")
+        quota = budget.weekly_quota(cfg.api)
+        budget_state = budget.load_state(cfg.careeros_dir, date)
+        ok, msg = budget.check_before_run(budget_state, quota)
+        if msg:
+            typer.echo(f"[discover] {msg}")
+        if not ok and not ignore_budget:
+            typer.echo("[discover] Skipped to protect your weekly quota. Re-run with --ignore-budget to override.")
+            raise typer.Exit(0)
+
     raw_items: list = []
     total_cost_usd = 0.0
     start = time.time()
     try:
         for i, query in enumerate(queries):
             work_mode = (query or {}).get("_work_mode", "single")
-            effective_limit = resolve_tier_limit(work_mode, provider_cfg, limit)
+            effective_limit = resolve_tier_limit(work_mode, provider_cfg, base_limit)
             items, query_cost = p.fetch(cfg, limit=effective_limit, search=search, query=query)
             total_cost_usd += query_cost
             typer.echo(
@@ -186,6 +232,12 @@ def discover(
         typer.echo(f"[discover] {e}", err=True)
         raise typer.Exit(1)
     elapsed = time.time() - start
+
+    # The API was consumed regardless of --dry-run, so record it against the
+    # rolling weekly budget before anything else can early-return.
+    if guard_on:
+        budget.record_consumption(budget_state, records=len(raw_items), requests=http_requests)
+        budget.save_state(cfg.careeros_dir, budget_state)
 
     typer.echo(
         f"[discover] {provider_name}: {len(raw_items)} raw items across "
@@ -591,14 +643,18 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
 @app.command()
 def threshold(
     date: str = typer.Option(None, help="Run date, default today"),
-    min_score: Optional[float] = typer.Option(None, help="Override config.threshold"),
+    min_score: Optional[float] = typer.Option(None, help="Override config.threshold (APPLY tier)"),
+    consider_min: Optional[float] = typer.Option(None, help="Override config.consider_threshold (CONSIDER tier)"),
 ):
-    """[dev] Threshold: select evaluated jobs scoring >= threshold, with
-    recommendation=="apply" and passing deterministic hard constraints
-    (see careeros/pipeline/constraints.py)."""
+    """[dev] Two-tier threshold. APPLY: score >= threshold, recommendation
+    "apply", passing hard constraints -> full pipeline. CONSIDER:
+    consider_threshold <= score < threshold (constraints pass) -> Sheet row
+    only, no artifacts/Drive. Below consider_threshold -> omitted. See
+    careeros/pipeline/threshold.py:partition_evals."""
     cfg = _config()
     date = date or _today()
     min_score = min_score if min_score is not None else cfg.threshold
+    consider_min = consider_min if consider_min is not None else cfg.consider_threshold
     start = time.time()
 
     import json
@@ -611,23 +667,29 @@ def threshold(
             evals.append(Eval.from_dict(json.load(f)))
 
     # Every evaluated job already passed `constraints`, but re-checking here
-    # (via select_final) is the deterministic backstop against the AI
+    # (via partition_evals) is the deterministic backstop against the AI
     # mislabeling a hard-reject as "apply" — see careeros/pipeline/threshold.py.
     jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
     with open(jobs_path) as f:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
     profile = _load_profile(cfg)
-    selected, held_back = select_final(evals, min_score, jobs_by_id, profile, cfg.fx_rates)
+    apply_, consider_, _omit = partition_evals(
+        evals, min_score, consider_min, jobs_by_id, profile, cfg.fx_rates)
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "select")
     with open(stage_dir / "selected.json", "w") as f:
-        f.write(dumps([e.to_dict() for e in selected]))
+        f.write(dumps([e.to_dict() for e in apply_]))
+    with open(stage_dir / "consider.json", "w") as f:
+        f.write(dumps([e.to_dict() for e in consider_]))
 
-    typer.echo(f"[threshold] {len(evals)} evaluated -> {len(selected)} >= {min_score} "
-               f"(top: {selected[0].score if selected else 'n/a'})")
+    typer.echo(
+        f"[threshold] {len(evals)} evaluated -> {len(apply_)} APPLY (>= {min_score}), "
+        f"{len(consider_)} CONSIDER ([{consider_min}, {min_score})) "
+        f"(top: {apply_[0].score if apply_ else 'n/a'})"
+    )
     runmeta.record_stage(cfg.runs_dir, date, "select",
-                          count_in=len(evals), count_out=len(selected),
+                          count_in=len(evals), count_out=len(apply_),
                           seconds=time.time() - start)
 
 
@@ -851,21 +913,30 @@ def render_report(job_id: str, date: str = typer.Option(None)):
 @app.command("summary")
 def summary(date: str = typer.Option(None)):
     """[dev] Render the day-level executive summary.md — pure template, zero
-    AI. Funnel counts, the Apply (≥threshold) list, the Review (near-miss)
-    list, and cost-per-selected-job — the P2.6 KPI made visible every run."""
+    AI. Funnel counts, the Apply (≥threshold) list, the Consider (near-miss)
+    list, and cost-per-selected-job — the P2.6 KPI made visible every run.
+
+    Reads `07_select/selected.json`/`consider.json` (the SAME partition
+    `threshold` already computed via partition_evals) rather than re-deriving
+    apply/consider from raw evals — the summary must never disagree with
+    what actually got artifacts/Sheet rows."""
     cfg = _config()
     date = date or _today()
 
     import json
     manifest = runmeta.load_manifest(cfg.runs_dir, date)
 
-    eval_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    evals = []
-    for path in eval_dir.glob("*.json"):
-        if path.name.startswith("_"):
-            continue
+    select_dir = runmeta.stage_dir(cfg.runs_dir, date, "select")
+
+    def _load_evals(filename: str) -> list[Eval]:
+        path = select_dir / filename
+        if not path.exists():
+            return []
         with open(path) as f:
-            evals.append(Eval.from_dict(json.load(f)))
+            return [Eval.from_dict(d) for d in json.load(f)]
+
+    apply_evals = _load_evals("selected.json")
+    consider_evals = _load_evals("consider.json")
 
     jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
     jobs_by_id = {}
@@ -873,7 +944,8 @@ def summary(date: str = typer.Option(None)):
         with open(jobs_path) as f:
             jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
-    summary_md = render_summary(date, manifest, evals, jobs_by_id, threshold=cfg.threshold)
+    summary_md = render_summary(date, manifest, apply_evals, consider_evals, jobs_by_id,
+                                threshold=cfg.threshold, consider_threshold=cfg.consider_threshold)
     summary_path = runmeta.run_dir(cfg.runs_dir, date) / "summary.md"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as f:
@@ -937,6 +1009,17 @@ def drive_upload(date: str = typer.Option(None, help="Run date, default today"))
 
 # ── sheets ────────────────────────────────────────────────────────────────
 
+def _consider_note(e: Eval, apply_threshold: float) -> str:
+    """A concise, human-readable reason a CONSIDER-tier job fell short of the
+    apply threshold — drawn from the eval's own weaknesses so a near-miss is
+    self-explanatory in the Sheet without opening the eval JSON. No AI call."""
+    reasons = "; ".join(w.strip() for w in (e.weaknesses or [])[:2] if w and w.strip())
+    if not reasons:
+        reasons = (e.fit_paragraph or e.company_summary or "").strip()[:200]
+    prefix = f"Consider (scored {e.score:g}, below {apply_threshold:g})"
+    return f"{prefix}: {reasons}" if reasons else prefix
+
+
 sheets_app = typer.Typer(help="Google Sheets operations")
 app.add_typer(sheets_app, name="sheets")
 
@@ -949,10 +1032,13 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
     start = time.time()
 
     import json
-    selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
+    select_dir = runmeta.stage_dir(cfg.runs_dir, date, "select")
     jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
-    with open(selected_path) as f:
-        evals = [Eval.from_dict(d) for d in json.load(f)]
+    with open(select_dir / "selected.json") as f:
+        apply_evals = [Eval.from_dict(d) for d in json.load(f)]
+    consider_path = select_dir / "consider.json"  # absent on older runs
+    consider_evals = ([Eval.from_dict(d) for d in json.load(open(consider_path))]
+                      if consider_path.exists() else [])
     with open(jobs_path) as f:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
@@ -966,7 +1052,8 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
             drive_links = json.load(f)
 
     rows = []
-    for e in evals:
+    # APPLY tier: full row with artifact paths + any Drive link.
+    for e in apply_evals:
         job = jobs_by_id[e.id]
         artifacts = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
         rows.append(sheets_mod.job_to_row(
@@ -975,16 +1062,30 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
             cover_path=str(artifacts / "cover.md"),
             report_path=str(artifacts / "daily_report.md"),
             drive_folder_link=drive_links.get(e.id, ""),
+            tier="Apply",
+        ))
+    # CONSIDER tier: near-misses — NO artifacts, NO Drive; just score + a
+    # concise reason it fell short of the apply threshold (from the eval).
+    for e in consider_evals:
+        job = jobs_by_id[e.id]
+        rows.append(sheets_mod.job_to_row(
+            date, job, e,
+            resume_path="", cover_path="", report_path="",
+            drive_folder_link="",
+            tier="Consider",
+            notes=_consider_note(e, cfg.threshold),
         ))
 
     sheets_mod.append_rows(cfg, rows)
-    typer.echo(f"[sheets:append] wrote {len(rows)} row(s).")
+    typer.echo(f"[sheets:append] wrote {len(rows)} row(s) "
+               f"({len(apply_evals)} Apply, {len(consider_evals)} Consider).")
 
+    # Mark both tiers seen so neither re-surfaces next run (both appear in the Sheet).
     seen_path = cfg.careeros_dir / "seen.jsonl"
-    append_seen_ids(seen_path, [jobs_by_id[e.id] for e in evals], date)
+    append_seen_ids(seen_path, [jobs_by_id[e.id] for e in apply_evals + consider_evals], date)
 
     runmeta.record_stage(cfg.runs_dir, date, "sheets",
-                          count_in=len(evals), count_out=len(rows),
+                          count_in=len(apply_evals) + len(consider_evals), count_out=len(rows),
                           seconds=time.time() - start)
 
 

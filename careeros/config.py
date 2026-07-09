@@ -19,7 +19,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # (legacy Apify actor — reference/no-code backend, see
     # providers/legacy/fantastic_jobs_actor.py). See `providers` command.
     "provider": "fantastic-jobs",
+    # Two-tier selection (P2.8). APPLY: score >= threshold -> full pipeline
+    # (resume + cover + report + Drive + Sheet). CONSIDER: consider_threshold
+    # <= score < threshold -> Sheet row only (score + reasons, NO AI artifacts,
+    # NO Drive) so near-misses stay visible at zero extra AI cost. Below
+    # consider_threshold -> omitted from the Sheet. Both are configurable.
     "threshold": 4.0,
+    "consider_threshold": 3.5,
+    # Your job-search targets. `interviews_per_week` is used only as CONTEXT
+    # in the discovery quota-guard's recommendation (careeros/budget.py); it
+    # never changes scoring. Left null until you set it (or `careeros start`
+    # captures it). Real goal-vs-outcome calibration is P3, not v1.0.
+    "goals": {
+        "interviews_per_week": None,
+    },
     "gate_batch_size": 50,
     "description_max_chars": 4000,
     "prompts": {
@@ -49,7 +62,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "token_env": "APIFY_TOKEN",
         # Comma-separated list of tokens (one per account) for automatic
         # rotation when a token's monthly budget is exhausted — see
-        # providers/fantastic_jobs.py's _iter_tokens().
+        # providers/legacy/fantastic_jobs_actor.py's _iter_tokens().
         "tokens_env": "APIFY_TOKENS",
         "actor": "fantastic-jobs/career-site-job-listing-api",
         "time_range": "7d",
@@ -105,10 +118,21 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "rapidapi_base_url": None,
         "rapidapi_host": "active-jobs-db.p.rapidapi.com",
         "rapidapi_key_env": "RAPIDAPI_KEY",
-        # "active-ats" (career sites/ATS — actor-parity scope) or
-        # "active-jb" (+ LinkedIn/YC/Wellfound — future multi-source work,
-        # not exercised by P2.7).
-        "endpoint": "active-ats",
+        # "both" (DEFAULT, P2.8-frozen): queries active-ats (career sites/
+        # ATS) AND active-jb (+LinkedIn/YC/Wellfound) every run, merged —
+        # the Final Discovery Acceptance Audit found the two sources score a
+        # statistically identical ~8% >=4.0 rate but are 92% disjoint, so
+        # "both" roughly doubles interview-worthy jobs per run at the same
+        # quality (see .careeros/qa/acceptance_audit_report.md). Discovery
+        # is frozen on this default; "active-ats" or "active-jb" alone
+        # remain selectable (e.g. to source from one board) but are no longer
+        # the recommended default.
+        "endpoint": "both",
+        # Per-endpoint split of each tier's record allocation when endpoint is
+        # "both". Default (null) = EQUAL 50/50 (the frozen v1.0 default — "both"
+        # shares the weekly quota, doesn't double it). Override with weights,
+        # e.g. {"active-ats": 0.3, "active-jb": 0.7}, on a paid plan.
+        "endpoint_allocation": None,
         # Everything below mirrors `apify:`'s search-filter keys exactly —
         # pipeline/queryplan.py's segmented-discovery specs use these same
         # neutral key names regardless of which provider is active, so this
@@ -124,6 +148,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "remove_agency": True,
         "has_salary": None,
         "tier_limits": {},
+        # ── Quota guard (P2.8). CareerOS RECOMMENDS a daily discovery limit
+        # and WARNS before you exhaust your provider quota, but never silently
+        # overrides your choice — see careeros/budget.py. ──
+        # Your Fantastic.jobs plan. Picks a default weekly record quota when
+        # `weekly_record_quota` is left null: free -> 500, others -> unknown
+        # (guard stays informational until you set the number yourself).
+        "plan": None,                 # free | rapidapi | paid | enterprise | null
+        # Records/week your plan allows. null -> derived from `plan`. Set this
+        # explicitly for a paid/enterprise plan so the guard knows your ceiling.
+        "weekly_record_quota": None,
+        # Days/week you actually run discovery — the weekly quota is spread
+        # across these when recommending a daily limit.
+        "active_days_per_week": 7,
+        # YOUR chosen per-request record limit. null -> falls back to the
+        # `discover --limit` default (100). The guard reads this and warns if
+        # it will blow the weekly quota; it never rewrites it.
+        "limit": None,
     },
     # Optional Google Drive artifact backup (P2.6). ADDITIVE only — local
     # Markdown under .careeros/runs/ stays the source of truth end to end;
@@ -151,8 +192,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
 class Config:
     provider: str
     threshold: float
+    consider_threshold: float
     gate_batch_size: int
     description_max_chars: int
+    goals: dict[str, Any] = field(default_factory=dict)
     prompts: dict[str, str] = field(default_factory=dict)
     sheets: dict[str, Any] = field(default_factory=dict)
     apify: dict[str, Any] = field(default_factory=dict)
@@ -201,8 +244,10 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
     return Config(
         provider=merged["provider"],
         threshold=merged["threshold"],
+        consider_threshold=merged.get("consider_threshold", 3.5),
         gate_batch_size=merged["gate_batch_size"],
         description_max_chars=merged["description_max_chars"],
+        goals=merged.get("goals", {}),
         prompts=merged["prompts"],
         sheets=merged["sheets"],
         apify=merged["apify"],

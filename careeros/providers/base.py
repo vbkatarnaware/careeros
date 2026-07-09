@@ -15,7 +15,7 @@ it. The pipeline never imports a provider directly — see `providers/registry.p
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from careeros.config import Config
 

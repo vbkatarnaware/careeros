@@ -117,14 +117,20 @@ Fix any schema-validation errors for just the listed jobs and re-run
 careeros threshold --date {today}
 ```
 
-Selects evaluated jobs scoring at or above the configured threshold (default
-4.0) AND `recommendation == "apply"` AND still passing the deterministic
-constraints re-check (`select_final` in `careeros/pipeline/threshold.py`) —
-this is the guaranteed backstop against the AI mislabeling a hard-reject as
-"apply." Everything evaluated still gets reported to the candidate; only the
-selected subset gets artifacts generated below (this is the cost control —
-resume/cover/report generation is the most expensive-per-job step, skip it
-for jobs that won't become an application).
+Two-tier selection (`partition_evals` in `careeros/pipeline/threshold.py`),
+both thresholds configurable (`threshold`, default 4.0; `consider_threshold`,
+default 3.5):
+- **Apply** — score ≥ `threshold` AND `recommendation == "apply"` AND still
+  passing the deterministic constraints re-check (the guaranteed backstop
+  against the AI mislabeling a hard-reject as "apply") → gets artifacts
+  generated below (the cost control — resume/cover/report generation is the
+  most expensive-per-job step, skip it for jobs that won't become an
+  application).
+- **Consider** — `consider_threshold` ≤ score < `threshold`, constraints
+  passing → a Sheet row only (score + a concise reason), no artifacts, no
+  Drive. Gives visibility into near-misses at zero extra AI cost.
+- Anything else (a hard-constraint failure, or score < `consider_threshold`)
+  is omitted from the Sheet entirely.
 
 ## Step 8 — Artifacts, for each selected job
 
@@ -169,12 +175,15 @@ careeros summary --date {today}
 ```
 
 Renders `.careeros/runs/{today}/summary.md` — funnel counts, the Apply
-(≥threshold) list, the Review (near-miss, threshold-0.5 to threshold) list,
-and cost-per-selected-job, all computed from `run.json` + the day's Eval
-JSONs. This is the P2.6 KPI made visible every run: **maximize interview-
-worthy jobs per dollar, never a fixed daily quota** — 0 selected on a given
-day is a legitimate, supply-limited outcome, not a failure to report as one.
-Runs BEFORE Drive/Sheets below since both may include/link it.
+(≥threshold) list, the Consider (near-miss, consider_threshold to threshold)
+list, and cost-per-selected-job. Reads `07_select/selected.json`/
+`consider.json` (the SAME partition Step 7 already computed) rather than
+re-deriving it — the summary must never disagree with what actually got
+artifacts/Sheet rows. This is the P2.6 KPI made visible every run:
+**maximize interview-worthy jobs per dollar, never a fixed daily quota** —
+0 selected on a given day is a legitimate, supply-limited outcome, not a
+failure to report as one. Runs BEFORE Drive/Sheets below since both may
+include/link it.
 
 ## Step 10 — Drive backup (optional, off by default)
 
@@ -197,9 +206,10 @@ step) reads to populate the Drive Folder column.
 careeros sheets append --date {today}
 ```
 
-Appends one row per selected job (including a Drive Folder link if Step 10
-ran successfully) and records their ids to `.careeros/seen.jsonl` so
-tomorrow's `dedupe` skips them automatically.
+Appends one row per Apply job (including a Drive Folder link if Step 10 ran
+successfully) AND one row per Consider job (score + a concise reason, blank
+artifact/Drive cells — see Step 7), and records both tiers' ids to
+`.careeros/seen.jsonl` so tomorrow's `dedupe` skips them automatically.
 
 ## Step 12 — Report to the candidate
 

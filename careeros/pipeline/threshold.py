@@ -21,39 +21,41 @@ from careeros.models import Eval, Job, Profile
 from careeros.pipeline.constraints import evaluate_constraints
 
 
-def select_above_threshold(evals: list[Eval], threshold: float) -> tuple[list[Eval], list[Eval]]:
-    """Score-only selection. Kept for the standalone dev command / tests.
-    The daily pipeline uses select_final(), which also enforces the
-    recommendation and deterministic-constraint guards."""
-    ranked = sorted(evals, key=lambda e: e.score, reverse=True)
-    selected = [e for e in ranked if e.score >= threshold]
-    held_back = [e for e in ranked if e.score < threshold]
-    return selected, held_back
-
-
-def select_final(
+def partition_evals(
     evals: list[Eval],
-    threshold: float,
+    apply_threshold: float,
+    consider_threshold: float,
     jobs_by_id: dict[str, Job],
     profile: Profile,
     fx_rates: dict[str, float],
-) -> tuple[list[Eval], list[Eval]]:
-    """Returns (selected, held_back), sorted by score descending.
+) -> tuple[list[Eval], list[Eval], list[Eval]]:
+    """Two-tier selection (P2.8). Returns (apply, consider, omit), each sorted
+    by score descending.
 
-    Selected = score>=threshold AND recommendation=="apply" AND constraints
-    pass. Everything else is held back (still reported/sheeted, just no
-    artifacts). The constraint re-check is the deterministic backstop against
-    an AI "apply" on a hard-rejected job."""
+    - APPLY  = score >= apply_threshold AND recommendation=="apply" AND hard
+      constraints pass → full pipeline (artifacts + Drive + Sheet).
+    - CONSIDER = constraints pass, score >= consider_threshold, and NOT apply
+      (a near-miss, or a high score the AI flagged non-apply) → Sheet row only,
+      no AI artifacts, no Drive — cheap visibility into near-misses.
+    - OMIT   = hard-constraint failure (a deterministic deal-breaker, dropped
+      regardless of score) OR score < consider_threshold → not in the Sheet.
+
+    Constraints remain a hard gate — the deterministic backstop against the AI
+    mislabeling a hard-rejected job — so a location/salary deal-breaker is
+    omitted entirely, never surfaced as a 'Consider'."""
     ranked = sorted(evals, key=lambda e: e.score, reverse=True)
-    selected: list[Eval] = []
-    held_back: list[Eval] = []
+    apply_: list[Eval] = []
+    consider_: list[Eval] = []
+    omit_: list[Eval] = []
     for e in ranked:
         job = jobs_by_id.get(e.id)
-        constraints_ok = True
-        if job is not None:
-            constraints_ok = evaluate_constraints(job, profile, fx_rates).passed
-        if e.score >= threshold and e.recommendation == "apply" and constraints_ok:
-            selected.append(e)
+        constraints_ok = evaluate_constraints(job, profile, fx_rates).passed if job is not None else True
+        if not constraints_ok:
+            omit_.append(e)
+        elif e.score >= apply_threshold and e.recommendation == "apply":
+            apply_.append(e)
+        elif e.score >= consider_threshold:
+            consider_.append(e)
         else:
-            held_back.append(e)
-    return selected, held_back
+            omit_.append(e)
+    return apply_, consider_, omit_
