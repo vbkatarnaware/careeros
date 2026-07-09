@@ -13,7 +13,9 @@ from careeros.sheets import (
     _ensure_headers,
     append_rows,
     job_to_row,
+    read_all_rows_with_job_id,
     read_existing_job_ids,
+    update_row_by_job_id,
 )
 from careeros.tests.conftest import make_job
 
@@ -182,3 +184,100 @@ def test_append_rows_realigns_canonical_row_to_drifted_live_header():
     assert by_name["Company LinkedIn"] == "https://li/acme"
     assert by_name["Drive Folder"] == "https://drive/f"
     assert by_name["Role"] == job.title  # Role cell is NOT clobbered by Company LinkedIn
+
+
+# ── Phase 3 (v1.1): per-file Drive links + targeted row update ──────────────
+
+def test_job_to_row_includes_per_file_drive_links():
+    job = make_job(id="job-1")
+    row = job_to_row("2026-07-08", job, make_eval(), "r.md", "c.md", "rep.md",
+                     drive_folder_link="https://drive/folder",
+                     resume_drive_link="https://drive/resume.pdf",
+                     cover_drive_link="https://drive/cover.pdf")
+    assert row[SHEET_HEADERS.index("Resume (Drive)")] == "https://drive/resume.pdf"
+    assert row[SHEET_HEADERS.index("Cover Letter (Drive)")] == "https://drive/cover.pdf"
+    assert row[SHEET_HEADERS.index("Drive Folder")] == "https://drive/folder"
+
+
+def test_job_to_row_per_file_drive_links_blank_by_default():
+    row = job_to_row("2026-07-08", make_job(id="job-1"), make_eval(), "r.md", "c.md", "rep.md")
+    assert row[SHEET_HEADERS.index("Resume (Drive)")] == ""
+    assert row[SHEET_HEADERS.index("Cover Letter (Drive)")] == ""
+
+
+def _mock_ws_with_rows(header, rows):
+    """rows: list of lists matching `header`'s column order."""
+    ws = MagicMock()
+    ws.get_all_values.return_value = [header] + rows
+    ws.col_count = len(header)
+    return ws
+
+
+def test_read_all_rows_with_job_id_returns_dicts_plus_row_number():
+    ws = _mock_ws_with_rows(list(SHEET_HEADERS), [
+        ["2026-07-07"] + [""] * (len(SHEET_HEADERS) - 2) + ["job-a"],
+        ["2026-07-08"] + [""] * (len(SHEET_HEADERS) - 2) + ["job-b"],
+    ])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        rows = read_all_rows_with_job_id(MagicMock())
+    assert len(rows) == 2
+    assert rows[0]["Job ID"] == "job-a" and rows[0]["_row_number"] == 2
+    assert rows[1]["Job ID"] == "job-b" and rows[1]["_row_number"] == 3
+
+
+def test_read_all_rows_with_job_id_empty_sheet_returns_empty_list():
+    ws = _mock_ws_with_rows(list(SHEET_HEADERS), [])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        assert read_all_rows_with_job_id(MagicMock()) == []
+
+
+def test_update_row_by_job_id_touches_only_named_columns():
+    header = list(SHEET_HEADERS)
+    row = [""] * len(header)
+    row[header.index("Job ID")] = "job-a"
+    row[header.index("Notes")] = "a human wrote this — must survive untouched"
+    ws = _mock_ws_with_rows(header, [row])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        found = update_row_by_job_id(MagicMock(), "job-a", {
+            "Drive Folder": "https://drive/f",
+            "Resume (Drive)": "https://drive/r.pdf",
+        })
+    assert found is True
+    batch_arg = ws.batch_update.call_args.args[0]
+    updated_ranges = {b["range"]: b["values"][0][0] for b in batch_arg}
+    # exactly the 2 requested columns were touched, on row 2 (first data row)
+    assert len(batch_arg) == 2
+    import gspread as gs
+    expected_drive_folder_cell = gs.utils.rowcol_to_a1(2, header.index("Drive Folder") + 1)
+    expected_resume_cell = gs.utils.rowcol_to_a1(2, header.index("Resume (Drive)") + 1)
+    assert updated_ranges[expected_drive_folder_cell] == "https://drive/f"
+    assert updated_ranges[expected_resume_cell] == "https://drive/r.pdf"
+
+
+def test_update_row_by_job_id_returns_false_when_job_id_not_found():
+    header = list(SHEET_HEADERS)
+    row = [""] * len(header)
+    row[header.index("Job ID")] = "some-other-job"
+    ws = _mock_ws_with_rows(header, [row])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        found = update_row_by_job_id(MagicMock(), "job-a", {"Drive Folder": "x"})
+    assert found is False
+    ws.batch_update.assert_not_called()
+
+
+def test_update_row_by_job_id_ignores_unknown_column_names():
+    """A defensive guard: update_row_by_job_id never silently invents a new
+    column — that's _ensure_headers/append_rows's job, not this function's."""
+    header = list(SHEET_HEADERS)
+    row = [""] * len(header)
+    row[header.index("Job ID")] = "job-a"
+    ws = _mock_ws_with_rows(header, [row])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        update_row_by_job_id(MagicMock(), "job-a", {"Totally Not A Real Column": "x"})
+    ws.batch_update.assert_not_called()
+
+
+def test_update_row_by_job_id_empty_sheet_returns_false():
+    ws = _mock_ws_with_rows(list(SHEET_HEADERS), [])
+    with patch("careeros.sheets._open_worksheet", return_value=ws):
+        assert update_row_by_job_id(MagicMock(), "job-a", {"Drive Folder": "x"}) is False

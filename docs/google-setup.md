@@ -85,20 +85,26 @@ missing.
 
 ## Part 2 — Google Drive backup (optional, off by default)
 
-Skip this unless you want PDF/Markdown copies of each shortlisted job's
-resume, cover letter, and report saved to a Drive folder automatically.
+Skip this unless you want every Apply-tier job's Resume and Cover Letter (as
+**PDF**), Evaluation, and Deep Report saved to one Drive folder automatically
+— no per-company or per-job subfolders, just
+`Company - Role - Resume.pdf` sitting directly in the folder you choose.
 
 Drive uses a **different** credential from Sheets — an **OAuth "Desktop app"**
 client (not a service account), because files land in *your own* Drive, owned
 by you.
 
-1. Install the extra deps: `pip install -e ".[drive]"`.
+1. Install the extra deps: `pip install -e ".[drive,pdf]"` (`[drive]` is
+   required for any upload at all; `[pdf]` is pure-Python `fpdf2` — no
+   system binaries — and renders the actual PDFs. Without `[pdf]`, Drive
+   backup still works, it just uploads Resume/Cover Letter as Markdown
+   instead and prints a warning).
 2. Google Cloud Console (same project) → **APIs & Services → Credentials →
    Create Credentials → OAuth client ID**. If prompted, configure the consent
    screen (User type: **External**, add yourself as a **Test user**).
    Application type: **Desktop app**. Create → **Download JSON**.
-3. Make the Drive folder you want everything saved into (in your own Drive),
-   open it, and copy the id from its URL
+3. Make (or reuse) the Drive folder you want everything saved into (in your
+   own Drive), open it, and copy the id from its URL
    (`https://drive.google.com/drive/folders/`**`FOLDER_ID`**).
 4. In `.careeros/config.yaml`:
    ```yaml
@@ -107,12 +113,19 @@ by you.
      client_secret_path: "/full/path/to/oauth-desktop-client.json"
      root_folder_id: "FOLDER_ID"
      token_path: ".careeros/drive_token.json"   # auto-created; gitignored
+     date_subfolder: false   # true = group each day's uploads under a YYYY-MM-DD/ subfolder
    ```
 5. The **first** run opens a browser once to approve access; after that a
    saved token (`drive_token.json`) makes every later run silent.
 
 Any Drive problem (auth, network, quota) only prints a warning — it never
 blocks discovery, evaluation, or the Sheet. Drive is purely additive backup.
+Re-uploading the same job (a re-run of `daily`, or `backfill-drive`) updates
+its existing files in place rather than duplicating them.
+
+**Already have Apply-tier jobs in your Sheet from before Drive was on?** Run
+`careeros backfill-drive` (defaults to a dry-run preview; add `--no-dry-run`
+to actually upload and add the clickable links to those existing rows).
 
 ---
 
@@ -123,5 +136,7 @@ blocks discovery, evaluation, or the Sheet. Drive is purely additive backup.
 | `PermissionError` / 403 writing the Sheet | Sheet not shared with the service account | Part 1, step 5 — share with the `client_email`, Editor |
 | `Sheets not configured` | `spreadsheet_id` or `credentials_path` missing | Part 1, steps 4–5 |
 | `SpreadsheetNotFound` | wrong `spreadsheet_id` | Re-copy the id from the Sheet URL (between `/d/` and `/edit`) |
-| Drive: `needs the optional [drive] extra` | extra not installed | `pip install -e ".[drive]"` |
+| Drive: `needs the optional [drive] extra` | extra not installed | `pip install -e ".[drive,pdf]"` |
 | Drive: browser consent every run | token not being saved | check `drive.token_path` is writable and gitignored |
+| Resume/Cover uploaded as `.md` instead of `.pdf` | `[pdf]` extra not installed | `pip install -e ".[pdf]"` — Drive backup still worked, just without PDF rendering |
+| Old Apply-tier Sheet rows have no Drive links | they predate Drive being enabled | `careeros backfill-drive --no-dry-run` |

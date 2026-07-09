@@ -1,11 +1,16 @@
 """Google Sheets integration. Deterministic — no AI involved.
 
-Google Sheets is the primary OUTPUT for v1 (not a database). This module
-does exactly two things: append rows for a day's selected jobs, and read
-back existing Job IDs for dedupe. Both are plain gspread calls; there is no
-sync/merge logic because CareerOS only ever appends, never edits or deletes
-a row it already wrote (an existing row is left for the human to edit
-freely — status, notes, whatever they want to track there).
+Google Sheets is the primary OUTPUT for v1 (not a database). This module's
+core operation is still append-only for new rows written by `daily` — an
+existing row is left for the human to edit freely (status, notes, whatever
+they want to track there) unless explicitly targeted.
+
+Phase 3 (v1.1) adds ONE narrow, deliberate exception to "never edit an
+existing row": `update_row_by_job_id()`, used only by `careeros
+backfill-drive` to add Drive links to rows that predate Drive automation. It
+touches ONLY the specific columns it's told to (Drive Folder, Resume/Cover
+(Drive)) — never anything else in that row, so any human notes/status
+elsewhere in the row are untouched.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ SHEET_HEADERS = [
     "Date", "Company", "Company LinkedIn", "Role", "Score", "Confidence", "Recommendation",
     "Tier", "Apply URL", "Resume Path", "Cover Letter Path", "Report Path",
     "Source", "Hiring Contact", "Contact LinkedIn", "Contact Email",
-    "Drive Folder", "Notes", "Job ID",
+    "Drive Folder", "Resume (Drive)", "Cover Letter (Drive)", "Notes", "Job ID",
 ]
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -95,6 +100,8 @@ def job_to_row(
     date: str, job: Job, evaluation: Eval,
     resume_path: str, cover_path: str, report_path: str,
     drive_folder_link: str = "",
+    resume_drive_link: str = "",
+    cover_drive_link: str = "",
     tier: str = "Apply",
     notes: str = "",
 ) -> list[Any]:
@@ -103,11 +110,16 @@ def job_to_row(
 
     `tier` is "Apply" (score >= threshold: full pipeline) or "Consider"
     (near-miss: Sheet-only). For a Consider row the caller passes blank
-    resume/cover/report paths and blank drive_folder_link (no artifacts were
+    resume/cover/report paths and blank drive links (no artifacts were
     generated) and a `notes` string explaining why it fell short of Apply.
-    `drive_folder_link` is otherwise blank unless the optional Drive backup
-    (P2.6) ran — sheets.py has no import dependency on drive.py; cli.py resolves
-    the link and passes it in, keeping the two modules decoupled."""
+
+    `drive_folder_link` points at the shared Drive folder (same link for
+    every row under the Phase 3 flat layout); `resume_drive_link`/
+    `cover_drive_link` are direct, per-job clickable links to that job's own
+    Resume/Cover Letter file in Drive — one click to the exact file, no
+    searching. All three are blank unless the optional Drive backup ran.
+    sheets.py has no import dependency on drive.py; cli.py resolves the
+    links and passes them in, keeping the two modules decoupled."""
     contact = job.contact
     return [
         date, job.company, job.company_linkedin or "", job.title,
@@ -117,7 +129,7 @@ def job_to_row(
         contact.name if contact else "",
         contact.linkedin if contact else "",
         contact.email if contact else "",
-        drive_folder_link, notes,
+        drive_folder_link, resume_drive_link, cover_drive_link, notes,
         job.id,
     ]
 
@@ -137,3 +149,55 @@ def append_rows(config: Config, rows: list[list[Any]]) -> None:
         by_name = dict(zip(SHEET_HEADERS, row))
         aligned.append([by_name.get(col, "") for col in live_header])
     worksheet.append_rows(aligned, value_input_option="USER_ENTERED")
+
+
+def read_all_rows_with_job_id(config: Config) -> list[dict[str, Any]]:
+    """Read every data row (excluding the header) as a {header_name: value}
+    dict, plus a `_row_number` (1-indexed, matching gspread's convention —
+    row 1 is the header, so the first data row is `_row_number: 2`) for
+    later targeted updates. Used by `careeros backfill-drive` to find
+    existing Apply-tier rows that predate Drive automation. Column lookup is
+    BY NAME (via the live header), same as every other read in this module."""
+    worksheet = _open_worksheet(config)
+    values = worksheet.get_all_values()
+    if len(values) <= 1:
+        return []
+    header = values[0]
+    rows = []
+    for i, row in enumerate(values[1:], start=2):
+        record = {col: (row[j] if j < len(row) else "") for j, col in enumerate(header)}
+        record["_row_number"] = i
+        rows.append(record)
+    return rows
+
+
+def update_row_by_job_id(config: Config, job_id: str, updates: dict[str, str]) -> bool:
+    """Update ONLY the named columns of the row matching `job_id`, in place —
+    the one deliberate, narrow exception to this module's append-only design
+    (see module docstring). Any other cell in that row (including anything a
+    human typed into Notes or a custom column) is left completely untouched.
+
+    Returns True if a matching row was found and updated, False if `job_id`
+    isn't present in the sheet (nothing to update — not an error)."""
+    worksheet = _open_worksheet(config)
+    live_header = _ensure_headers(worksheet)
+    values = worksheet.get_all_values()
+    if len(values) <= 1 or "Job ID" not in live_header:
+        return False
+    id_col = live_header.index("Job ID")
+    row_number = next(
+        (i for i, row in enumerate(values[1:], start=2)
+         if len(row) > id_col and row[id_col] == job_id),
+        None,
+    )
+    if row_number is None:
+        return False
+    batch = []
+    for col_name, value in updates.items():
+        if col_name not in live_header:
+            continue  # never silently add a column here; append_rows/_ensure_headers own that
+        col_index = live_header.index(col_name) + 1  # gspread cell coordinates are 1-indexed
+        batch.append({"range": gspread.utils.rowcol_to_a1(row_number, col_index), "values": [[value]]})
+    if batch:
+        worksheet.batch_update(batch, value_input_option="USER_ENTERED")
+    return True

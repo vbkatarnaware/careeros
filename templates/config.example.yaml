@@ -136,8 +136,13 @@ drive:
   # Where the refresh token is cached after the first consent — reused
   # silently on every later run, no browser needed again.
   token_path: ".careeros/drive_token.json"
-  # The Drive folder date-folders are created directly inside — point this
-  # at a folder you already created/shared (its id is the last segment of
-  # its drive.google.com/drive/folders/<id> URL). No extra "CareerOS/"
-  # nesting is added on top of it.
+  # Flat layout: every Apply-tier job's files (Resume.pdf, Cover Letter.pdf,
+  # Evaluation.md, Deep Report.md if it exists) land directly in this ONE
+  # folder as "Company - Role - <Artifact>.<ext>" — no per-company, no
+  # per-job subfolders. Point this at a folder you already created/shared
+  # (its id is the last segment of its drive.google.com/drive/folders/<id>
+  # URL). Needs pip install -e ".[drive,pdf]" — see docs/google-setup.md.
   root_folder_id: null
+  # Optional: group each day's uploads under a YYYY-MM-DD subfolder inside
+  # root_folder_id instead of the flat root. Off by default.
+  date_subfolder: false

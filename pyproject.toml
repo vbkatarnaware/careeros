@@ -20,6 +20,10 @@ dev = ["pytest>=8.0"]
 # Optional Google Drive artifact backup (P2.6, drive.enabled: true). Not a
 # core dependency — a fresh OSS clone never needs these to run `daily`.
 drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0"]
+# Optional PDF rendering for resume/cover (Phase 3, v1.1). Pure-Python, no
+# system binaries — a fresh OSS clone never needs this unless Drive is on;
+# without it, Drive upload falls back to Markdown + a warning.
+pdf = ["fpdf2>=2.7"]
 
 [project.scripts]
 careeros = "careeros.cli:app"

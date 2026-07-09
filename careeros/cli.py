@@ -1104,14 +1104,27 @@ def summary(date: str = typer.Option(None)):
 
 # ── drive (optional, config-gated, fail-soft) ────────────────────────────
 
+def _job_upload_results_to_dict(results: dict) -> dict:
+    """JobUploadResult dataclasses aren't directly JSON-serializable — flatten
+    to plain dicts for drive_links.json (also the shape sheets_append reads
+    back)."""
+    return {
+        job_id: {
+            "folder": r.folder_link, "resume": r.resume_link,
+            "cover": r.cover_link, "warnings": r.warnings,
+        }
+        for job_id, r in results.items()
+    }
+
+
 @app.command("drive")
 def drive_upload(date: str = typer.Option(None, help="Run date, default today")):
-    """[dev] Upload the day's shortlisted (selected) artifacts to Google
-    Drive as an additive backup — off by default (drive.enabled: false).
-    Local Markdown is never replaced or moved. ANY failure here (missing
-    deps, auth, network, quota) is caught and reported as a warning; the
-    rest of the pipeline is never blocked by a Drive failure — that's a hard
-    requirement, not a nicety."""
+    """[dev] Upload the day's Apply-tier artifacts to Google Drive as an
+    additive backup (flat layout, PDF resume/cover) — off by default
+    (drive.enabled: false). Local Markdown is never replaced or moved. ANY
+    failure here (missing deps, auth, network, quota) is caught and reported
+    as a warning; the rest of the pipeline is never blocked by a Drive
+    failure — that's a hard requirement, not a nicety."""
     cfg = _config()
     date = date or _today()
 
@@ -1140,18 +1153,22 @@ def drive_upload(date: str = typer.Option(None, help="Run date, default today"))
             for e in evals if e.id in jobs_by_id
         ]
         run_dir = runmeta.run_dir(cfg.runs_dir, date)
-        links = upload_run(cfg, date, run_dir / "run.json", run_dir / "summary.md", selected_jobs)
+        results = upload_run(cfg, date, run_dir / "run.json", run_dir / "summary.md", selected_jobs)
     except Exception as e:  # deliberately broad — fail-soft is a hard requirement, see docstring
         typer.echo(f"[drive] WARNING: upload failed, continuing without Drive — {e}", err=True)
         return
 
     with open(runmeta.run_dir(cfg.runs_dir, date) / "drive_links.json", "w") as f:
-        f.write(dumps(links))
+        f.write(dumps(_job_upload_results_to_dict(results)))
 
-    typer.echo(f"[drive] uploaded {len(links)}/{len(selected_jobs)} job folder(s) to Drive "
+    for job_id, r in results.items():
+        for w in r.warnings:
+            typer.echo(f"[drive] {job_id}: {w}", err=True)
+
+    typer.echo(f"[drive] uploaded {len(results)}/{len(selected_jobs)} job(s) to Drive "
                f"({time.time() - start:.1f}s).")
     runmeta.record_stage(cfg.runs_dir, date, "drive",
-                          count_in=len(selected_jobs), count_out=len(links),
+                          count_in=len(selected_jobs), count_out=len(results),
                           seconds=time.time() - start)
 
 
@@ -1190,9 +1207,10 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
     with open(jobs_path) as f:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
-    # Optional hand-off from `careeros drive` (P2.6) — sheets.py has no
+    # Optional hand-off from `careeros drive` (Phase 3) — sheets.py has no
     # import dependency on drive.py; if the file isn't there (Drive disabled,
-    # not yet run, or it failed), every row's Drive Folder cell is just blank.
+    # not yet run, or it failed), every row's Drive cells are just blank.
+    # {"job_id": {"folder": url, "resume": url, "cover": url, "warnings": [...]}}
     drive_links_path = runmeta.run_dir(cfg.runs_dir, date) / "drive_links.json"
     drive_links: dict = {}
     if drive_links_path.exists():
@@ -1200,16 +1218,19 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
             drive_links = json.load(f)
 
     rows = []
-    # APPLY tier: full row with artifact paths + any Drive link.
+    # APPLY tier: full row with artifact paths + any Drive links.
     for e in apply_evals:
         job = jobs_by_id[e.id]
         artifacts = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
+        links = drive_links.get(e.id, {})
         rows.append(sheets_mod.job_to_row(
             date, job, e,
             resume_path=str(artifacts / "resume.md"),
             cover_path=str(artifacts / "cover.md"),
             report_path=str(artifacts / "daily_report.md"),
-            drive_folder_link=drive_links.get(e.id, ""),
+            drive_folder_link=links.get("folder", ""),
+            resume_drive_link=links.get("resume", ""),
+            cover_drive_link=links.get("cover", ""),
             tier="Apply",
         ))
     # CONSIDER tier: near-misses — NO artifacts, NO Drive; just score + a
@@ -1235,6 +1256,180 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
     runmeta.record_stage(cfg.runs_dir, date, "sheets",
                           count_in=len(apply_evals) + len(consider_evals), count_out=len(rows),
                           seconds=time.time() - start)
+
+
+# ── backfill-drive (Phase 3, v1.1) ───────────────────────────────────────
+
+@app.command("backfill-drive")
+def backfill_drive(
+    dry_run: bool = typer.Option(
+        True, "--dry-run/--no-dry-run",
+        help="Preview only (default): no Drive uploads, no Sheet writes. Pass --no-dry-run to apply."),
+):
+    """Add Drive artifacts + clickable Sheet links (Drive Folder, Resume
+    (Drive), Cover Letter (Drive)) to Apply-tier rows that predate Drive
+    automation. Safe to re-run: rows that already have both links are
+    skipped (idempotent). Never fabricates — a row whose local
+    resume.md/cover.md no longer exist on disk is listed as needing
+    regeneration, not silently invented. Defaults to --dry-run so the very
+    first run against your real Sheet only shows you what WOULD happen."""
+    cfg = _config()
+
+    if not cfg.drive.get("enabled", False) or not cfg.drive.get("root_folder_id"):
+        typer.echo("[backfill-drive] Drive isn't configured (drive.enabled + "
+                   "drive.root_folder_id in .careeros/config.yaml) — nothing to backfill.", err=True)
+        raise typer.Exit(1)
+
+    rows = sheets_mod.read_all_rows_with_job_id(cfg)
+    # A blank/missing Tier means the row predates the Tier column (Phase 3) —
+    # every row written before Tier existed was, by construction, an Apply-
+    # tier row (the Consider tier did not exist yet, so nothing else could
+    # have been appended). Only a row EXPLICITLY marked "Consider" is excluded.
+    apply_rows = [r for r in rows if r.get("Tier", "") in ("Apply", "")]
+    typer.echo(f"[backfill-drive] {len(apply_rows)} Apply-tier row(s) found in the Sheet "
+               f"({len(rows)} total rows).")
+
+    to_process: list[tuple[str, str, str, str, Path]] = []
+    needs_regen: list[tuple[str, str, str, str]] = []
+    already_done = 0
+
+    for row in apply_rows:
+        if row.get("Resume (Drive)") and row.get("Cover Letter (Drive)"):
+            already_done += 1
+            continue
+        date, job_id = row.get("Date", ""), row.get("Job ID", "")
+        company, role = row.get("Company", ""), row.get("Role", "")
+        if not date or not job_id:
+            continue  # malformed row (predates Job ID being tracked) — nothing we can key on
+        artifacts_dir = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
+        if not (artifacts_dir / "resume.md").exists() or not (artifacts_dir / "cover.md").exists():
+            needs_regen.append((date, company, role, job_id))
+            continue
+        to_process.append((date, company, role, job_id, artifacts_dir))
+
+    typer.echo(f"[backfill-drive] {already_done} row(s) already backfilled (idempotent skip).")
+    if needs_regen:
+        typer.echo(f"[backfill-drive] {len(needs_regen)} row(s) NEED REGENERATION "
+                   f"(local artifacts no longer on disk — NOT fabricated):")
+        for date, company, role, job_id in needs_regen:
+            typer.echo(f"    {date} | {company} - {role} ({job_id})")
+
+    if not to_process:
+        typer.echo("[backfill-drive] Nothing left to upload.")
+        return
+
+    typer.echo(f"[backfill-drive] {len(to_process)} row(s) to backfill:")
+    for date, company, role, job_id, _ in to_process:
+        typer.echo(f"    {date} | {company} - {role} ({job_id})")
+
+    if dry_run:
+        typer.echo("\n[backfill-drive] DRY RUN — no Drive uploads, no Sheet writes made. "
+                   "Re-run with --no-dry-run to apply.")
+        return
+
+    import types
+    from careeros.drive import upload_jobs, verify_uploads
+
+    jobs_batch = [
+        (date, types.SimpleNamespace(id=job_id, company=company, title=role), artifacts_dir)
+        for date, company, role, job_id, artifacts_dir in to_process
+    ]
+    try:
+        results = upload_jobs(cfg, jobs_batch)
+    except Exception as e:  # only a whole-batch failure (auth/config) raises this high —
+        typer.echo(f"[backfill-drive] WARNING: upload failed, nothing written — {e}", err=True)
+        raise typer.Exit(1)
+
+    # Every requested job should appear in `results` UNLESS it had no local
+    # artifacts at all (already excluded above, so this shouldn't happen) —
+    # track it anyway so a silent gap is visible rather than assumed fine.
+    upload_failed: list[tuple[str, str]] = []   # (job_id, error)
+    upload_succeeded: dict[str, object] = {}     # job_id -> JobUploadResult
+    for job_id, r in results.items():
+        for w in r.warnings:
+            typer.echo(f"[backfill-drive] {job_id}: {w}", err=True)
+        if r.error:
+            upload_failed.append((job_id, r.error))
+            typer.echo(f"[backfill-drive] UPLOAD FAILED for {job_id}: {r.error}", err=True)
+        else:
+            upload_succeeded[job_id] = r
+
+    sheet_update_failed: list[tuple[str, str]] = []   # (job_id, reason)
+    sheet_update_succeeded: list[str] = []
+    for job_id, r in upload_succeeded.items():
+        try:
+            found = sheets_mod.update_row_by_job_id(cfg, job_id, {
+                "Drive Folder": r.folder_link,
+                "Resume (Drive)": r.resume_link,
+                "Cover Letter (Drive)": r.cover_link,
+            })
+        except Exception as e:  # one row's Sheet-write failure must not stop the rest
+            sheet_update_failed.append((job_id, str(e)))
+            typer.echo(f"[backfill-drive] SHEET UPDATE FAILED for {job_id}: {e}", err=True)
+            continue
+        if found:
+            sheet_update_succeeded.append(job_id)
+        else:
+            sheet_update_failed.append((job_id, "row not found on re-lookup (was it deleted?)"))
+            typer.echo(f"[backfill-drive] SHEET UPDATE FAILED for {job_id}: "
+                       f"row not found on re-lookup", err=True)
+
+    # ── Verification pass: re-fetch from Drive + re-read the Sheet fresh —
+    # never trust the upload/update calls' own success signal alone. ──
+    drive_verification = verify_uploads(cfg, upload_succeeded) if upload_succeeded else {}
+    drive_verified = sum(
+        1 for v in drive_verification.values() if v["resume_ok"] and v["cover_ok"] and not v["errors"]
+    )
+    drive_verify_failed = [
+        job_id for job_id, v in drive_verification.items()
+        if not (v["resume_ok"] and v["cover_ok"] and not v["errors"])
+    ]
+
+    sheet_verified = 0
+    sheet_verify_failed: list[str] = []
+    if sheet_update_succeeded:
+        fresh_rows = {r.get("Job ID"): r for r in sheets_mod.read_all_rows_with_job_id(cfg)}
+        for job_id in sheet_update_succeeded:
+            r = upload_succeeded[job_id]
+            fresh = fresh_rows.get(job_id, {})
+            ok = (fresh.get("Drive Folder") == r.folder_link
+                  and fresh.get("Resume (Drive)") == r.resume_link
+                  and fresh.get("Cover Letter (Drive)") == r.cover_link)
+            if ok:
+                sheet_verified += 1
+            else:
+                sheet_verify_failed.append(job_id)
+
+    all_failed = upload_failed + sheet_update_failed
+    fully_verified = (
+        not all_failed
+        and drive_verified == len(upload_succeeded)
+        and sheet_verified == len(sheet_update_succeeded)
+    )
+
+    typer.echo("\n[backfill-drive] ── Reconciliation report ──────────────────────")
+    typer.echo(f"  Apply rows found:            {len(apply_rows)}")
+    typer.echo(f"  Skipped (already backfilled): {already_done}")
+    typer.echo(f"  Skipped (needs regeneration): {len(needs_regen)}")
+    typer.echo(f"  Uploaded to Drive:            {len(upload_succeeded)}/{len(to_process)}")
+    typer.echo(f"  Updated in Sheets:            {len(sheet_update_succeeded)}/{len(upload_succeeded)}")
+    typer.echo(f"  Drive links verified:         {drive_verified}/{len(upload_succeeded)}")
+    typer.echo(f"  Sheet links verified:         {sheet_verified}/{len(sheet_update_succeeded)}")
+    if all_failed:
+        typer.echo(f"  FAILED ({len(all_failed)}):")
+        for job_id, reason in all_failed:
+            typer.echo(f"    - {job_id}: {reason}")
+    if drive_verify_failed:
+        typer.echo(f"  Drive verification FAILED for: {', '.join(drive_verify_failed)}")
+    if sheet_verify_failed:
+        typer.echo(f"  Sheet verification FAILED for: {', '.join(sheet_verify_failed)}")
+
+    if fully_verified:
+        typer.echo("\n[backfill-drive] MIGRATION COMPLETE — all uploads and Sheet updates verified.")
+    else:
+        typer.echo("\n[backfill-drive] MIGRATION INCOMPLETE — see failures/verification gaps above. "
+                   "Safe to re-run: already-backfilled rows are skipped.", err=True)
+        raise typer.Exit(1)
 
 
 # ── lint ──────────────────────────────────────────────────────────────────

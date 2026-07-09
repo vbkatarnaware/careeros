@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m careeros.cli config)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m pytest careeros/tests/ -q)",
+      "Bash(node -e ' *)",
+      "Bash(grep -n \"Threshold\\\\|jobs scoring\\\\|Company LinkedIn · \\\\|Job ID\\\\`\\\\|one segmented query\\\\|Recommendation · Apply URL\\\\|configured bar\" README.md)"
+    ]
+  }
+}

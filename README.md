@@ -125,15 +125,18 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
    never invented, cache-checked) + a daily report (rendered from the eval
    JSON, zero AI).
 9. **Summary** — a deterministic `summary.md` (funnel, the Apply list, the
-   Review/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
+   Consider/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
    per interview-worthy job, supply-aware — a day with 0 selected is a
    legitimate outcome, not a failure, and CareerOS never lowers the quality
    bar just to hit a job count.
-10. **Drive** *(optional, off by default)* — additive backup of shortlisted
-    artifacts to Google Drive via your own OAuth desktop grant. Any failure
-    here only warns; it never blocks the rest of the pipeline.
-11. **Sheets** — append one row per selected job (with a Drive Folder link if
-    step 10 ran). You open the Sheet and start applying.
+10. **Drive** *(optional, off by default)* — additive backup of Apply-tier
+    artifacts (Resume/Cover as PDF, Evaluation, Deep Report if present) into
+    one flat Drive folder via your own OAuth desktop grant. Idempotent
+    (re-uploads update in place). Any failure here only warns; it never
+    blocks the rest of the pipeline.
+11. **Sheets** — append one row per Apply job (with Drive Folder + per-file
+    Resume/Cover PDF links if step 10 ran) and one row per Consider job
+    (score + reason only). You open the Sheet and start applying.
 
 Two more commands exist outside the daily loop, deliberately:
 
@@ -156,6 +159,7 @@ Two more commands exist outside the daily loop, deliberately:
 | `careeros apply <job-id>` | Detect ATS, draft answers to pasted questions |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
+| `careeros backfill-drive` | Add Drive artifacts + clickable Sheet links to Apply-tier rows from before Drive was enabled. Defaults to `--dry-run` |
 
 Developer/debug commands — each stage runnable standalone against a run
 directory, without re-running the whole pipeline:
@@ -276,7 +280,7 @@ One append-only `Jobs` worksheet:
 `Date · Company · Company LinkedIn · Role · Score · Confidence ·
 Recommendation · Tier · Apply URL · Resume Path · Cover Letter Path ·
 Report Path · Source · Hiring Contact · Contact LinkedIn · Contact Email ·
-Drive Folder · Notes · Job ID`
+Drive Folder · Resume (Drive) · Cover Letter (Drive) · Notes · Job ID`
 
 `Tier` is `Apply` or `Consider` (see Pipeline step 7); a Consider row has
 blank artifact/Drive cells and a `Notes` reason it scored below 4.0. Columns
@@ -285,29 +289,65 @@ automatically — so a Sheet created by an earlier version self-migrates on the
 next run without losing data or breaking dedupe.
 
 `Job ID` is the join key `prep`/`apply` use to look a row back up. `Company
-LinkedIn` and `Drive Folder` are populated when the underlying data exists
-(Fantastic Jobs exposes the former on ~100% of postings at zero extra cost;
-the latter only if Drive backup — see below — is enabled and succeeds).
+LinkedIn` is populated for ~100% of postings at zero extra cost. `Drive
+Folder`, `Resume (Drive)`, and `Cover Letter (Drive)` are populated only if
+Drive backup (below) is enabled and succeeds — `Drive Folder` links to the
+shared backup folder (same link on every row); `Resume (Drive)`/`Cover
+Letter (Drive)` are direct, per-job clickable links straight to that job's
+own PDF, no searching required. Got Apply-tier rows from before Drive backup
+existed? `careeros backfill-drive` adds these links to them too — see below.
 
 ## Google Drive backup (optional)
 
-Off by default. When `drive.enabled: true`, `careeros drive` uploads each
-shortlisted job's resume/cover/report — plus the day's `run.json` and
-`summary.md` — into `<your root folder>/YYYY-MM-DD/<Company>/` as an
+Off by default. When `drive.enabled: true`, `careeros drive` uploads every
+Apply-tier job's Resume + Cover Letter (as **PDF**), Evaluation, and Deep
+Report (if you've run `prep` on it) — plus the day's `run.json` and
+`summary.md` — into **one flat folder** (`drive.root_folder_id`) as an
 **additive** backup; your local `.careeros/runs/` Markdown is never moved,
-replaced, or read back by any pipeline stage. Needs the optional extra:
+replaced, or read back by any pipeline stage. Files are named
+`Company - Role - Resume.pdf`, `Company - Role - Cover Letter.pdf`,
+`Company - Role - Evaluation.md`, `Company - Role - Deep Report.md` — no
+per-company or per-job subfolders (set `drive.date_subfolder: true` if you'd
+rather group each day's uploads under a `YYYY-MM-DD/` subfolder instead).
+Consider-tier jobs never generate artifacts, so they never upload anything.
+
+Re-running `daily` (or `backfill-drive`) for the same job updates its
+existing files in place rather than duplicating them — uploads are
+idempotent. Needs two optional extras:
 
 ```
-pip install -e ".[drive]"
+pip install -e ".[drive,pdf]"
 ```
 
-and an OAuth **Desktop app** client secret (Google Cloud Console →
-Credentials → Create Credentials → OAuth client ID → Desktop app) — not a
+`[drive]` (Google API client + OAuth) is required for any upload at all.
+`[pdf]` (pure-Python `fpdf2`, no system binaries) renders the PDFs; without
+it, Resume/Cover Letter upload as Markdown instead and a warning is printed
+— Drive backup still works, just not with PDFs.
+
+You'll also need an OAuth **Desktop app** client secret (Google Cloud Console
+→ Credentials → Create Credentials → OAuth client ID → Desktop app) — not a
 service account, since uploads land in your own personal Drive quota. The
 first run opens a one-time browser consent; after that, a cached refresh
 token (`drive.token_path`, gitignored) makes every later run silent. Any
 Drive failure (auth, network, quota) only prints a warning — discovery,
 evaluation, Sheets, and every other stage run exactly as if Drive were off.
+
+### Backfilling jobs from before Drive was enabled
+
+If you already have Apply-tier rows in your Sheet from before you turned
+Drive on (or before upgrading to this version), `careeros backfill-drive`
+adds Drive artifacts + clickable Sheet links to them without touching
+anything else in those rows:
+
+```
+careeros backfill-drive            # dry run (default) — preview only, writes nothing
+careeros backfill-drive --no-dry-run   # actually uploads + updates the Sheet
+```
+
+It's safe to re-run — rows that already have both Drive links are skipped.
+If a row's local `resume.md`/`cover.md` no longer exist on disk (an old run
+directory was cleaned up), that row is listed as **needing regeneration**
+instead of inventing content — nothing is ever fabricated.
 
 ## Caching and prompt versioning
 
@@ -322,17 +362,18 @@ cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 The full pipeline runs end to end: profile-driven segmented discovery through
 the Fantastic Jobs REST API (a legacy Apify-actor provider remains available
 — see `careeros/providers/README.md`), deterministic
-normalize/dedupe/constraints/threshold,
+normalize/dedupe/constraints/two-tier threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, a zero-cost daily report
-render, and Google Sheets append. `careeros init` seeds an example
-`profile.yaml` (a Product Manager persona in `templates/`); replace it with
-your own facts — via `careeros start` or by editing directly — before your
-first real run.
+render, automatic Google Drive backup (PDF resume/cover, flat layout,
+idempotent) for Apply-tier jobs, and Google Sheets append with clickable
+per-job Drive links. `careeros init` seeds an example `profile.yaml` (a
+Product Manager persona in `templates/`); replace it with your own facts —
+via `/careeros start` (CV-first) or by editing directly — before your first
+real run.
 
 ## Roadmap
 
-- Google Drive upload + PDF rendering for resume/cover (Markdown only today)
 - Direct-API providers for Greenhouse, Ashby, Lever, Workday (no Apify
   actor needed — see `careeros/providers/README.md`)
 - Incremental (`date_created_gte`) discovery — deferred out of the P2.7 REST
@@ -343,6 +384,8 @@ first real run.
 - Richer profile sections (adaptive framing, negotiation scripts) — kept
   out of v1 deliberately to stay lean
 - SQLite if Sheets-as-store ever hits real scaling limits
+- P3: outcome tracking (applied/response/interview/offer) and calibrating
+  scoring/artifacts on real conversion data — see `.careeros/ROADMAP.md`
 
 ## Contributing
 

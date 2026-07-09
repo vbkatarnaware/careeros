@@ -192,13 +192,18 @@ careeros drive --date {today}
 ```
 
 Only runs if `drive.enabled: true` in `.careeros/config.yaml` (otherwise
-prints one line and exits — nothing to do). Uploads shortlisted jobs'
-resume/cover/report plus `run.json`/`summary.md` to Drive as an ADDITIVE
-backup; local Markdown is never moved or replaced. **Any failure here (auth,
-network, quota) is caught and reported as a warning — never let a Drive
-problem block Sheets or stop the pipeline.** Writes
-`.careeros/runs/{today}/drive_links.json` on success, which Sheets (next
-step) reads to populate the Drive Folder column.
+prints one line and exits — nothing to do). Uploads every Apply-tier job's
+Resume + Cover Letter (as PDF via the optional `[pdf]` extra — falls back to
+Markdown + a warning if it isn't installed), Evaluation, and Deep Report (if
+`prep` has been run on it) into ONE flat Drive folder (no per-company/per-job
+subfolders — see `drive.root_folder_id`/`drive.date_subfolder`), plus
+`run.json`/`summary.md`, as an ADDITIVE backup; local Markdown is never moved
+or replaced. Re-uploading the same job updates its existing files in place
+(idempotent). **Any failure here (auth, network, quota) is caught and
+reported as a warning — never let a Drive problem block Sheets or stop the
+pipeline.** Writes `.careeros/runs/{today}/drive_links.json` on success,
+which Sheets (next step) reads to populate the Drive Folder / Resume
+(Drive) / Cover Letter (Drive) columns.
 
 ## Step 11 — Sheets (deterministic)
 
@@ -206,10 +211,15 @@ step) reads to populate the Drive Folder column.
 careeros sheets append --date {today}
 ```
 
-Appends one row per Apply job (including a Drive Folder link if Step 10 ran
-successfully) AND one row per Consider job (score + a concise reason, blank
-artifact/Drive cells — see Step 7), and records both tiers' ids to
-`.careeros/seen.jsonl` so tomorrow's `dedupe` skips them automatically.
+Appends one row per Apply job (including Drive Folder + per-file Resume
+(Drive)/Cover Letter (Drive) links if Step 10 ran successfully) AND one row
+per Consider job (score + a concise reason, blank artifact/Drive cells — see
+Step 7), and records both tiers' ids to `.careeros/seen.jsonl` so tomorrow's
+`dedupe` skips them automatically.
+
+Apply-tier rows from BEFORE Drive backup was enabled don't get these links
+retroactively from `daily` — run `careeros backfill-drive` once (dry-run by
+default) to add them to existing Sheet rows.
 
 ## Step 12 — Report to the candidate
 

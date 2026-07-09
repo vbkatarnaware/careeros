@@ -180,10 +180,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Where the one-time browser-consent refresh token is cached after
         # the first successful auth — reused silently on every later run.
         "token_path": ".careeros/drive_token.json",
-        # The Drive folder date-folders are created directly inside (i.e.
-        # this IS your "CareerOS/" root — point it at a folder you already
-        # created/shared, no extra nesting is added).
+        # Flat layout (Phase 3, locked default): every Apply-tier job's
+        # files (Resume.pdf, Cover Letter.pdf, Evaluation.md, Deep Report.md
+        # if it exists) land directly in this ONE folder, named
+        # "Company - Role - <Artifact>.<ext>" — no per-company, no per-job
+        # subfolders. Point this at a folder you already created/shared.
         "root_folder_id": None,
+        # Optional: group each day's uploads under a YYYY-MM-DD subfolder
+        # inside root_folder_id instead of the flat root. Off by default.
+        "date_subfolder": False,
     },
 }
 
