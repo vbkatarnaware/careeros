@@ -91,3 +91,24 @@ def test_returns_none_when_fpdf2_not_installed():
 def test_sanitize_helper_maps_known_unicode_chars():
     sanitized = pdf_mod._sanitize_for_core_font("a–b—c·d")
     assert sanitized == "a-b--c-d"
+
+
+def test_sanitizes_currency_symbols_that_core_fonts_cannot_encode():
+    """Regression: a candidate whose comp.currency is INR (or any non-
+    USD/EUR/GBP/JPY currency written with its symbol, not spelled out) must
+    not crash the render -- this used to raise inside fpdf2 and block the
+    whole `publish`/Drive upload for that job."""
+    md = "Target: INR-symbol 20-28 LPA. Also EUR-symbol 50k, GBP-symbol 40k, JPY-symbol 5,000,000."
+    md = md.replace("INR-symbol", "₹").replace("EUR-symbol", "€") \
+           .replace("GBP-symbol", "£").replace("JPY-symbol", "¥")
+    out = render_markdown_to_pdf(md)
+    assert _is_valid_pdf(out)
+
+
+def test_returns_none_on_genuine_render_exception():
+    """Fail-soft contract extends past 'not installed': ANY fpdf2 render
+    failure (not just missing chars) must surface as None, not raise -- the
+    caller (drive.py) falls back to Markdown rather than the whole
+    publish/upload failing."""
+    with patch.object(pdf_mod, "_sanitize_for_core_font", side_effect=RuntimeError("boom")):
+        assert render_markdown_to_pdf("# Anything") is None

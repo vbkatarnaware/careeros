@@ -43,9 +43,24 @@ careeros lint artifacts/{job-id}/deep_report.md
 Fix any reported issues. Long-form is allowed here, but voice-dna still
 applies throughout.
 
-## 5. Report back
+## 5. Publish to Drive + the Sheet — ALWAYS run this, not optional
 
-Tell the candidate the report's path and a 2-3 sentence summary of what's
-new in it (don't restate the score/recommendation, they already have that
-from the daily report) — the report itself is the deliverable, not the chat
-message.
+```
+careeros publish {job-id} --date {date the job was discovered}
+```
+
+Run this automatically as the last step of every `prep`, without asking —
+the candidate should never have to remember a separate command to get a
+finished report into Drive and their Sheet. Uploads `deep_report.md` to
+Drive and fills in that row's Deep Report (Drive) cell (previously blank —
+`daily` never generates this file, so the column has nothing to link until
+`prep` runs). Requires `drive.enabled: true`; if Drive isn't configured
+(the only case where this step is skipped), tell the candidate the
+report's local path instead.
+
+## 6. Report back
+
+Tell the candidate the report's path (and the Drive link if step 5 ran) and
+a 2-3 sentence summary of what's new in it (don't restate the
+score/recommendation, they already have that from the daily report) — the
+report itself is the deliverable, not the chat message.

@@ -16,10 +16,11 @@ from careeros.drive import JobUploadResult
 
 
 def _row(job_id, date="2026-07-07", company="Acme", role="PM", tier=None,
-         resume_drive="", cover_drive=""):
+         resume_drive="", cover_drive="", eval_drive=""):
     row = {
         "Date": date, "Company": company, "Role": role, "Job ID": job_id,
         "Resume (Drive)": resume_drive, "Cover Letter (Drive)": cover_drive,
+        "Evaluation (Drive)": eval_drive,
     }
     if tier is not None:
         row["Tier"] = tier
@@ -72,13 +73,30 @@ def test_explicit_consider_tier_rows_are_excluded(tmp_path, monkeypatch):
 def test_already_backfilled_rows_are_skipped_idempotently(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = _cfg_with_drive()
-    rows = [_row("job-done", tier="Apply", resume_drive="https://x", cover_drive="https://y")]
+    rows = [_row("job-done", tier="Apply", resume_drive="https://x", cover_drive="https://y",
+                 eval_drive="https://z")]
 
     with patch("careeros.cli._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir") as mock_artifacts_dir:
         backfill_drive(dry_run=True)
-    mock_artifacts_dir.assert_not_called()  # already has both links -> never even checked disk
+    mock_artifacts_dir.assert_not_called()  # already has all three links -> never even checked disk
+
+
+def test_dash_placeholder_is_treated_as_blank_not_already_done(tmp_path, monkeypatch):
+    """After the P2.10 blank-fill migration, a genuinely-empty cell reads as
+    "-", not "". That must still count as missing -- not as "already
+    backfilled" (a truthy-string bug that would silently no-op the whole
+    command against a migrated live sheet)."""
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg_with_drive()
+    rows = [_row("job-dash", tier="Apply", resume_drive="-", cover_drive="-", eval_drive="-")]
+
+    with patch("careeros.cli._config", return_value=cfg), \
+         patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
+         patch("careeros.cli.runmeta.artifacts_dir") as mock_artifacts_dir:
+        backfill_drive(dry_run=True)
+    mock_artifacts_dir.assert_called_once()  # "-" must NOT be mistaken for "already backfilled"
 
 
 def test_missing_local_artifacts_are_listed_not_fabricated(tmp_path, monkeypatch):
@@ -103,6 +121,7 @@ def test_dry_run_never_calls_upload_or_sheet_update(tmp_path, monkeypatch):
     artifacts.mkdir()
     (artifacts / "resume.md").write_text("# R")
     (artifacts / "cover.md").write_text("C")
+    (artifacts / "daily_report.md").write_text("# Eval")
     rows = [_row("job-a", tier="Apply")]
 
     with patch("careeros.cli._config", return_value=cfg), \
@@ -128,14 +147,16 @@ def test_no_dry_run_uploads_and_updates_matching_rows(tmp_path, monkeypatch):
     artifacts.mkdir()
     (artifacts / "resume.md").write_text("# R")
     (artifacts / "cover.md").write_text("C")
+    (artifacts / "daily_report.md").write_text("# Eval")
     rows_before = [_row("job-a", tier="Apply", company="Acme", role="PM")]
     rows_after = [_row("job-a", tier="Apply", company="Acme", role="PM",
-                       resume_drive="https://drive/r.pdf", cover_drive="https://drive/c.pdf")]
-    rows_after[0]["Drive Folder"] = "https://drive/folder"
+                       resume_drive="https://drive/r.pdf", cover_drive="https://drive/c.pdf",
+                       eval_drive="https://drive/e.md")]
 
     fake_result = JobUploadResult(folder_link="https://drive/folder",
                                   resume_link="https://drive/r.pdf",
-                                  cover_link="https://drive/c.pdf")
+                                  cover_link="https://drive/c.pdf",
+                                  eval_link="https://drive/e.md")
     fake_verification = {"job-a": {"resume_ok": True, "cover_ok": True, "errors": []}}
 
     with patch("careeros.cli._config", return_value=cfg), \
@@ -155,11 +176,41 @@ def test_no_dry_run_uploads_and_updates_matching_rows(tmp_path, monkeypatch):
     assert job_like.id == "job-a"
 
     mock_update.assert_called_once_with(cfg, "job-a", {
-        "Drive Folder": "https://drive/folder",
         "Resume (Drive)": "https://drive/r.pdf",
         "Cover Letter (Drive)": "https://drive/c.pdf",
+        "Evaluation (Drive)": "https://drive/e.md",
     })
     mock_verify.assert_called_once_with(cfg, {"job-a": fake_result})
+
+
+def test_no_dry_run_only_updates_the_link_this_run_actually_produced(tmp_path, monkeypatch):
+    """A row missing ONLY "Evaluation (Drive)" (resume/cover already linked)
+    must not have its Sheet update clobber the existing resume/cover links
+    with empty strings just because this run's upload didn't reprocess
+    those files."""
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg_with_drive()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "daily_report.md").write_text("# Eval")  # only the eval source exists on disk
+    rows_before = [_row("job-a", tier="Apply", resume_drive="https://drive/r.pdf",
+                        cover_drive="https://drive/c.pdf")]
+    rows_after = [_row("job-a", tier="Apply", resume_drive="https://drive/r.pdf",
+                       cover_drive="https://drive/c.pdf", eval_drive="https://drive/e.md")]
+
+    fake_result = JobUploadResult(folder_link="https://drive/folder", eval_link="https://drive/e.md")
+    fake_verification = {"job-a": {"resume_ok": True, "cover_ok": True, "errors": []}}
+
+    with patch("careeros.cli._config", return_value=cfg), \
+         patch("careeros.cli.sheets_mod.read_all_rows_with_job_id",
+               side_effect=[rows_before, rows_after]), \
+         patch("careeros.cli.runmeta.artifacts_dir", return_value=artifacts), \
+         patch("careeros.drive.upload_jobs", return_value={"job-a": fake_result}), \
+         patch("careeros.cli.sheets_mod.update_row_by_job_id", return_value=True) as mock_update, \
+         patch("careeros.drive.verify_uploads", return_value=fake_verification):
+        backfill_drive(dry_run=False)
+
+    mock_update.assert_called_once_with(cfg, "job-a", {"Evaluation (Drive)": "https://drive/e.md"})
 
 
 def test_upload_failure_is_fail_soft_exits_nonzero_without_crashing(tmp_path, monkeypatch):
@@ -169,6 +220,7 @@ def test_upload_failure_is_fail_soft_exits_nonzero_without_crashing(tmp_path, mo
     artifacts.mkdir()
     (artifacts / "resume.md").write_text("# R")
     (artifacts / "cover.md").write_text("C")
+    (artifacts / "daily_report.md").write_text("# Eval")
     rows = [_row("job-a", tier="Apply")]
 
     with patch("careeros.cli._config", return_value=cfg), \

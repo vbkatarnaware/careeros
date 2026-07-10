@@ -10,15 +10,18 @@ Flat layout (Phase 3, locked): ONE root folder (`drive.root_folder_id`), no
 per-company or per-job subfolders. An optional per-run date subfolder is
 available via `drive.date_subfolder: true` (default false — flat). Files are
 named `Company - Role - <Artifact>.<ext>`, so every job's files sit directly
-in the same folder, sorted naturally by company. Resume and Cover Letter are
-uploaded as PDF (rendered by careeros/pdf.py) whenever the optional `[pdf]`
-extra is installed — that is the mandatory default, not a nice-to-have; if
-the extra is missing (or a render fails for some edge-case markdown), this
-falls back to uploading the `.md` source instead and returns a warning
-string, but never raises for that reason alone. Evaluation and Deep Report
-stay Markdown (no PDF requested for those). Deep Report is uploaded only if
-`artifacts_dir/deep_report.md` exists locally (it's `prep`-only — `daily`
-never forces its generation).
+in the same folder, sorted naturally by company. Resume, Cover Letter, and
+(P2.10) Application Answers are uploaded as PDF (rendered by careeros/pdf.py)
+whenever the optional `[pdf]` extra is installed — that is the mandatory
+default, not a nice-to-have; if the extra is missing (or a render fails for
+some edge-case markdown), this falls back to uploading the `.md` source
+instead and returns a warning string, but never raises for that reason
+alone. Evaluation and Deep Report stay Markdown (no PDF requested for
+those). Deep Report is uploaded only if `artifacts_dir/deep_report.md`
+exists locally (it's `prep`-only — `daily` never forces its generation);
+Application Answers only if `artifacts_dir/answers.md` exists (written by
+the `apply` stage — see `careeros/apply/` — for Apply-tier jobs whose
+question-form was readable, or by an on-demand `careeros apply <job-id>`).
 
 Uses the existing OAuth DESKTOP client (an "installed app" client secret,
 NOT a service-account key) so uploads land in the configured user's own
@@ -70,17 +73,28 @@ class JobUploadResult:
     uploaded instead) that are NOT DriveErrors — the job's folder link is
     still returned, just with a note attached.
 
-    `resume_file_id`/`cover_file_id` are the Drive file ids (not just the
-    clickable link) — kept so a caller can independently re-verify the file
-    still exists via the Drive API (`files().get(fileId=...)`) rather than
-    trusting the link alone. `error` is set (and links left blank) when this
-    JOB'S upload failed — callers (upload_run/upload_jobs) isolate per-job
-    failures so one bad job never aborts the rest of the batch."""
+    `*_file_id` fields are the Drive file ids (not just the clickable link)
+    — kept so a caller can independently re-verify the file still exists via
+    the Drive API (`files().get(fileId=...)`) rather than trusting the link
+    alone. `eval_link`/`deep_report_link`/`answers_link` (P2.10) were
+    previously uploaded but discarded by this module — the files existed in
+    Drive with no way to find them from the Sheet; capturing them here is
+    what lets `cli.py` wire them into the Sheet's Evaluation (Drive) / Deep
+    Report (Drive) / Application Answers (Drive) columns. `error` is set
+    (and links left blank) when this JOB'S upload failed — callers
+    (upload_run/upload_jobs) isolate per-job failures so one bad job never
+    aborts the rest of the batch."""
     folder_link: str
     resume_link: str = ""
     cover_link: str = ""
     resume_file_id: str = ""
     cover_file_id: str = ""
+    eval_link: str = ""
+    eval_file_id: str = ""
+    deep_report_link: str = ""
+    deep_report_file_id: str = ""
+    answers_link: str = ""
+    answers_file_id: str = ""
     warnings: list[str] = field(default_factory=list)
     error: str = ""
 
@@ -226,17 +240,20 @@ def _upload_text_file(service, media_upload_cls, name: str, content: str, parent
 def _upload_job_artifacts(
     service, media_upload_cls, job: Any, artifacts_dir: Path, parent_id: str,
 ) -> JobUploadResult:
-    """Uploads one job's Resume/Cover (PDF, falling back to MD) + Evaluation
-    (MD) + Deep Report (MD, only if present). Never fabricates: a missing
-    source file is simply skipped, not invented."""
+    """Uploads one job's Resume/Cover/Application Answers (PDF, falling back
+    to MD) + Evaluation (MD) + Deep Report (MD, only if present). Never
+    fabricates: a missing source file is simply skipped, not invented."""
     company = _sanitize_filename_component(job.company)
     role = _sanitize_filename_component(job.title)
     prefix = f"{company} - {role}"
     warnings: list[str] = []
     resume_link = resume_file_id = ""
     cover_link = cover_file_id = ""
+    answers_link = answers_file_id = ""
 
-    for label, md_filename in (("Resume", "resume.md"), ("Cover Letter", "cover.md")):
+    for label, md_filename in (
+        ("Resume", "resume.md"), ("Cover Letter", "cover.md"), ("Application Answers", "answers.md"),
+    ):
         src = artifacts_dir / md_filename
         if not src.exists():
             continue
@@ -246,26 +263,38 @@ def _upload_job_artifacts(
             file_id, link = _upload_bytes(service, media_upload_cls, f"{prefix} - {label}.pdf",
                                           pdf_bytes, "application/pdf", parent_id, job.id)
         else:
-            warnings.append(f"[pdf] extra not installed — uploaded {label} as Markdown, not PDF")
+            warnings.append(f"PDF rendering unavailable or failed — uploaded {label} as Markdown, not PDF")
             file_id, link = _upload_text(service, media_upload_cls, f"{prefix} - {label}.md",
                                          md_text, parent_id, job.id)
         if label == "Resume":
             resume_link, resume_file_id = link, file_id
-        else:
+        elif label == "Cover Letter":
             cover_link, cover_file_id = link, file_id
+        else:
+            answers_link, answers_file_id = link, file_id
 
+    eval_link = eval_file_id = ""
     eval_src = artifacts_dir / "daily_report.md"
     if eval_src.exists():
-        _upload_text(service, media_upload_cls, f"{prefix} - Evaluation.md",
-                     eval_src.read_text(), parent_id, job.id)
+        eval_file_id, eval_link = _upload_text(service, media_upload_cls, f"{prefix} - Evaluation.md",
+                                               eval_src.read_text(), parent_id, job.id)
 
+    deep_report_link = deep_report_file_id = ""
     deep_report_src = artifacts_dir / "deep_report.md"
     if deep_report_src.exists():
-        _upload_text(service, media_upload_cls, f"{prefix} - Deep Report.md",
-                     deep_report_src.read_text(), parent_id, job.id)
+        deep_report_file_id, deep_report_link = _upload_text(
+            service, media_upload_cls, f"{prefix} - Deep Report.md",
+            deep_report_src.read_text(), parent_id, job.id,
+        )
 
-    return JobUploadResult(folder_link="", resume_link=resume_link, cover_link=cover_link,
-                           resume_file_id=resume_file_id, cover_file_id=cover_file_id, warnings=warnings)
+    return JobUploadResult(
+        folder_link="", resume_link=resume_link, cover_link=cover_link,
+        resume_file_id=resume_file_id, cover_file_id=cover_file_id,
+        eval_link=eval_link, eval_file_id=eval_file_id,
+        deep_report_link=deep_report_link, deep_report_file_id=deep_report_file_id,
+        answers_link=answers_link, answers_file_id=answers_file_id,
+        warnings=warnings,
+    )
 
 
 def upload_run(

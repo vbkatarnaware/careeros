@@ -186,7 +186,8 @@ def test_find_file_by_name_returns_none_when_absent():
 
 # ── upload_run: orchestration + flat layout + return shape ───────────────
 
-def _make_artifacts(tmp_path, job_id="job-1", resume=True, cover=True, report=True, deep_report=False):
+def _make_artifacts(tmp_path, job_id="job-1", resume=True, cover=True, report=True,
+                    deep_report=False, answers=False):
     artifacts_dir = tmp_path / "artifacts" / job_id
     artifacts_dir.mkdir(parents=True)
     if resume:
@@ -197,6 +198,8 @@ def _make_artifacts(tmp_path, job_id="job-1", resume=True, cover=True, report=Tr
         (artifacts_dir / "daily_report.md").write_text("# Report\n\nEval summary.")
     if deep_report:
         (artifacts_dir / "deep_report.md").write_text("# Deep dive")
+    if answers:
+        (artifacts_dir / "answers.md").write_text("# Application Answers\n\n## Q\nA")
     return artifacts_dir
 
 
@@ -220,12 +223,15 @@ def test_upload_run_flat_layout_no_date_subfolder_by_default(tmp_path):
     assert isinstance(r, JobUploadResult)
     assert r.folder_link == "https://drive.google.com/drive/folders/root-1"
     assert r.resume_link and r.cover_link
+    assert r.eval_link and r.eval_file_id  # P2.10: previously uploaded but discarded
+    assert not r.answers_link  # no answers.md for this job
     assert r.warnings == []
     names = {rec["name"] for rec in service.store.values()}
     assert "Bjak - Product Manager - Resume.pdf" in names
     assert "Bjak - Product Manager - Cover Letter.pdf" in names
     assert "Bjak - Product Manager - Evaluation.md" in names
     assert not any(n.endswith("Deep Report.md") for n in names)  # not generated for this job
+    assert not any("Application Answers" in n for n in names)
     # all files parented directly at root, NOT in any company/date subfolder
     assert all("root-1" in rec["parents"] for rec in service.store.values())
 
@@ -283,6 +289,69 @@ def test_upload_run_uploads_deep_report_only_when_present(tmp_path):
 
     names = {rec["name"] for rec in service.store.values()}
     assert "Bjak - PM - Deep Report.md" in names
+
+
+def test_upload_run_uploads_deep_report_link_and_file_id(tmp_path):
+    """P2.10: the Deep Report webViewLink/file id, previously uploaded and
+    discarded, must now be captured on the result -- that's what lets
+    cli.py wire it into the Sheet's Deep Report (Drive) column."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path, deep_report=True)
+    job = make_job(id="job-1", company="Bjak", title="PM")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake"):
+        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    r = results["job-1"]
+    assert r.deep_report_link and r.deep_report_file_id
+    assert r.deep_report_file_id in service.store
+
+
+def test_upload_run_uploads_answers_as_pdf_when_present(tmp_path):
+    """P2.10: Application Answers uploads as PDF (same fallback-to-MD rule
+    as resume/cover) only when artifacts_dir/answers.md exists locally --
+    never fabricated for a job that has none."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path, answers=True)
+    job = make_job(id="job-1", company="Bjak", title="PM")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake"):
+        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    r = results["job-1"]
+    assert r.answers_link and r.answers_file_id
+    names = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - PM - Application Answers.pdf" in names
+
+
+def test_upload_run_answers_falls_back_to_markdown_when_pdf_extra_unavailable(tmp_path):
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path, answers=True)
+    job = make_job(id="job-1", company="Bjak", title="PM")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=None):
+        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    r = results["job-1"]
+    assert len(r.warnings) == 3  # resume + cover + answers all fell back
+    names = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - PM - Application Answers.md" in names
+    assert "Bjak - PM - Application Answers.pdf" not in names
 
 
 def test_upload_run_reupload_same_job_updates_in_place_not_duplicated(tmp_path):

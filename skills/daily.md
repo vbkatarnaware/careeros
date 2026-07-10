@@ -168,7 +168,67 @@ zero AI):
 careeros render-report {job-id} --date {today}
 ```
 
-## Step 9 — Day summary (deterministic, zero AI)
+## Step 9 — Application Answers, for each Apply-tier job (P2.10)
+
+```
+careeros apply --prepare --date {today}
+```
+
+Automatic, Apply-tier (>= threshold) only — this is a DIFFERENT command from
+the on-demand `careeros apply {job-id}` (see skills/apply.md); no job-id
+argument here, it processes the whole batch. For each Apply-tier job, this
+already fetched the application form's visible text in an invisible
+BACKGROUND fetch (`careeros/apply/browser.py`: a lightweight HTTP fetch
+first, an optional headless-Playwright fallback only if that's not enough —
+never the candidate's own browser, never a visible window) and reports how
+many jobs have a readable form (need drafting) vs. how many don't. A job
+that isn't automatically readable is assigned one of several SPECIFIC
+statuses rather than one generic "manual review" bucket — 🔒 Login
+Required, ❌ Closed, ⚙️ Playwright Missing (with the exact install command),
+or 🌐 Network Error — each mechanically detected by `browser.py`, not a
+failure to report as one.
+
+For jobs needing drafting, this prints an instruction block naming exactly
+which job(s) need answers, each with its fetched form text. For each one:
+
+1. Read `prompts/apply_v1.md`. Identify the real application questions from
+   the job's `form_text` — do not invent questions if the fetched text
+   doesn't actually contain any real free-text essay questions (this only
+   happens for a job whose form WAS genuinely fetched and readable — the
+   login/closed/playwright/network cases above are already ruled out by
+   this point); simply skip that job, it's marked "📄 No Essay Questions"
+   automatically.
+2. Write `artifacts/<job-id>/answers.md` for every job whose questions you
+   could identify. Per the prompt's "Personal / logistics questions"
+   section: a question about notice period, work authorization, salary,
+   start date, or employment type is answered from `profile.yaml`'s
+   `comp`/`logistics` fields if present; if not, don't ask mid-batch (the
+   same fact would get asked once per job) — leave a `[NEEDS: <label>]`
+   placeholder in that answer and keep going.
+3. Once every job in this pass is drafted, collect the DISTINCT
+   `[NEEDS: ...]` labels actually used across all of them (usually one or
+   two, since the same facts repeat job to job) and ask the candidate about
+   each ONE TIME. Write the answers into `.careeros/profile.yaml`'s
+   `logistics.*` (no `version` bump — `logistics` doesn't affect
+   gate/evaluate/resume/cover), then go back and replace every
+   `[NEEDS: ...]` placeholder across this batch with the real answer. Skip
+   this step entirely if no placeholders were left. Every future batch AND
+   the on-demand `careeros apply <job-id>` skill reuse these same saved
+   answers automatically — this is a one-time cost, not a per-run one.
+
+Then:
+
+```
+careeros apply --finalize --date {today}
+```
+
+This runs the voice-dna lint on every `answers.md` written and records each
+job's status (one of `generated`, `login_required`, `playwright_missing`,
+`closed`, `no_essay_questions`, `network_error`, or the generic
+`manual_required` fallback) for the Sheets step below. If it reports
+issues, fix only the listed files and re-run `--finalize`.
+
+## Step 10 — Day summary (deterministic, zero AI)
 
 ```
 careeros summary --date {today}
@@ -185,7 +245,7 @@ artifacts/Sheet rows. This is the P2.6 KPI made visible every run:
 failure to report as one. Runs BEFORE Drive/Sheets below since both may
 include/link it.
 
-## Step 10 — Drive backup (optional, off by default)
+## Step 11 — Drive backup (optional, off by default)
 
 ```
 careeros drive --date {today}
@@ -193,39 +253,58 @@ careeros drive --date {today}
 
 Only runs if `drive.enabled: true` in `.careeros/config.yaml` (otherwise
 prints one line and exits — nothing to do). Uploads every Apply-tier job's
-Resume + Cover Letter (as PDF via the optional `[pdf]` extra — falls back to
-Markdown + a warning if it isn't installed), Evaluation, and Deep Report (if
-`prep` has been run on it) into ONE flat Drive folder (no per-company/per-job
-subfolders — see `drive.root_folder_id`/`drive.date_subfolder`), plus
-`run.json`/`summary.md`, as an ADDITIVE backup; local Markdown is never moved
-or replaced. Re-uploading the same job updates its existing files in place
-(idempotent). **Any failure here (auth, network, quota) is caught and
-reported as a warning — never let a Drive problem block Sheets or stop the
-pipeline.** Writes `.careeros/runs/{today}/drive_links.json` on success,
-which Sheets (next step) reads to populate the Drive Folder / Resume
-(Drive) / Cover Letter (Drive) columns.
+Resume + Cover Letter + Application Answers (all as PDF via the optional
+`[pdf]` extra — falls back to Markdown + a warning if it isn't installed;
+Answers only if Step 9 actually generated one for that job), Evaluation, and
+Deep Report (if `prep` has been run on it) into ONE flat Drive folder (no
+per-company/per-job subfolders — see `drive.root_folder_id`/
+`drive.date_subfolder`), plus `run.json`/`summary.md`, as an ADDITIVE
+backup; local Markdown is never moved or replaced. Re-uploading the same
+job updates its existing files in place (idempotent). **Any failure here
+(auth, network, quota) is caught and reported as a warning — never let a
+Drive problem block Sheets or stop the pipeline.** Writes
+`.careeros/runs/{today}/drive_links.json` on success, which Sheets (next
+step) reads to populate the Resume (Drive) / Cover Letter (Drive) /
+Evaluation (Drive) / Deep Report (Drive) / Application Answers (Drive)
+columns (no Drive Folder column — P2.10 dropped it as redundant once every
+job has its own direct file links).
 
-## Step 11 — Sheets (deterministic)
+## Step 12 — Sheets (deterministic)
 
 ```
 careeros sheets append --date {today}
 ```
 
-Appends one row per Apply job (including Drive Folder + per-file Resume
-(Drive)/Cover Letter (Drive) links if Step 10 ran successfully) AND one row
-per Consider job (score + a concise reason, blank artifact/Drive cells — see
-Step 7), and records both tiers' ids to `.careeros/seen.jsonl` so tomorrow's
-`dedupe` skips them automatically.
+Inserts one row per Apply job (with per-file Drive links if Step 11 ran
+successfully — Application Answers shows a specific status label, e.g.
+"🔒 Login Required" or "❌ Closed", instead of a link for a job Step 9
+couldn't auto-read) AND one row per Consider job (score + a concise reason,
+blank artifact/Drive cells — see Step 7) directly BELOW the header, pushing
+every existing row down — each day's newest run reads at the top of the
+Sheet, not buried under a growing history (P2.11). Every new Apply/Consider
+row also gets a `Status` dropdown cell defaulted to "Not Applied" — that
+column is the candidate's own to update by hand afterward (Applied,
+Interview, Rejected, ...) and the pipeline never touches it again once set.
+Records both tiers' ids to `.careeros/seen.jsonl` so tomorrow's `dedupe`
+skips them automatically. This also auto-migrates the Sheet schema (removes
+any leftover deprecated columns, adds new ones, applies header + Score-color
++ Status-dropdown formatting) on every call — see `careeros sheets migrate`
+to run that pass standalone without appending anything (it also sorts a
+pre-P2.11 Sheet's existing rows by Date descending, a one-time fix for
+history written bottom-up before this change).
 
 Apply-tier rows from BEFORE Drive backup was enabled don't get these links
 retroactively from `daily` — run `careeros backfill-drive` once (dry-run by
-default) to add them to existing Sheet rows.
+default) to add Resume/Cover links to existing Sheet rows; for Evaluation /
+Deep Report / Application Answers links on a specific already-appended row,
+use `careeros publish <job-id> --date <date>` instead (see skills/prep.md,
+skills/apply.md).
 
-## Step 12 — Report to the candidate
+## Step 13 — Report to the candidate
 
 Read `summary.md` back and relay it, briefly. Point them at the Sheet. Do not
-dump full report/resume/cover text into the chat — the artifacts are the
-deliverable, `summary.md` is the day-level pointer to them.
+dump full report/resume/cover/answers text into the chat — the artifacts are
+the deliverable, `summary.md` is the day-level pointer to them.
 
 ## On failure
 

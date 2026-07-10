@@ -5,17 +5,20 @@ cache,runmeta,lint,report,sheets}.py or careeros/{providers,pipeline}/. No
 business logic lives in this file.
 
 Two tiers of commands:
-  - End-user:  init, start, daily, prep, apply, config, providers
+  - End-user:  init, start, daily, prep, apply, publish, config, providers
   - Developer: discover, normalize, dedupe, constraints, gate, evaluate,
-               threshold, artifacts, sheets, lint, verify-resume — each
-               stage runnable standalone against a run directory, for
-               debugging without re-running the whole pipeline.
+               threshold, artifacts, apply --prepare/--finalize, sheets,
+               lint, verify-resume — each stage runnable standalone against
+               a run directory, for debugging without re-running the whole
+               pipeline.
 
-AI stages (gate, evaluate, artifacts) follow the host-CLI execution
-boundary: a `--prepare` half (Python writes the stage's input + an
-instruction for the agent) and a `--finalize` half (Python validates
-whatever the agent wrote). See skills/daily.md for the full instruction
-sequence.
+AI stages (gate, evaluate, artifacts, apply --prepare/--finalize) follow the
+host-CLI execution boundary: a `--prepare` half (Python writes the stage's
+input + an instruction for the agent) and a `--finalize` half (Python
+validates whatever the agent wrote). See skills/daily.md for the full
+instruction sequence. `apply` additionally has an on-demand, single-job form
+(`careeros apply <job-id>`, no --prepare/--finalize) for any job at any
+score, run manually via its own host-CLI skill.
 
 `constraints` is deterministic: it hard-rejects jobs violating an objective
 profile deal-breaker (location, salary floor) BEFORE any AI is spent, and
@@ -34,6 +37,7 @@ import typer
 import yaml
 
 from careeros import budget
+from careeros.apply import browser as apply_browser
 from careeros.cache import Cache, artifact_cache_key, eval_cache_key
 from careeros.config import Config, load_config
 from careeros.lint import format_issues, lint_file, verify_resume_bullets
@@ -57,6 +61,23 @@ app = typer.Typer(add_completion=False, no_args_is_help=True,
                    help="CareerOS — an AI-powered, deterministic job discovery and recommendation engine.")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _version_callback(show_version: bool) -> None:
+    if show_version:
+        from careeros import __version__
+        typer.echo(f"careeros {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: Optional[bool] = typer.Option(
+        None, "--version", callback=_version_callback, is_eager=True,
+        help="Show the installed careeros version and exit.",
+    ),
+) -> None:
+    pass
 
 
 def _provider_query_cfg(cfg: Config, provider_name: str) -> dict:
@@ -311,6 +332,35 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                                              'run: pip install -e ".[drive]"'))
     else:
         results.append(_check_result(_CheckStatus.WARN, "Google Drive", "disabled (drive.enabled: false) — optional"))
+
+    # Playwright (optional — the `apply` stage's fallback tier for JS-gated
+    # forms; the primary HTTP tier works without it). Two independent things
+    # can be missing: the `careeros[apply]` extra's Python package, and the
+    # `chromium` browser BINARY it still needs (`playwright install
+    # chromium`) — pip alone does not install the binary. Distinguishing
+    # them here is exactly what makes "⚙️ Playwright Missing" in the apply
+    # stage's status column actionable rather than a dead end.
+    try:
+        import playwright.sync_api  # noqa: F401
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                browser.close()
+            results.append(_check_result(_CheckStatus.PASS, "Playwright (apply fallback)",
+                                         "[apply] extra installed, chromium browser available"))
+        except Exception:
+            results.append(_check_result(
+                _CheckStatus.WARN, "Playwright (apply fallback)",
+                "[apply] extra installed but the chromium browser binary is missing — "
+                "run: playwright install chromium"
+            ))
+    except ImportError:
+        results.append(_check_result(
+            _CheckStatus.WARN, "Playwright (apply fallback)",
+            'not installed — optional, only needed for JS-gated application forms; '
+            'run: pip install -e ".[apply]" && playwright install chromium'
+        ))
 
     return results
 
@@ -1088,6 +1138,251 @@ def _artifacts_finalize(cfg: Config, date: str) -> None:
                           estimated_tokens=meta.get("estimated_tokens", 0))
 
 
+# ── apply (AI stage: prepare / finalize, Apply-tier only — P2.10) ────────
+#
+# Automatic Application Answers for every Apply-tier (score >= threshold) job,
+# run as part of `daily` right after resume/cover. `careeros/apply/browser.py`
+# fetches each job's application-form text in the BACKGROUND (HTTP-first,
+# optional headless-Playwright fallback — never the user's own browser, never
+# a visible window). A form that isn't automatically readable is marked with
+# one of the specific `STATUS_*` codes below (e.g. a login-gated flow, a
+# closed posting, the optional Playwright extra not being installed) rather
+# than one generic "needs manual review" bucket — the candidate can always
+# run the on-demand `careeros apply <job-id>` (below) using their own real,
+# logged-in browser for that one job, or for any below-threshold job they
+# want to pursue anyway.
+
+# The full status taxonomy for an Apply-tier job's Application Answers,
+# stored per-job in apply_status.json and shown per-job in the Sheet's
+# "Application Answers (Drive)" cell (see `_STATUS_LABELS` below). Replaces
+# the single generic "manual_required" this stage used to collapse every
+# non-generated outcome into — each of these is a specific, mechanically
+# distinguishable reason, so the candidate immediately knows what (if
+# anything) they can do about it instead of having to open the job and
+# investigate from scratch.
+STATUS_GENERATED = "generated"
+STATUS_LOGIN_REQUIRED = "login_required"
+STATUS_PLAYWRIGHT_MISSING = "playwright_missing"
+STATUS_CLOSED = "closed"
+STATUS_NO_ESSAY_QUESTIONS = "no_essay_questions"
+STATUS_NETWORK_ERROR = "network_error"
+STATUS_BOT_CHECK = "bot_check"
+# Preserved as the fallback for any outcome that doesn't match one of the
+# specific reasons above (e.g. a fetch that failed for some other reason
+# `browser.py` doesn't yet classify) — never removed, so status files from
+# before this taxonomy existed still parse and display sensibly.
+STATUS_MANUAL_REQUIRED = "manual_required"
+
+# Sheet-cell / CLI-summary display label for each status code — a literal,
+# human-readable string, not a URL, so the candidate immediately knows what
+# happened and, where relevant, what to do about it, rather than expecting a
+# broken/missing link.
+_STATUS_LABELS = {
+    STATUS_GENERATED: "✅ Generated",
+    STATUS_LOGIN_REQUIRED: "🔒 Login Required",
+    STATUS_PLAYWRIGHT_MISSING: "⚙️ Playwright Missing — pip install 'careeros[apply]' && playwright install chromium",
+    STATUS_CLOSED: "❌ Closed",
+    STATUS_NO_ESSAY_QUESTIONS: "📄 No Essay Questions",
+    STATUS_NETWORK_ERROR: "🌐 Network Error",
+    STATUS_BOT_CHECK: "🛡️ Bot-Blocked",
+    STATUS_MANUAL_REQUIRED: "Manual review required",
+}
+
+# Maps a `careeros.apply.browser.REASON_*` fetch-failure reason to the
+# specific status code above — the one place that translation happens, so
+# `_apply_prepare` itself stays a plain lookup rather than a chain of ifs.
+_REASON_TO_STATUS = {
+    apply_browser.REASON_LOGIN_WALL: STATUS_LOGIN_REQUIRED,
+    apply_browser.REASON_CLOSED_POSTING: STATUS_CLOSED,
+    apply_browser.REASON_PLAYWRIGHT_MISSING: STATUS_PLAYWRIGHT_MISSING,
+    apply_browser.REASON_NETWORK_ERROR: STATUS_NETWORK_ERROR,
+    apply_browser.REASON_BOT_CHECK: STATUS_BOT_CHECK,
+}
+
+
+def _resolve_answers_cell(status_code: Optional[str], links: dict) -> str:
+    """The single place that decides what goes in a job's Application
+    Answers (Drive) cell: a specific status label for anything not
+    generated, otherwise the actual Drive link (if uploaded) or blank.
+    Shared by `sheets_append` (new rows) and `sheets_sync_status` (patching
+    existing rows after a re-run of `apply --prepare/--finalize`) so the two
+    can never drift out of sync with each other."""
+    if status_code and status_code != STATUS_GENERATED:
+        return _STATUS_LABELS.get(status_code, _STATUS_LABELS[STATUS_MANUAL_REQUIRED])
+    return links.get("answers", "")
+
+
+# Statuses `_apply_prepare` can assign BEFORE the agent ever sees a job —
+# each one means the form fetch itself already produced a final answer, so
+# `_apply_finalize` must treat these as already-resolved rather than
+# expecting an answers.md for them. STATUS_NO_ESSAY_QUESTIONS is
+# deliberately excluded: it can only be known AFTER the agent reads a
+# genuinely-fetched real form and finds no real questions in it, so it's
+# only ever assigned inside `_apply_finalize` itself.
+_PREPARE_TERMINAL_STATUSES = frozenset({
+    STATUS_GENERATED, STATUS_LOGIN_REQUIRED, STATUS_PLAYWRIGHT_MISSING,
+    STATUS_CLOSED, STATUS_NETWORK_ERROR, STATUS_BOT_CHECK, STATUS_MANUAL_REQUIRED,
+})
+
+
+def _apply_status_path(cfg: Config, date: str) -> Path:
+    return runmeta.run_dir(cfg.runs_dir, date) / "apply_status.json"
+
+
+def _load_apply_status(cfg: Config, date: str) -> dict:
+    path = _apply_status_path(cfg, date)
+    if not path.exists():
+        return {}
+    import json
+    with open(path) as f:
+        return json.load(f)
+
+
+def _save_apply_status(cfg: Config, date: str, status: dict) -> None:
+    with open(_apply_status_path(cfg, date), "w") as f:
+        f.write(dumps(status))
+
+
+def _apply_prepare(cfg: Config, date: str) -> None:
+    import json
+    selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
+    jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
+    if not selected_path.exists() or not jobs_path.exists():
+        typer.echo("Missing select/normalize output — run those stages first.", err=True)
+        raise typer.Exit(1)
+
+    with open(selected_path) as f:
+        evals = [Eval.from_dict(d) for d in json.load(f)]
+    with open(jobs_path) as f:
+        jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
+
+    status: dict[str, str] = {}
+    to_generate: list[dict] = []
+    fetch_methods: dict[str, str] = {}
+
+    for e in evals:
+        job = jobs_by_id.get(e.id)
+        if job is None:
+            continue
+        artifacts_path = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
+        answers_path = artifacts_path / "answers.md"
+        if answers_path.exists():
+            status[e.id] = STATUS_GENERATED  # already drafted (e.g. a resumed run) — never re-fetch/redraft
+            continue
+
+        form_text, method, reason = apply_browser.fetch_visible_text(job.apply_url)
+        fetch_methods[e.id] = method
+        # `reason` must be checked BEFORE `form_text` truthiness: a login
+        # wall, closed posting, or bot-check page can come back with
+        # substantial, real, non-empty text (see browser.py's
+        # fetch_visible_text docstring) -- it's just the wrong page, not an
+        # empty fetch. Checking `not form_text` first would silently send
+        # that boilerplate to the agent as if it were the real form.
+        if reason is not None:
+            status[e.id] = _REASON_TO_STATUS.get(reason, STATUS_MANUAL_REQUIRED)
+            continue
+        if not form_text:
+            status[e.id] = STATUS_MANUAL_REQUIRED
+            continue
+
+        context_path = artifacts_path / "_context.json"
+        input_payload = {
+            "id": e.id, "company": job.company, "title": job.title,
+            "apply_url": job.apply_url, "ats": job.ats,
+            "fetch_method": method, "form_text": form_text,
+            "eval_path": str(runmeta.stage_dir(cfg.runs_dir, date, "evaluate") / f"{e.id}.json"),
+            "context_path": str(context_path) if context_path.exists() else None,
+            "artifacts_path": str(artifacts_path),
+        }
+        with open(artifacts_path / "_apply_input.json", "w") as f:
+            f.write(dumps(input_payload))
+        to_generate.append(input_payload)
+
+    _save_apply_status(cfg, date, status)
+    manual_count = sum(1 for v in status.values() if v not in (STATUS_GENERATED,))
+    already_count = sum(1 for v in status.values() if v == STATUS_GENERATED)
+    status_counts = {s: sum(1 for v in status.values() if v == s) for s in _STATUS_LABELS}
+    runmeta.write_stage_meta(cfg.runs_dir, date, "apply", {
+        "prepared_at": time.time(), "fetch_methods": fetch_methods,
+        "manual_required": manual_count, "already_generated": already_count,
+        "status_counts": {s: c for s, c in status_counts.items() if c},
+    })
+
+    typer.echo(
+        f"[apply:prepare] {len(evals)} Apply-tier job(s): {len(to_generate)} form(s) readable "
+        f"(need drafting), {manual_count} need manual review (form not automatically readable), "
+        f"{already_count} already generated.\n"
+    )
+    if to_generate:
+        typer.echo(
+            "AGENT INSTRUCTIONS:\n"
+            f"Read {cfg.prompt_path('apply')} and .careeros/profile.yaml.\n"
+            "For each job below, `form_text` is the application form's rendered page text\n"
+            "(fetched automatically in the background — no candidate paste needed for this\n"
+            "batch). Identify the real application questions from it, then draft\n"
+            "artifacts/<id>/answers.md per the prompt (every answer must trace to\n"
+            "profile.yaml / the eval / cached context). If `form_text` doesn't actually contain\n"
+            "identifiable application questions (e.g. a login/error page the fetch still\n"
+            "partially rendered, or a genuinely real form with no free-text essay questions),\n"
+            "do NOT invent questions — leave that job's answers.md unwritten; it will be marked\n"
+            "'No Essay Questions' and the candidate can run `careeros apply <job-id>` themselves\n"
+            "if they still want to double-check by hand.\n"
+            "Then run:\n"
+            f"  careeros apply --finalize --date {date}\n\n"
+            + dumps(to_generate)
+        )
+    else:
+        typer.echo(f"Nothing to draft — run `careeros apply --finalize --date {date}` to finalize.")
+
+
+def _apply_finalize(cfg: Config, date: str) -> None:
+    import json
+    selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
+    with open(selected_path) as f:
+        evals = [Eval.from_dict(d) for d in json.load(f)]
+
+    status = _load_apply_status(cfg, date)
+    errors: list[str] = []
+    newly_generated = 0
+
+    for e in evals:
+        if status.get(e.id) in _PREPARE_TERMINAL_STATUSES:
+            continue  # prepare already resolved this one (cache hit / unreadable form)
+        artifacts_path = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
+        answers_path = artifacts_path / "answers.md"
+        if not answers_path.exists():
+            # The agent legitimately chose to skip this job: prepare DID fetch
+            # a real, usable form (otherwise it would already be one of the
+            # _PREPARE_TERMINAL_STATUSES above) — the agent just didn't find
+            # any free-text essay questions in it.
+            status[e.id] = STATUS_NO_ESSAY_QUESTIONS
+            continue
+        voice_issues = lint_file(str(answers_path))
+        if voice_issues:
+            for issue in voice_issues:
+                errors.append(f"{e.id}: answers.md voice-dna: {issue.kind} at line {issue.line}")
+            continue
+        status[e.id] = "generated"
+        newly_generated += 1
+
+    if errors:
+        typer.echo("[apply:finalize] Issues found (unresolved until fixed):\n" + "\n".join(errors), err=True)
+        typer.echo(f"\nAgent: fix the listed files, then re-run `careeros apply --finalize --date {date}`.")
+        raise typer.Exit(1)
+
+    _save_apply_status(cfg, date, status)
+
+    meta = runmeta.read_stage_meta(cfg.runs_dir, date, "apply")
+    elapsed = time.time() - meta["prepared_at"] if "prepared_at" in meta else 0.0
+    manual_count = sum(1 for v in status.values() if v != STATUS_GENERATED)
+    generated_count = sum(1 for v in status.values() if v == STATUS_GENERATED)
+
+    typer.echo(f"[apply:finalize] {len(evals)} Apply-tier job(s): {generated_count} answers generated, "
+               f"{manual_count} need manual review, {newly_generated} newly drafted this pass.")
+    runmeta.record_stage(cfg.runs_dir, date, "apply",
+                          count_in=len(evals), count_out=generated_count, seconds=elapsed)
+
+
 # ── report render (deterministic) ────────────────────────────────────────
 
 @app.command("render-report")
@@ -1211,11 +1506,14 @@ def summary(date: str = typer.Option(None)):
 def _job_upload_results_to_dict(results: dict) -> dict:
     """JobUploadResult dataclasses aren't directly JSON-serializable — flatten
     to plain dicts for drive_links.json (also the shape sheets_append reads
-    back)."""
+    back). No "folder" key (P2.10 dropped the Drive Folder Sheet column —
+    there's only ever one project folder, so a per-row link to it was
+    redundant); every other key is a direct, per-file link."""
     return {
         job_id: {
-            "folder": r.folder_link, "resume": r.resume_link,
-            "cover": r.cover_link, "warnings": r.warnings,
+            "resume": r.resume_link, "cover": r.cover_link,
+            "eval": r.eval_link, "deep_report": r.deep_report_link,
+            "answers": r.answers_link, "warnings": r.warnings,
         }
         for job_id, r in results.items()
     }
@@ -1289,6 +1587,21 @@ def _consider_note(e: Eval, apply_threshold: float) -> str:
     return f"{prefix}: {reasons}" if reasons else prefix
 
 
+# The Application Answers (Drive) cell's value for an Apply-tier job whose
+# form wasn't automatically readable now comes from `_STATUS_LABELS` (see
+# above, near `_apply_prepare`) — one specific, human-readable status per
+# job rather than a single generic label, so the candidate immediately knows
+# WHY (a login wall, a closed posting, Playwright not installed, ...) and,
+# where relevant, what to do about it, instead of expecting a broken/missing
+# link.
+
+
+def _cell_is_blank(value: str) -> bool:
+    """True for a Sheet cell with no real content — both the historical
+    empty string and the "-" sentinel `sheets.py` now fills blanks with."""
+    return value in ("", "-")
+
+
 sheets_app = typer.Typer(help="Google Sheets operations")
 app.add_typer(sheets_app, name="sheets")
 
@@ -1314,27 +1627,34 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
     # Optional hand-off from `careeros drive` (Phase 3) — sheets.py has no
     # import dependency on drive.py; if the file isn't there (Drive disabled,
     # not yet run, or it failed), every row's Drive cells are just blank.
-    # {"job_id": {"folder": url, "resume": url, "cover": url, "warnings": [...]}}
+    # {"job_id": {"resume": url, "cover": url, "eval": url, "deep_report": url,
+    #             "answers": url, "warnings": [...]}}
     drive_links_path = runmeta.run_dir(cfg.runs_dir, date) / "drive_links.json"
     drive_links: dict = {}
     if drive_links_path.exists():
         with open(drive_links_path) as f:
             drive_links = json.load(f)
 
+    # Optional hand-off from `careeros apply --finalize` (P2.10) —
+    # {"job_id": <one of the STATUS_* codes above>}. Absent entirely (apply
+    # stage never ran, e.g. an older run predating this feature) -> every
+    # Apply row's Application Answers cell is just blank, same as any other
+    # optional artifact that hasn't been generated yet.
+    apply_status = _load_apply_status(cfg, date)
+
     rows = []
-    # APPLY tier: full row with artifact paths + any Drive links.
+    # APPLY tier: full row with any Drive links.
     for e in apply_evals:
         job = jobs_by_id[e.id]
-        artifacts = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
         links = drive_links.get(e.id, {})
+        answers_cell = _resolve_answers_cell(apply_status.get(e.id), links)
         rows.append(sheets_mod.job_to_row(
             date, job, e,
-            resume_path=str(artifacts / "resume.md"),
-            cover_path=str(artifacts / "cover.md"),
-            report_path=str(artifacts / "daily_report.md"),
-            drive_folder_link=links.get("folder", ""),
             resume_drive_link=links.get("resume", ""),
             cover_drive_link=links.get("cover", ""),
+            eval_drive_link=links.get("eval", ""),
+            deep_report_drive_link=links.get("deep_report", ""),
+            answers_drive_link=answers_cell,
             tier="Apply",
         ))
     # CONSIDER tier: near-misses — NO artifacts, NO Drive; just score + a
@@ -1343,8 +1663,6 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
         job = jobs_by_id[e.id]
         rows.append(sheets_mod.job_to_row(
             date, job, e,
-            resume_path="", cover_path="", report_path="",
-            drive_folder_link="",
             tier="Consider",
             notes=_consider_note(e, cfg.threshold),
         ))
@@ -1362,6 +1680,90 @@ def sheets_append(date: str = typer.Option(None, help="Run date, default today")
                           seconds=time.time() - start)
 
 
+@sheets_app.command("migrate")
+def sheets_migrate():
+    """Clean up the live Sheet right now: physically remove the deprecated
+    Resume/Cover Letter/Report Path and Drive Folder columns, add the new
+    Drive-link + Status columns, apply header/Score/Status formatting, and
+    sort existing rows by Date descending (newest on top — a one-time fix
+    for a Sheet built before P2.11's rows insert at the top automatically).
+    This is the exact same pass `sheets append` already runs automatically
+    on every write (see `sheets.py:append_rows`), minus the date sort (that
+    part only needs to run once) — this command just exposes it standalone
+    so an existing Sheet doesn't have to wait for the next `daily` run to
+    clean up. Safe to re-run: idempotent, and a no-op once already current."""
+    cfg = _config()
+    result = sheets_mod.migrate(cfg)
+    if result["removed"]:
+        typer.echo(f"[sheets:migrate] Removed: {', '.join(result['removed'])}")
+    if result["added"]:
+        typer.echo(f"[sheets:migrate] Added: {', '.join(result['added'])}")
+    if result.get("reordered"):
+        typer.echo("[sheets:migrate] Columns reordered to match the canonical layout.")
+    if result.get("blanks_filled"):
+        typer.echo("[sheets:migrate] Blank cells filled with \"-\".")
+    if result.get("date_sorted"):
+        typer.echo("[sheets:migrate] Rows sorted by Date descending (newest on top).")
+    if not any(result.get(k) for k in ("removed", "added", "reordered", "blanks_filled", "date_sorted")):
+        typer.echo("[sheets:migrate] Schema already up to date — formatting refreshed.")
+    else:
+        typer.echo("[sheets:migrate] Done.")
+
+
+@sheets_app.command("sync-status")
+def sheets_sync_status(date: str = typer.Option(None, help="Run date, default today")):
+    """Patch the Application Answers (Drive) cell of EXISTING Sheet rows for
+    a date's NON-generated Apply-tier jobs (login_required, closed,
+    no_essay_questions, playwright_missing, network_error, bot_check,
+    manual_required), from apply_status.json — without appending new rows
+    or touching any other cell. `sheets append` only ever ADDS rows; it
+    never revisits a row already in the Sheet. Use this after re-running
+    `careeros apply --prepare/--finalize` for a date whose rows are already
+    there (e.g. reclassifying old jobs that were marked with the old
+    generic manual_required into the newer, more specific status taxonomy)
+    so the Sheet catches up without a duplicate row or a full re-append.
+
+    Deliberately SKIPS `generated` jobs: `drive_links.json` (this stage's
+    only local record of a job's Drive links) is only ever refreshed by the
+    full `careeros drive` batch command, NOT by `careeros publish` (which
+    patches the Sheet directly without also rewriting that file) — so
+    re-deriving a `generated` job's cell from it here can read a STALE or
+    missing "answers" link and overwrite a correct one `publish` just set
+    moments earlier. For a `generated` job, `publish <job-id>` is the only
+    source of truth for that cell; this command leaves it alone."""
+    cfg = _config()
+    date = date or _today()
+
+    apply_status = _load_apply_status(cfg, date)
+
+    if not apply_status:
+        typer.echo(f"[sheets:sync-status] No apply_status.json for --date {date} — nothing to sync.")
+        return
+
+    updated, skipped_generated, not_found = 0, 0, []
+    for job_id, status_code in apply_status.items():
+        if status_code == STATUS_GENERATED:
+            skipped_generated += 1
+            continue
+        cell = _resolve_answers_cell(status_code, {})
+        if sheets_mod.update_row_by_job_id(cfg, job_id, {"Application Answers (Drive)": cell}):
+            updated += 1
+        else:
+            not_found.append(job_id)
+
+    typer.echo(f"[sheets:sync-status] {updated} row(s) updated.")
+    if skipped_generated:
+        typer.echo(
+            f"[sheets:sync-status] {skipped_generated} 'generated' job(s) skipped "
+            "— run `careeros publish <job-id>` for those instead."
+        )
+    if not_found:
+        typer.echo(
+            f"[sheets:sync-status] {len(not_found)} job(s) not found in the Sheet "
+            f"(never appended, or already removed by hand): {', '.join(not_found)}"
+        )
+
+
 # ── backfill-drive (Phase 3, v1.1) ───────────────────────────────────────
 
 @app.command("backfill-drive")
@@ -1370,13 +1772,14 @@ def backfill_drive(
         True, "--dry-run/--no-dry-run",
         help="Preview only (default): no Drive uploads, no Sheet writes. Pass --no-dry-run to apply."),
 ):
-    """Add Drive artifacts + clickable Sheet links (Drive Folder, Resume
-    (Drive), Cover Letter (Drive)) to Apply-tier rows that predate Drive
-    automation. Safe to re-run: rows that already have both links are
-    skipped (idempotent). Never fabricates — a row whose local
-    resume.md/cover.md no longer exist on disk is listed as needing
-    regeneration, not silently invented. Defaults to --dry-run so the very
-    first run against your real Sheet only shows you what WOULD happen."""
+    """Add Drive artifacts + clickable Sheet links (Resume (Drive), Cover
+    Letter (Drive), Evaluation (Drive)) to Apply-tier rows that predate Drive
+    automation. Safe to re-run: rows that already have all three links are
+    skipped (idempotent). Never fabricates — a row missing any of those
+    links whose corresponding local file (resume.md/cover.md/daily_report.md)
+    no longer exists on disk is listed as needing regeneration, not silently
+    invented. Defaults to --dry-run so the very first run against your real
+    Sheet only shows you what WOULD happen."""
     cfg = _config()
 
     if not cfg.drive.get("enabled", False) or not cfg.drive.get("root_folder_id"):
@@ -1398,7 +1801,10 @@ def backfill_drive(
     already_done = 0
 
     for row in apply_rows:
-        if row.get("Resume (Drive)") and row.get("Cover Letter (Drive)"):
+        resume_missing = _cell_is_blank(row.get("Resume (Drive)", ""))
+        cover_missing = _cell_is_blank(row.get("Cover Letter (Drive)", ""))
+        eval_missing = _cell_is_blank(row.get("Evaluation (Drive)", ""))
+        if not (resume_missing or cover_missing or eval_missing):
             already_done += 1
             continue
         date, job_id = row.get("Date", ""), row.get("Job ID", "")
@@ -1406,7 +1812,14 @@ def backfill_drive(
         if not date or not job_id:
             continue  # malformed row (predates Job ID being tracked) — nothing we can key on
         artifacts_dir = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
-        if not (artifacts_dir / "resume.md").exists() or not (artifacts_dir / "cover.md").exists():
+        missing_locally = []
+        if resume_missing and not (artifacts_dir / "resume.md").exists():
+            missing_locally.append("resume.md")
+        if cover_missing and not (artifacts_dir / "cover.md").exists():
+            missing_locally.append("cover.md")
+        if eval_missing and not (artifacts_dir / "daily_report.md").exists():
+            missing_locally.append("daily_report.md")
+        if missing_locally:
             needs_regen.append((date, company, role, job_id))
             continue
         to_process.append((date, company, role, job_id, artifacts_dir))
@@ -1461,12 +1874,19 @@ def backfill_drive(
     sheet_update_failed: list[tuple[str, str]] = []   # (job_id, reason)
     sheet_update_succeeded: list[str] = []
     for job_id, r in upload_succeeded.items():
+        # Only include links this upload actually produced -- a row missing
+        # just "Evaluation (Drive)" may not have re-uploaded resume/cover
+        # (their source files may not have existed to reprocess), and an
+        # empty string here would wipe an already-good link on that column.
+        updates = {}
+        if r.resume_link:
+            updates["Resume (Drive)"] = r.resume_link
+        if r.cover_link:
+            updates["Cover Letter (Drive)"] = r.cover_link
+        if r.eval_link:
+            updates["Evaluation (Drive)"] = r.eval_link
         try:
-            found = sheets_mod.update_row_by_job_id(cfg, job_id, {
-                "Drive Folder": r.folder_link,
-                "Resume (Drive)": r.resume_link,
-                "Cover Letter (Drive)": r.cover_link,
-            })
+            found = sheets_mod.update_row_by_job_id(cfg, job_id, updates) if updates else True
         except Exception as e:  # one row's Sheet-write failure must not stop the rest
             sheet_update_failed.append((job_id, str(e)))
             typer.echo(f"[backfill-drive] SHEET UPDATE FAILED for {job_id}: {e}", err=True)
@@ -1496,9 +1916,14 @@ def backfill_drive(
         for job_id in sheet_update_succeeded:
             r = upload_succeeded[job_id]
             fresh = fresh_rows.get(job_id, {})
-            ok = (fresh.get("Drive Folder") == r.folder_link
-                  and fresh.get("Resume (Drive)") == r.resume_link
-                  and fresh.get("Cover Letter (Drive)") == r.cover_link)
+            # Only verify the links this row's upload actually produced --
+            # a link this run didn't touch was never written, so comparing
+            # it would fail regardless of the write's real success.
+            ok = (
+                (not r.resume_link or fresh.get("Resume (Drive)") == r.resume_link)
+                and (not r.cover_link or fresh.get("Cover Letter (Drive)") == r.cover_link)
+                and (not r.eval_link or fresh.get("Evaluation (Drive)") == r.eval_link)
+            )
             if ok:
                 sheet_verified += 1
             else:
@@ -1620,10 +2045,102 @@ def prep(job_id: str):
 
 
 @app.command()
-def apply(job_id: str):
-    """Detect ATS and generate application answers for pasted questions."""
+def apply(
+    job_id: str = typer.Argument(
+        None, help="On-demand: draft answers for one job via the host-CLI skill (any score)."),
+    prepare: bool = typer.Option(
+        False, "--prepare", help="Batch: fetch + write apply input for every Apply-tier job."),
+    finalize: bool = typer.Option(
+        False, "--finalize", help="Batch: validate the agent-written answers.md files."),
+    date: str = typer.Option(None, help="Run date for --prepare/--finalize, default today"),
+):
+    """Application Answers. Two entry points: the automatic Apply-tier batch
+    (--prepare/--finalize, run as part of `daily`, background form-reading —
+    see careeros/apply/browser.py) or on-demand for one job at a time (any
+    score, host-CLI skill, the candidate's own real logged-in browser)."""
+    if prepare or finalize:
+        cfg = _config()
+        d = date or _today()
+        if prepare:
+            _apply_prepare(cfg, d)
+        else:
+            _apply_finalize(cfg, d)
+        return
+    if not job_id:
+        typer.echo("Pass a job-id for on-demand apply, or --prepare/--finalize "
+                   "for the automatic Apply-tier batch stage.", err=True)
+        raise typer.Exit(1)
     typer.echo(f"Run `/careeros apply {job_id}` in your host CLI. "
                f"Playbook: {REPO_ROOT / 'skills' / 'apply.md'}")
+
+
+@app.command()
+def publish(job_id: str, date: str = typer.Option(None, help="Run date the job was discovered in, default today")):
+    """Upload one job's current artifacts (whichever exist on disk — resume,
+    cover, evaluation, deep report, application answers) to Drive and patch
+    just that Sheet row's Drive-link cells. Use this after `careeros prep
+    <job-id>` or an on-demand `careeros apply <job-id>` so the result shows
+    up in Drive + the Sheet without waiting for the next full `daily` run."""
+    cfg = _config()
+    date = date or _today()
+
+    if not cfg.drive.get("enabled", False):
+        typer.echo("[publish] Drive is disabled (set drive.enabled: true in "
+                   ".careeros/config.yaml) — nothing to publish.", err=True)
+        raise typer.Exit(1)
+
+    import json
+    jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
+    if not jobs_path.exists():
+        typer.echo(f"[publish] No normalize output for --date {date} — is that the right run date?", err=True)
+        raise typer.Exit(1)
+    with open(jobs_path) as f:
+        matches = [j for j in json.load(f) if j["id"] == job_id]
+    if not matches:
+        typer.echo(f"[publish] Job {job_id} not found in {date}'s normalize output.", err=True)
+        raise typer.Exit(1)
+    job = Job.from_dict(matches[0])
+    artifacts_path = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
+
+    from careeros.drive import DriveError, upload_jobs
+    try:
+        results = upload_jobs(cfg, [(date, job, artifacts_path)])
+    except DriveError as e:
+        typer.echo(f"[publish] Drive upload failed — {e}", err=True)
+        raise typer.Exit(1)
+
+    result = results.get(job_id)
+    if result is None or result.error:
+        reason = result.error if result else "no artifact files found on disk to upload"
+        typer.echo(f"[publish] Nothing published for {job_id} — {reason}", err=True)
+        raise typer.Exit(1)
+
+    for w in result.warnings:
+        typer.echo(f"[publish] {job_id}: {w}", err=True)
+
+    updates = {}
+    if result.eval_link:
+        updates["Evaluation (Drive)"] = result.eval_link
+    if result.deep_report_link:
+        updates["Deep Report (Drive)"] = result.deep_report_link
+    if result.answers_link:
+        updates["Application Answers (Drive)"] = result.answers_link
+    if result.resume_link:
+        updates["Resume (Drive)"] = result.resume_link
+    if result.cover_link:
+        updates["Cover Letter (Drive)"] = result.cover_link
+
+    if not updates:
+        typer.echo(f"[publish] Uploaded, but nothing new to link for {job_id}.")
+        return
+
+    found = sheets_mod.update_row_by_job_id(cfg, job_id, updates)
+    if not found:
+        typer.echo(f"[publish] Uploaded to Drive, but {job_id} isn't in the Sheet yet "
+                   "(its row hasn't been appended by `sheets append`) — nothing to update.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"[publish] Updated Sheet row for {job_id}: {', '.join(updates.keys())}")
 
 
 if __name__ == "__main__":
