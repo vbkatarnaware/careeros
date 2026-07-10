@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "type": "integer",
-      "description": "Bump this whenever facts change. Part of every downstream cache fingerprint — bumping it invalidates cached evals/resumes/covers so they regenerate against the new facts."
+      "description": "Bump this whenever facts change. Part of every downstream cache fingerprint — bumping it invalidates cached evals/resumes/covers so they regenerate against the new facts. Exception: `logistics` (below) is never read by gate/evaluate/resume/cover, so changes there don't need a bump."
     },
     "candidate": {
       "type": "object",
@@ -88,6 +88,42 @@
           "description": "At/above this, comp is a positive signal in evaluation ranking (not a hard constraint, unlike floor_lpa)."
         },
         "currency": { "type": "string" }
+      }
+    },
+    "logistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Static, per-candidate answers to the recurring non-essay application questions (notice period, work authorization, earliest start date, employment type) that have nothing to do with any specific job. Read by the `apply` stage (careeros/apply/, prompts/apply_v1.md) — NOT by gate/evaluate/resume/cover, so unlike every other section here, changing this does NOT need a `version` bump (see that field's own description). Populated lazily: the apply prompt asks the candidate the first time one of these is needed on a real form, then writes the answer here so every later application reuses it automatically instead of asking again. Deliberately excludes voluntary EEO/demographic self-identification questions (race, gender, veteran or disability status) — those are never auto-answered from cached profile data.",
+      "properties": {
+        "notice_period": {
+          "type": ["string", "null"],
+          "description": "Exact, ready-to-use phrasing, e.g. '2 weeks' or 'Immediately available'."
+        },
+        "work_authorization": {
+          "type": ["string", "null"],
+          "description": "Exact, ready-to-use phrasing for 'are you authorized to work / do you require sponsorship'-style questions, e.g. 'Authorized to work in the US without sponsorship'. Distinct from location.visa_sponsorship_required (a boolean the Evaluate stage uses for logistics scoring) — this is the free-text answer a form actually wants."
+        },
+        "earliest_start_date": {
+          "type": ["string", "null"],
+          "description": "e.g. 'Immediately' or '2026-08-01'."
+        },
+        "employment_type": {
+          "type": ["string", "null"],
+          "description": "e.g. 'Full-time only' or 'Full-time or contract'."
+        },
+        "other": {
+          "type": "array",
+          "description": "Any other recurring personal/logistics question not covered by the named fields above, captured the first time it's asked so it's never asked twice.",
+          "items": {
+            "type": "object",
+            "required": ["question", "answer"],
+            "additionalProperties": false,
+            "properties": {
+              "question": { "type": "string", "description": "A short label for the question, e.g. 'Willing to relocate?' — not necessarily the exact form wording." },
+              "answer": { "type": "string", "description": "Exact, ready-to-use phrasing." }
+            }
+          }
+        }
       }
     },
     "summary_variants": {

@@ -76,6 +76,20 @@ comp:
   preferred_lpa: 150000
   currency: "USD"
 
+# Static, per-candidate answers to recurring application logistics questions
+# (notice period, work authorization, start date, employment type) — none of
+# this affects gate/evaluate/resume/cover, only the `apply` stage. Leave
+# fields null/absent and the `apply` stage asks you the first time a real
+# form needs one, then writes the answer here itself so it's never asked
+# again. Never used for voluntary EEO/demographic self-identification
+# questions (race, gender, veteran/disability status) — those stay manual.
+logistics:
+  notice_period: "2 weeks"
+  work_authorization: "Authorized to work in the US without sponsorship"
+  earliest_start_date: "Immediately"
+  employment_type: "Full-time only"
+  other: []
+
 summary_variants:
   - id: default
     text: "Product Manager who ships end to end and uses AI to move faster. Owned a B2B SaaS onboarding product that lifted activation from 40% to 68% at a Series A startup, and led the roadmap for a growth experimentation platform that ran 200+ A/B tests a quarter. Builds working automation to run product and GTM operations, not just specs."

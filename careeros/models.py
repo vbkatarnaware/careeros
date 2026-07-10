@@ -170,6 +170,7 @@ class Profile:
     deal_breakers: dict = field(default_factory=dict)
     location: dict = field(default_factory=dict)
     comp: dict = field(default_factory=dict)
+    logistics: dict = field(default_factory=dict)
     role_priorities: list[str] = field(default_factory=list)
     ranking_notes: str = ""
     work_mode_priority: list[str] = field(default_factory=list)
