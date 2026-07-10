@@ -41,7 +41,7 @@ Every later artifact is a *derivation*, never a re-derivation:
 | Resume | profile facts + eval keywords | invent a bullet, or re-score |
 | Cover Letter | profile facts + eval's fit paragraph | claim something not in your profile |
 | Deep Report | eval JSON + profile + new research | re-score the job |
-| Application Answers | profile facts + eval + pasted questions | fabricate experience |
+| Application Answers | profile facts + eval + the form's real questions | fabricate experience |
 
 This is "selector, not writer," applied everywhere: facts and judgments are
 generated once and reused. The one place this bends on purpose is the Deep
@@ -128,29 +128,47 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
    Consider/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
    per interview-worthy job, supply-aware — a day with 0 selected is a
    legitimate outcome, not a failure, and CareerOS never lowers the quality
-   bar just to hit a job count. It also includes a **Discovery KPI** block
-   (P2.9): Apply conversion (Apply ÷ Discovered — the discovery-quality
+   bar just to hit a job count. It also includes a **Discovery KPI** block:
+   Apply conversion (Apply ÷ Discovered — the discovery-quality
    metric tracked over time against the interviews/week goal), the ATS vs.
    job-board source split, and requests/records used against your weekly
    quota. All of it is read from files other stages already wrote — no new
    API calls.
+9a. **Application Answers** *(Apply-tier only)* — for every job that
+    just got resume/cover, an invisible **background** fetch
+    (`careeros/apply/browser.py`: a lightweight HTTP fetch first, an
+    optional headless-Playwright fallback only if the form genuinely needs
+    JavaScript to render — never your own browser, never a visible window)
+    reads the application form's real questions and drafts answers the same
+    "selector, not writer" way as the resume. A form that isn't
+    automatically readable is marked with a specific status — 🔒 Login
+    Required, ❌ Closed, ⚙️ Playwright Missing, 📄 No Essay Questions, or 🌐
+    Network Error — not fabricated; see "Application Answers" below.
 10. **Drive** *(optional, off by default)* — additive backup of Apply-tier
-    artifacts (Resume/Cover as PDF, Evaluation, Deep Report if present) into
-    one flat Drive folder via your own OAuth desktop grant. Idempotent
-    (re-uploads update in place). Any failure here only warns; it never
-    blocks the rest of the pipeline.
-11. **Sheets** — append one row per Apply job (with Drive Folder + per-file
-    Resume/Cover PDF links if step 10 ran) and one row per Consider job
-    (score + reason only). You open the Sheet and start applying.
+    artifacts (Resume/Cover/Application Answers as PDF, Evaluation, Deep
+    Report if present) into one flat Drive folder via your own OAuth desktop
+    grant. Idempotent (re-uploads update in place). Any failure here only
+    warns; it never blocks the rest of the pipeline.
+11. **Sheets** — append one row per Apply job (with per-file Drive links if
+    step 10 ran — Resume/Cover/Evaluation/Deep Report/Application Answers,
+    no shared-folder link) and one row per Consider job (score + reason
+    only). You open the Sheet and start applying.
 
 Two more commands exist outside the daily loop, deliberately:
 
 - **`careeros prep <job-id>`** — a full interview-prep report, generated
   only when you ask for it, expanding (never re-deriving) the eval.
-- **`careeros apply <job-id>`** — application-answer drafting, which can
-  only run once you've opened the real application and pasted its
-  questions. CareerOS never generates these during `daily`, because the
-  questions don't exist yet at that point.
+- **`careeros apply <job-id>`** — application-answer drafting for one job,
+  any score, using your own real logged-in browser (or pasted questions) —
+  the manual counterpart to step 9a's automatic Apply-tier batch. Use it for
+  a below-threshold job you still want to pursue, or one step 9a marked with
+  any of its non-"✅ Generated" statuses.
+
+Both skills (see `skills/prep.md`/`skills/apply.md`) end by ALWAYS running
+**`careeros publish <job-id>`** automatically, without you having to ask —
+neither writes a Drive link the next `sheets append` would retroactively
+pick up on its own, so publishing is a required last step of each skill,
+not a separate command you need to remember (see Commands below).
 
 ## Commands
 
@@ -158,20 +176,25 @@ Two more commands exist outside the daily loop, deliberately:
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
 | `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus (P2.9) your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call). Never modifies anything |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call). Never modifies anything |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
-| `careeros apply <job-id>` | Detect ATS, draft answers to pasted questions |
+| `careeros apply <job-id>` | Detect ATS, draft application answers for one job (any score) using your own real browser or pasted questions |
+| `careeros publish <job-id>` | Upload one job's current artifacts to Drive and patch just that Sheet row — use after `prep`/`apply <job-id>` so the link shows up without a full `daily` run |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
 | `careeros backfill-drive` | Add Drive artifacts + clickable Sheet links to Apply-tier rows from before Drive was enabled. Defaults to `--dry-run` |
+| `careeros sheets migrate` | Clean up an existing Sheet right now: remove deprecated columns, add new ones, apply formatting — the same pass `sheets append` already runs automatically on every write |
+| `careeros sheets sync-status` | Patch the Application Answers status of EXISTING Sheet rows from a re-run of `apply --prepare/--finalize`, without appending new rows — use after reclassifying old jobs into the newer status taxonomy |
+| `careeros --version` | Print the installed version and exit |
 
 Developer/debug commands — each stage runnable standalone against a run
 directory, without re-running the whole pipeline:
 
 `discover` · `normalize` · `dedupe` · `constraints` · `gate` · `evaluate` ·
-`threshold` · `artifacts` · `summary` · `drive` · `sheets append` ·
-`render-report` · `lint <file>` · `verify-resume <file>`
+`threshold` · `artifacts` · `apply --prepare/--finalize` · `summary` ·
+`drive` · `sheets append` · `render-report` · `lint <file>` ·
+`verify-resume <file>`
 
 ## Folder structure
 
@@ -179,9 +202,11 @@ directory, without re-running the whole pipeline:
 careeros/
 ├── careeros/            # the deterministic Python toolkit
 │   ├── cli.py
-│   ├── config.py  models.py  cache.py  runmeta.py  lint.py  report.py  sheets.py
-│   ├── providers/       # one file per discovery source
-│   └── pipeline/        # queryplan, normalize, dedupe, constraints, threshold
+│   ├── config.py  models.py  cache.py  runmeta.py  lint.py  report.py
+│   ├── sheets.py  drive.py  pdf.py  budget.py
+│   ├── apply/            # Application Answers: HTTP/Playwright form-reading (browser.py)
+│   ├── providers/        # one file per discovery source
+│   └── pipeline/         # queryplan, normalize, dedupe, constraints, threshold
 ├── prompts/              # AI step templates, versioned (gate_v1.md, ...)
 ├── skills/               # host-CLI playbooks (daily, start, prep, apply)
 ├── schemas/              # JSON Schema — the actual source-of-truth contracts
@@ -294,44 +319,72 @@ cover letters generated, plus 6 near-misses under Consider for visibility.
 
 ## Google Sheets schema
 
-One append-only `Jobs` worksheet:
+One `Jobs` worksheet. New rows are inserted directly below the header, not
+appended at the bottom — each day's newest run reads at the TOP, so you
+never have to scroll past a growing history to find today's jobs. Within a
+single run's batch, rows keep their normal Apply-then-Consider order;
+across runs, later `daily` runs stack above earlier ones.
 
-`Date · Company · Company LinkedIn · Role · Score · Confidence ·
-Recommendation · Tier · Apply URL · Resume Path · Cover Letter Path ·
-Report Path · Source · Hiring Contact · Contact LinkedIn · Contact Email ·
-Drive Folder · Resume (Drive) · Cover Letter (Drive) · Notes · Job ID`
+`Date · Company · Role · Score · Tier · Recommendation · Confidence ·
+Apply URL · Status · Resume (Drive) · Cover Letter (Drive) ·
+Evaluation (Drive) · Deep Report (Drive) · Application Answers (Drive) ·
+Notes · Source · Company LinkedIn · Hiring Contact · Contact LinkedIn ·
+Contact Email · Job ID`
 
 `Tier` is `Apply` or `Consider` (see Pipeline step 7); a Consider row has
-blank artifact/Drive cells and a `Notes` reason it scored below 4.0. Columns
-are located by header **name**, not position, and any missing column is added
-automatically — so a Sheet created by an earlier version self-migrates on the
-next run without losing data or breaking dedupe.
+blank artifact/Drive cells and a `Notes` reason it scored below 4.0. `Status`
+is a dropdown (data validation, not free text) you update by hand as you
+actually apply: `Not Applied` (the default on every new row), `Applied`,
+`Received Call`, `Interview`, `After Interview`, `Ongoing / In Process`,
+`Offer`, `Rejected`. It's yours to track — the pipeline only ever sets the
+default on a NEW row and never overwrites it afterward, exactly like `Notes`.
 
-`Job ID` is the join key `prep`/`apply` use to look a row back up. `Company
-LinkedIn` is populated for ~100% of postings at zero extra cost. `Drive
-Folder`, `Resume (Drive)`, and `Cover Letter (Drive)` are populated only if
-Drive backup (below) is enabled and succeeds — `Drive Folder` links to the
-shared backup folder (same link on every row); `Resume (Drive)`/`Cover
-Letter (Drive)` are direct, per-job clickable links straight to that job's
-own PDF, no searching required. Got Apply-tier rows from before Drive backup
-existed? `careeros backfill-drive` adds these links to them too — see below.
+Columns are located by header **name**, not position, and any missing column
+is added (deprecated ones removed) automatically — so a Sheet created by an
+earlier version self-migrates on the next `sheets append` without losing
+data or breaking dedupe; run `careeros sheets migrate` to apply that same
+pass right now instead of waiting for the next `daily` run — this also
+sorts an older Sheet's existing rows by Date descending, a one-time fix
+for history that was written bottom-up. The header row is bold and frozen,
+`Score` is conditionally colored — light green at 4.0 and above, light
+yellow below — and `Status` shows its dropdown arrow, all applied
+automatically so you can scan Apply-quality at a glance.
+
+`Job ID` is the join key `prep`/`apply`/`publish` use to look a row back up.
+`Company LinkedIn` is populated for ~100% of postings at zero extra cost.
+Every `... (Drive)` column is a direct, per-job clickable link straight to
+that job's own file — no shared-folder link (there's only ever one project
+folder, so a per-row link to it added nothing) and no local filesystem
+paths (useless outside your own machine — an earlier version removed the
+old Resume Path/Cover Letter Path/Report Path columns for the same reason).
+They're populated only once Drive backup (below) is enabled and that
+specific artifact actually exists — `Deep Report (Drive)` stays blank until
+you run `prep`, and `Application Answers (Drive)` shows a specific status
+label (e.g. **"🔒 Login Required"**, **"❌ Closed"**, **"⚙️ Playwright
+Missing"**) instead of a link for an Apply-tier job whose application form
+wasn't automatically readable (see below). Got Apply-tier rows from before
+Drive backup existed? `careeros backfill-drive` adds Resume/Cover links to
+them; `careeros publish <job-id>` adds Evaluation/Deep Report/Application
+Answers links to one specific row on demand — see below.
 
 ## Google Drive backup (optional)
 
 Off by default. When `drive.enabled: true`, `careeros drive` uploads every
-Apply-tier job's Resume + Cover Letter (as **PDF**), Evaluation, and Deep
-Report (if you've run `prep` on it) — plus the day's `run.json` and
-`summary.md` — into **one flat folder** (`drive.root_folder_id`) as an
-**additive** backup; your local `.careeros/runs/` Markdown is never moved,
-replaced, or read back by any pipeline stage. Files are named
+Apply-tier job's Resume + Cover Letter + Application Answers (as **PDF**,
+Answers only if generated — see below), Evaluation, and Deep Report (if
+you've run `prep` on it) — plus the day's `run.json` and `summary.md` —
+into **one flat folder** (`drive.root_folder_id`) as an **additive**
+backup; your local `.careeros/runs/` Markdown is never moved, replaced, or
+read back by any pipeline stage. Files are named
 `Company - Role - Resume.pdf`, `Company - Role - Cover Letter.pdf`,
-`Company - Role - Evaluation.md`, `Company - Role - Deep Report.md` — no
-per-company or per-job subfolders (set `drive.date_subfolder: true` if you'd
-rather group each day's uploads under a `YYYY-MM-DD/` subfolder instead).
-Consider-tier jobs never generate artifacts, so they never upload anything.
+`Company - Role - Application Answers.pdf`, `Company - Role - Evaluation.md`,
+`Company - Role - Deep Report.md` — no per-company or per-job subfolders
+(set `drive.date_subfolder: true` if you'd rather group each day's uploads
+under a `YYYY-MM-DD/` subfolder instead). Consider-tier jobs never generate
+artifacts, so they never upload anything.
 
-Re-running `daily` (or `backfill-drive`) for the same job updates its
-existing files in place rather than duplicating them — uploads are
+Re-running `daily` (or `backfill-drive`/`publish`) for the same job updates
+its existing files in place rather than duplicating them — uploads are
 idempotent. Needs two optional extras:
 
 ```
@@ -340,8 +393,8 @@ pip install -e ".[drive,pdf]"
 
 `[drive]` (Google API client + OAuth) is required for any upload at all.
 `[pdf]` (pure-Python `fpdf2`, no system binaries) renders the PDFs; without
-it, Resume/Cover Letter upload as Markdown instead and a warning is printed
-— Drive backup still works, just not with PDFs.
+it, Resume/Cover Letter/Application Answers upload as Markdown instead and a
+warning is printed — Drive backup still works, just not with PDFs.
 
 You'll also need an OAuth **Desktop app** client secret (Google Cloud Console
 → Credentials → Create Credentials → OAuth client ID → Desktop app) — not a
@@ -368,6 +421,83 @@ If a row's local `resume.md`/`cover.md` no longer exist on disk (an old run
 directory was cleaned up), that row is listed as **needing regeneration**
 instead of inventing content — nothing is ever fabricated.
 
+## Application Answers
+
+For every Apply-tier (score ≥ threshold) job, `daily` automatically drafts
+answers to that specific job's real application questions — no waiting
+until you've manually opened the form. `careeros/apply/browser.py` reads
+the form's visible text in the **background**:
+
+1. A lightweight HTTP fetch first (the already-core `requests` dependency —
+   nothing extra to install). Most ATS application pages (Greenhouse,
+   Lever, Ashby, and similar) are viewable, and therefore readable this
+   way, even though *submitting* usually needs an account. The fetched text
+   is also checked, generically (no per-ATS selectors), for a login wall, a
+   closed-posting notice, or a real page that server-rendered plenty of
+   text but never got past an unclicked "Apply now" button (e.g. some
+   client-side-routed careers sites) — each is a distinct, specific outcome
+   (see below), not a fetch failure.
+2. Only if that isn't enough — the page genuinely needs JavaScript to
+   render — an **optional** headless-Playwright fallback. Installing it is
+   **two steps**, not one — `pip install` alone gets you the Python
+   package but not the actual browser:
+   ```
+   pip install -e ".[apply]"
+   playwright install chromium
+   ```
+   This launches its own isolated, invisible browser context. It never
+   touches your real browser, never opens a visible window, and never
+   interrupts whatever you're doing on your machine. Run `careeros doctor`
+   any time to check whether both steps are done — it reports the two
+   independently, so "package installed but browser binary missing" and
+   "package not installed at all" show up as different, specific messages
+   rather than one opaque failure.
+
+Neither tier has any per-ATS scraping logic (no brittle selectors tied to
+one site's current DOM) — both just return the page's text, and the agent
+identifies the real questions and drafts grounded answers from it, the same
+"selector, not writer" rule as the resume (see `prompts/apply_v1.md`).
+
+A form that isn't automatically readable is never guessed at — that job's
+Sheet row shows one of these specific statuses instead of one generic
+"couldn't read it":
+
+| Status | Meaning |
+|---|---|
+| ✅ Generated | Answers drafted and ready |
+| 🔒 Login Required | The fetched page is a login wall, not the form |
+| ❌ Closed | The posting itself says it's no longer accepting applications |
+| ⚙️ Playwright Missing | The form needs the JS fallback, and it isn't installed — the cell includes the exact install command |
+| 📄 No Essay Questions | A real, readable form with no free-text questions to draft |
+| 🌐 Network Error | The fetch itself failed (DNS, timeout, connection refused) |
+| 🛡️ Bot-Blocked | The fetch hit a Cloudflare-style bot-detection challenge, not the real form — never bypassed, only named |
+| Manual review required | Fallback for any other, less common failure that doesn't match one of the specific cases above |
+
+Finish any of these yourself with `careeros apply <job-id>` — the on-demand
+skill, which can use your own real, already-logged-in browser (or accept
+pasted questions) since you're present and chose to run it. It always
+finishes by running `careeros publish <job-id>` automatically to upload the
+result and patch that row — no separate command to remember.
+
+The same on-demand `apply` skill also works for any job **below** threshold
+that you want to pursue anyway — the automatic batch only covers Apply-tier.
+
+### Personal/logistics questions — asked once, reused forever
+
+Notice period, work authorization/visa status, salary expectations,
+earliest start date, employment type — these aren't per-job content, they're
+the same answer on every application. `prompts/apply_v1.md` checks
+`profile.yaml`'s `comp` and `logistics` fields for them first; the first
+time one is genuinely missing, it's asked (on-demand: right there in chat;
+batch: once per distinct missing fact, after drafting the rest of that
+pass, never once per job) and written straight into `.careeros/profile.yaml`
+— see `templates/profile.example.yaml`'s `logistics:` block. No
+`profile.version` bump needed for these, since they don't affect
+gate/evaluate/resume/cover. Every later application, batch or on-demand,
+reuses the saved answer automatically. Voluntary EEO/demographic
+self-identification questions (race, gender, veteran/disability status) are
+deliberately excluded from this — always left for you to answer yourself.
+
 ## Caching and prompt versioning
 
 Every AI-stage output is cached, keyed on a fingerprint of everything that
@@ -383,28 +513,33 @@ the Fantastic Jobs REST API (a legacy Apify-actor provider remains available
 — see `careeros/providers/README.md`), deterministic
 normalize/dedupe/constraints/two-tier threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
-resume/cover generation against your `profile.yaml`, a zero-cost daily report
-render, automatic Google Drive backup (PDF resume/cover, flat layout,
-idempotent) for Apply-tier jobs, and Google Sheets append with clickable
-per-job Drive links. `careeros init` seeds an example `profile.yaml` (a
-Product Manager persona in `templates/`); replace it with your own facts —
-via `/careeros start` (CV-first) or by editing directly — before your first
-real run.
+resume/cover generation against your `profile.yaml`, automatic Application
+Answers for Apply-tier jobs (background HTTP/Playwright form-reading, with
+a specific status — Login Required, Closed, Playwright Missing, and so on —
+in place of a generic failure), a zero-cost daily report render, automatic
+Google Drive backup (PDF resume/cover/answers, flat layout, idempotent) for
+Apply-tier jobs, and Google Sheets append with clickable per-job Drive
+links, a hand-editable Status tracking column, and header/Score formatting.
+`careeros init` seeds an example `profile.yaml` (a Product Manager persona
+in `templates/`); replace it with your own facts — via `/careeros start`
+(CV-first) or by editing directly — before your first real run.
 
 ## Roadmap
 
 - Direct-API providers for Greenhouse, Ashby, Lever, Workday (no Apify
   actor needed — see `careeros/providers/README.md`)
-- Incremental (`date_created_gte`) discovery — deferred out of the P2.7 REST
-  migration to keep it a pure parity swap. (LinkedIn/Wellfound/YC via the
-  `active-jb` endpoint is now **live** — the default `endpoint: both` queries
-  it alongside `active-ats`; see Pipeline step 1.)
-- Per-ATS application-question scraping (today: paste them manually)
+- Incremental (`date_created_gte`) discovery — deferred out of the REST
+  provider migration to keep it a pure parity swap. (LinkedIn/Wellfound/YC
+  via the `active-jb` endpoint is now **live** — the default `endpoint:
+  both` queries it alongside `active-ats`; see Pipeline step 1.)
+- `careeros config get/set/show` — a validated, scriptable config editor so
+  hand-editing `.careeros/config.yaml` YAML is never required (`careeros
+  config` today is read-only)
 - Richer profile sections (adaptive framing, negotiation scripts) — kept
   out of v1 deliberately to stay lean
 - SQLite if Sheets-as-store ever hits real scaling limits
-- P3: outcome tracking (applied/response/interview/offer) and calibrating
-  scoring/artifacts on real conversion data — see `.careeros/ROADMAP.md`
+- Outcome tracking (applied/response/interview/offer) and calibrating
+  scoring/artifacts on real conversion data
 
 ## Contributing
 

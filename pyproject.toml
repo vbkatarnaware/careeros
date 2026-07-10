@@ -1,6 +1,6 @@
 [project]
 name = "careeros"
-version = "1.0.0"
+version = "1.1.0"
 description = "An AI-powered, deterministic job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,24 @@ drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0"]
 # system binaries — a fresh OSS clone never needs this unless Drive is on;
 # without it, Drive upload falls back to Markdown + a warning.
 pdf = ["fpdf2>=2.7"]
+# Optional background form-reading for the `apply` stage's automatic
+# Application Answers (P2.10, careeros/apply/browser.py). Only reached as a
+# FALLBACK when a lightweight HTTP fetch can't extract a form's questions
+# (e.g. a JavaScript-only SPA form) — most ATS pages resolve without it. A
+# fresh OSS clone, or anyone who only wants the on-demand `careeros apply
+# <job-id>` command (which uses the host agent's own browser instead), never
+# needs this installed; without it, jobs needing the fallback are marked
+# "⚙️ Playwright Missing" in the Sheet rather than failing.
+#
+# `pip install -e ".[apply]"` installs the Python package ONLY — Playwright
+# also needs its own browser BINARY, downloaded separately:
+#
+#   pip install -e ".[apply]"
+#   playwright install chromium
+#
+# `careeros doctor` checks for both independently and tells you exactly
+# which of the two (if either) is missing.
+apply = ["playwright>=1.40"]
 
 [project.scripts]
 careeros = "careeros.cli:app"

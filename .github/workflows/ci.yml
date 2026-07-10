@@ -17,6 +17,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e ".[dev,pdf]"
+        run: pip install -e ".[dev,pdf,apply]"
+      - name: Install Playwright browser
+        run: playwright install chromium --with-deps
       - name: Test
         run: pytest careeros/tests/ -v

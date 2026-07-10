@@ -5,7 +5,9 @@
       "Bash(python3 -c ' *)",
       "Bash(python3 -m pytest careeros/tests/ -q)",
       "Bash(node -e ' *)",
-      "Bash(grep -n \"Threshold\\\\|jobs scoring\\\\|Company LinkedIn · \\\\|Job ID\\\\`\\\\|one segmented query\\\\|Recommendation · Apply URL\\\\|configured bar\" README.md)"
+      "Bash(grep -n \"Threshold\\\\|jobs scoring\\\\|Company LinkedIn · \\\\|Job ID\\\\`\\\\|one segmented query\\\\|Recommendation · Apply URL\\\\|configured bar\" README.md)",
+      "Bash(.venv/bin/python3 -m pip list)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }
