@@ -88,6 +88,12 @@ every pipeline stage reads one JSON file and writes another, under
 `.careeros/runs/<date>/`. That makes every run inspectable, resumable, and
 cheap to re-run (unchanged inputs hit the cache, not the model).
 
+**Onboarding a new host CLI?** Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) —
+the canonical repo map, the deterministic/reasoning boundary, secrets
+handling, and the Failure Handling Principle every stage follows.
+`CLAUDE.md`/`GEMINI.md`/`AGENTS.md` are thin redirects to it for CLIs that
+auto-load a per-tool file.
+
 ## Pipeline
 
 1. **Discover** — call a provider (Fantastic Jobs REST API by default; a

@@ -9,6 +9,30 @@ Target: end to end in 15-30 minutes. Most of that time is the deterministic
 stages and I/O; the reasoning steps are deliberately narrow and batched to
 keep token spend low.
 
+**Failure Handling Principle.** Every step below can fail in ways specific
+to that step, but the response is always the same rule, defined once in
+[`AGENT_GUIDE.md`](../AGENT_GUIDE.md#the-failure-handling-principle): state
+what failed, why (if known), the impact on this run, the available
+options, then wait for explicit confirmation before continuing. Applies
+uniformly to every step in this file — never just the ones that call it
+out by name.
+
+## Step 0 — Environment (deterministic)
+
+```
+set -a && source .careeros/secrets.env && set +a
+careeros doctor
+```
+
+Loads real credentials into the shell (never cat/print/grep
+`secrets.env` itself — see `AGENT_GUIDE.md`'s Secrets handling section)
+and runs the read-only pre-flight checklist: Python version, profile,
+discovery credentials, Sheets/Drive config, per-provider last-run health,
+and Apify token pool status. `doctor` makes no network calls and changes
+nothing. If it reports any FAIL, that's a configuration problem to
+surface via the Failure Handling Principle before Step 1 even starts —
+don't discover it mid-run.
+
 ## Step 1 — Discover (deterministic)
 
 ```
@@ -36,21 +60,19 @@ does NOT abort the others — it's marked `skipped` with a plain-English
 reason in the printed output and in `raw.json`'s `meta.<provider>` block,
 and the run continues with whatever's left.
 
-**Stop and confirm with the candidate before moving to Step 2 if ANY
-provider was skipped this run — not just if every provider was.** Read out
-each skipped provider's own reason verbatim (don't paraphrase it away), and
-ask explicitly:
-- Do they want to fix it now (new/rotated API key, top up the Apify budget,
-  edit `.careeros/config.yaml`) and re-run `discover` before continuing, or
-- Continue the rest of today's pipeline with just the providers that
-  succeeded?
-
-Don't decide this yourself either way, and don't silently continue past a
-skip without asking — even a single skipped provider means today's job
-list is missing a source the candidate deliberately enabled. If N is 0 for
-the whole run (every provider skipped), the same discover output already
-lists every provider's reason in one place — tell the candidate and stop;
-nothing downstream can run without jobs.
+**Apply the Failure Handling Principle (`AGENT_GUIDE.md`) if ANY provider
+was skipped this run — not just if every provider was.** A single skipped
+provider means today's job list is missing a source the candidate
+deliberately enabled: read out that provider's own skip reason verbatim
+(don't paraphrase it away), explain the impact (fewer sources feeding the
+rest of the pipeline), and present the real options — fix it now
+(new/rotated API key, top up the Apify budget, edit
+`.careeros/config.yaml`) and re-run `discover`, or continue with just the
+providers that succeeded. Wait for the candidate's answer either way. If N
+is 0 for the whole run (every provider skipped), the same discover output
+already lists every provider's reason in one place — nothing downstream
+can run without jobs, so this is an abort, not a reduced-functionality
+continue.
 
 ## Step 2 — Normalize (deterministic)
 
@@ -171,9 +193,12 @@ careeros artifacts --finalize --date {today}
 
 This runs the voice-dna lint on both files and the deterministic verbatim
 truthfulness check (`careeros verify-resume`) on the resume, and only caches
-artifacts that pass. If it reports issues, fix only the listed files (using
-actual profile text, not a paraphrase) and re-run `--finalize` — do not
-regenerate artifacts that already passed.
+artifacts that pass. If it reports lint/validation issues, fix only the
+listed files (using actual profile text, not a paraphrase) and re-run
+`--finalize` — do not regenerate artifacts that already passed. If resume
+or cover generation fails outright for a job (not a fixable lint issue —
+e.g. a missing prompt file or an unexpected error), apply the Failure
+Handling Principle before continuing to the next job.
 
 Finally, for each selected job, render its Level-1 report (deterministic,
 zero AI):
@@ -199,8 +224,13 @@ many jobs have a readable form (need drafting) vs. how many don't. A job
 that isn't automatically readable is assigned one of several SPECIFIC
 statuses rather than one generic "manual review" bucket — 🔒 Login
 Required, ❌ Closed, ⚙️ Playwright Missing (with the exact install command),
-or 🌐 Network Error — each mechanically detected by `browser.py`, not a
-failure to report as one.
+or 🌐 Network Error — each mechanically detected by `browser.py` and
+recorded per-job; these are expected outcomes, not failures to apply the
+Failure Handling Principle to individually. If instead something is
+broken at the run level (e.g. every single job comes back Network Error,
+or Playwright is missing project-wide rather than per-job), that's a
+systemic failure — apply the Failure Handling Principle rather than
+quietly proceeding job-by-job.
 
 For jobs needing drafting, this prints an instruction block naming exactly
 which job(s) need answers, each with its fetched form text. For each one:
@@ -274,9 +304,14 @@ Deep Report (if `prep` has been run on it) into ONE flat Drive folder (no
 per-company/per-job subfolders — see `drive.root_folder_id`/
 `drive.date_subfolder`), plus `run.json`/`summary.md`, as an ADDITIVE
 backup; local Markdown is never moved or replaced. Re-uploading the same
-job updates its existing files in place (idempotent). **Any failure here
-(auth, network, quota) is caught and reported as a warning — never let a
-Drive problem block Sheets or stop the pipeline.** Writes
+job updates its existing files in place (idempotent). The command itself
+catches a Drive failure (auth, network, quota) and reports it as a
+warning rather than raising — Sheets (next step) is never blocked by a
+Drive problem. That does not mean the agent should let it pass quietly,
+though: surface a reported warning to the candidate per the Failure
+Handling Principle (what failed, why if known, that today's Sheet rows
+will be missing Drive links as a result) rather than only mentioning it
+in passing at Step 13. Writes
 `.careeros/runs/{today}/drive_links.json` on success, which Sheets (next
 step) reads to populate the Resume (Drive) / Cover Letter (Drive) /
 Evaluation (Drive) / Deep Report (Drive) / Application Answers (Drive)
@@ -314,6 +349,12 @@ Deep Report / Application Answers links on a specific already-appended row,
 use `careeros publish <job-id> --date <date>` instead (see skills/prep.md,
 skills/apply.md).
 
+A Sheets append failure (auth, quota, network) is not caught the way
+Drive's is — apply the Failure Handling Principle immediately: this is the
+step that actually delivers today's results to the candidate, so a
+failure here has real impact and should not be silently retried or
+skipped.
+
 ## Step 13 — Report to the candidate
 
 Read `summary.md` back and relay it, briefly. Point them at the Sheet. Do not
@@ -323,6 +364,7 @@ the deliverable, `summary.md` is the day-level pointer to them.
 ## On failure
 
 Every stage's output lives in `.careeros/runs/{today}/`, so `daily` is
-resumable: if a stage fails partway, fix the cause and re-run from that
-stage, not from the beginning. Never mark a step as done in your summary
-without confirming its output file actually exists on disk.
+resumable: once a failure has been surfaced and resolved per the Failure
+Handling Principle, fix the cause and re-run from that stage, not from the
+beginning. Never mark a step as done in your summary without confirming
+its output file actually exists on disk.
