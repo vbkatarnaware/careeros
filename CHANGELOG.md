@@ -4,6 +4,56 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-11
+
+### Added
+
+- **Parallel provider discovery.** `discover` now runs every enabled
+  provider's `fetch()` concurrently (`ThreadPoolExecutor`, new
+  `discovery_max_workers` config knob, default 4) instead of one after
+  another — total wall-clock is roughly the slowest single provider
+  instead of the sum of all of them. Budget/quota checking and recording
+  stays strictly serial and race-free (preflight → concurrent fetch →
+  serial bookkeeping), and results always merge in config order regardless
+  of completion order, so dedupe's "keep first" contract is unchanged.
+  `discovery_max_workers: 1` reproduces the old fully-serial behavior.
+- **Resilient Apify credentials.** Multi-token rotation
+  (`APIFY_TOKENS`) is now silent — no more alarming per-token failure
+  lines on a normal rotation. A new rolling-month `apify_tokens.json`
+  caches exhausted tokens by a non-reversible fingerprint (never the raw
+  token), so an already-exhausted key is skipped on future calls instead
+  of being retried every run. Only when every configured token is
+  exhausted does the provider stop with a sharpened error naming the fix
+  path.
+- **Provider health + timing in `careeros doctor`.** Every enabled
+  provider now shows its last-run status (ok / skipped + reason / never
+  run) and duration, sourced from data already persisted by `discover` —
+  no new data model. Apify-actor providers additionally show how many of
+  the configured tokens are currently available this billing cycle.
+- **One canonical onboarding doc.** `AGENT_GUIDE.md` (repo root) is now
+  the single source of truth for any host coding CLI — repo map, the
+  deterministic-vs-reasoning boundary, secrets handling, and a universal
+  **Failure Handling Principle**: whenever a non-trivial pipeline step
+  can't complete as intended (provider/credential/quota/network failure,
+  a Drive/Sheets write failure, a generation failure, anything), the
+  agent states what failed, why if known, the impact on the run, the
+  available options, and waits for explicit confirmation before
+  continuing — one rule, applied uniformly, replacing the narrower
+  per-stage stop conditions `skills/daily.md` used to spell out
+  individually. `CLAUDE.md`/`GEMINI.md`/`AGENTS.md` are now thin
+  redirects to `AGENT_GUIDE.md` for CLIs with a known auto-load
+  convention. `skills/daily.md` gained a Step 0 (source
+  `.careeros/secrets.env`, run `careeros doctor` as a sanity gate) before
+  discovery starts.
+
+### Fixed
+
+- A hard failure from a zero-budget-capability provider (e.g. RemoteOK,
+  We Work Remotely) previously had no error handling at all and could
+  abort the entire multi-provider `discover` run instead of being marked
+  `skipped` like every other provider — now consistent across all three
+  provider capability tiers.
+
 ## [1.2.0] - 2026-07-11
 
 ### Added
