@@ -180,3 +180,26 @@ def test_discovery_kpi_heading_present_with_graceful_fallback_when_no_data():
     md = render_summary("2026-07-08", {"totals": {}}, [], [], {}, threshold=4.0)
     assert "## Discovery KPI" in md
     assert "no jobs discovered this run" in md
+
+
+def test_discovery_kpi_provider_table_shows_duration_and_status_per_provider():
+    """v1.3: per-provider table gained a Time column (ProviderResult.seconds)
+    so a concurrent run's per-provider wall-clock is visible next to
+    jobs/cost — this had zero direct test coverage before."""
+    stats = {
+        "providers": [
+            {"provider": "remoteok", "records": 42, "requests": 1,
+             "cost_usd": 0.0, "seconds": 1.23, "skipped": False},
+            {"provider": "glassdoor", "records": 0, "requests": 0,
+             "cost_usd": 0.0, "seconds": 0.0, "skipped": True,
+             "skip_reason": "monthly Apify budget exhausted"},
+        ],
+        "merged_total": 42,
+    }
+    md = render_summary("2026-07-08", {"totals": {"discovered": 42, "deduped": 40}},
+                         [], [], {}, threshold=4.0, discovery_stats=stats)
+    assert "| Provider | Records | Requests | Cost | Time | Status |" in md
+    assert "| remoteok | 42 | 1 | $0.0000 | 1.2s | ran |" in md
+    assert "| glassdoor | 0 | 0 | $0.0000 | 0.0s | skipped: monthly Apify budget exhausted |" in md
+    assert "**Merged total** | **42**" in md
+    assert "**After dedupe** | **40**" in md

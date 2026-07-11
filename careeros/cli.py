@@ -28,6 +28,7 @@ job can never slip through as "apply" even if the AI mislabels it.
 
 from __future__ import annotations
 
+import json
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -54,6 +55,7 @@ from careeros.pipeline.constraints import evaluate_constraints
 from careeros.pipeline.normalize import normalize_all
 from careeros.pipeline.queryplan import build_query_plan, resolve_tier_limit
 from careeros.pipeline.threshold import partition_evals
+from careeros.providers._apify_actor_common import iter_tokens
 from careeros.providers.base import ProviderError, ProviderResult
 from careeros.providers.registry import get as get_provider
 from careeros.providers.registry import list_providers
@@ -232,6 +234,33 @@ def migrate_config():
 
 # ── doctor ────────────────────────────────────────────────────────────────
 
+def _latest_discovery_meta(cfg: Config) -> tuple[Optional[str], dict[str, dict]]:
+    """The most recent run's `01_discover/raw.json` "meta" block (per
+    provider: cost/requests/records/seconds/skipped/skip_reason — exactly
+    what `discover` already writes, nothing new persisted for this), if any
+    run has happened yet. Read-only, no network call — safe for `doctor` to
+    call on every invocation. Returns (date, meta) or (None, {}) if
+    `.careeros/runs/` has no discover output at all. Run dates are ISO
+    (`YYYY-MM-DD`) or a QA label; picking the lexicographically latest
+    directory that actually has a raw.json is a reasonable "most recent"
+    without needing a separate index file."""
+    runs_dir = cfg.runs_dir
+    if not runs_dir.exists():
+        return None, {}
+    candidates = sorted(
+        (d for d in runs_dir.iterdir() if d.is_dir() and (d / "01_discover" / "raw.json").exists()),
+        key=lambda d: d.name,
+    )
+    if not candidates:
+        return None, {}
+    latest = candidates[-1]
+    try:
+        raw = json.loads((latest / "01_discover" / "raw.json").read_text())
+    except (json.JSONDecodeError, OSError):
+        return latest.name, {}
+    return latest.name, raw.get("meta", {})
+
+
 class _CheckStatus:
     PASS = "PASS"
     WARN = "WARN"
@@ -371,6 +400,47 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                                          "; ".join(problems)))
         else:
             results.append(_check_result(_CheckStatus.PASS, f"Discovery credentials ({name})", "configured"))
+
+    # v1.3: per-provider last-run health + timing, read from the most
+    # recent discover run's already-persisted raw.json "meta" block — no
+    # new data model, no network call, just surfacing what's already there
+    # (helps answer "which provider is slow / which one keeps failing"
+    # without grepping run history by hand).
+    latest_date, latest_meta = _latest_discovery_meta(cfg)
+    if latest_date:
+        for name in active:
+            provider_meta = latest_meta.get(name)
+            if provider_meta is None:
+                results.append(_check_result(_CheckStatus.WARN, f"Last run ({name})",
+                                             f"never run as of {latest_date}"))
+            elif provider_meta.get("skipped"):
+                results.append(_check_result(
+                    _CheckStatus.WARN, f"Last run ({name})",
+                    f"skipped on {latest_date} — {provider_meta.get('skip_reason') or 'unknown reason'}"
+                ))
+            else:
+                results.append(_check_result(
+                    _CheckStatus.PASS, f"Last run ({name})",
+                    f"{provider_meta.get('records', 0)} items on {latest_date} "
+                    f"({provider_meta.get('seconds', 0):.1f}s, ${provider_meta.get('cost_usd', 0):.4f})"
+                ))
+
+    # Apify token pool health (only relevant if some enabled provider is
+    # "monthly" capability) — how many of the configured tokens are
+    # available vs already known-exhausted this billing cycle (see
+    # budget.apify_tokens.json / _apify_actor_common.run_actor).
+    if any(budget.guard_for(provider_config_block(cfg, name)) == "monthly" for name in active):
+        tokens = iter_tokens(cfg.apify)
+        if tokens:
+            tokens_state = budget.load_apify_tokens_state(cfg.careeros_dir, _today())
+            exhausted_count = sum(1 for t in tokens if budget.is_token_exhausted(tokens_state, t))
+            available = len(tokens) - exhausted_count
+            status = _CheckStatus.PASS if available > 0 else _CheckStatus.FAIL
+            results.append(_check_result(
+                status, "Apify token pool",
+                f"{available}/{len(tokens)} token(s) available this billing cycle"
+                + (f" ({exhausted_count} exhausted)" if exhausted_count else "")
+            ))
         if budget.guard_for(provider_cfg) == "monthly":
             max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
             state = budget.load_apify_state(cfg.careeros_dir, _today())

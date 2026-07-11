@@ -6,6 +6,8 @@ existing test file needed this pattern before)."""
 
 from __future__ import annotations
 
+import json
+
 from careeros import budget
 from careeros.cli import _CheckStatus, _run_doctor_checks
 from careeros.config import Config
@@ -309,3 +311,134 @@ def test_no_failures_means_a_fully_configured_setup_is_all_clear(tmp_path, monke
                drive={"enabled": False})
     results = _run_doctor_checks(cfg)
     assert not [r for r in results if r[0] == _CheckStatus.FAIL]
+
+
+# ── v1.3: per-provider last-run health/timing + Apify token pool status ──
+
+def _write_discover_raw(tmp_path, date: str, meta: dict) -> None:
+    stage_dir = tmp_path / ".careeros" / "runs" / date / "01_discover"
+    stage_dir.mkdir(parents=True)
+    (stage_dir / "raw.json").write_text(json.dumps({"providers": list(meta), "items": {}, "meta": meta}))
+
+
+def test_no_run_history_shows_never_run_for_every_active_provider(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    cfg = _cfg(providers={"fantastic-jobs": {"enabled": True}, "remoteok": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    # No .careeros/runs/ at all -> _latest_discovery_meta returns nothing,
+    # so no "Last run" lines are added (nothing to report yet, not a FAIL).
+    assert _status_for(results, "Last run (fantastic-jobs)") == (None, None)
+
+
+def test_last_run_shows_success_with_items_and_duration(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    _write_discover_raw(tmp_path, "2026-07-11", {
+        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 42, "seconds": 1.23,
+                     "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
+    })
+    cfg = _cfg(providers={"remoteok": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last run (remoteok)")
+    assert status == _CheckStatus.PASS
+    assert "42 items" in detail
+    assert "1.2s" in detail
+
+
+def test_last_run_shows_skip_reason_for_a_skipped_provider(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    _write_discover_raw(tmp_path, "2026-07-11", {
+        "glassdoor": {"cost_usd": 0.0, "requests": 0, "records": 0, "seconds": 0.0,
+                      "warnings": [], "errors": [], "skipped": True,
+                      "skip_reason": "monthly Apify budget exhausted"},
+    })
+    cfg = _cfg(providers={"glassdoor": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last run (glassdoor)")
+    assert status == _CheckStatus.WARN
+    assert "monthly Apify budget exhausted" in detail
+
+
+def test_last_run_shows_never_run_for_a_provider_missing_from_latest_meta(tmp_path, monkeypatch):
+    """A provider just enabled since the last discover run has no entry in
+    that run's meta block at all — distinct from "no run history exists"."""
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    _write_discover_raw(tmp_path, "2026-07-11", {
+        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 5, "seconds": 0.5,
+                     "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
+    })
+    cfg = _cfg(providers={"remoteok": {"enabled": True}, "naukri": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last run (naukri)")
+    assert status == _CheckStatus.WARN
+    assert "never run" in detail
+
+
+def test_last_run_picks_the_most_recent_of_multiple_run_dates(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    _write_discover_raw(tmp_path, "2026-07-08", {
+        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 1, "seconds": 0.1,
+                     "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
+    })
+    _write_discover_raw(tmp_path, "2026-07-11", {
+        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 99, "seconds": 2.0,
+                     "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
+    })
+    cfg = _cfg(providers={"remoteok": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Last run (remoteok)")
+    assert "99 items" in detail
+    assert "2026-07-11" in detail
+
+
+def test_apify_token_pool_not_shown_when_no_monthly_provider_enabled(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    cfg = _cfg(providers={"remoteok": {"enabled": True}})
+
+    results = _run_doctor_checks(cfg)
+    assert _status_for(results, "Apify token pool") == (None, None)
+
+
+def test_apify_token_pool_shows_all_available_when_none_exhausted(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("APIFY_TOKENS", "tok-a,tok-b")
+    cfg = _cfg(
+        apify={"tokens_env": "APIFY_TOKENS"},
+        providers={"naukri": {"enabled": True, "max_monthly_budget_usd": None}},
+    )
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Apify token pool")
+    assert status == _CheckStatus.PASS
+    assert "2/2 token(s) available" in detail
+
+
+def test_apify_token_pool_shows_exhausted_count_and_fails_when_all_exhausted(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("APIFY_TOKENS", "tok-a,tok-b")
+    state = budget.load_apify_tokens_state(tmp_path / ".careeros", "2026-07-11")
+    budget.mark_token_exhausted(state, "tok-a")
+    budget.mark_token_exhausted(state, "tok-b")
+    budget.save_apify_tokens_state(tmp_path / ".careeros", state)
+    cfg = _cfg(
+        apify={"tokens_env": "APIFY_TOKENS"},
+        providers={"naukri": {"enabled": True, "max_monthly_budget_usd": None}},
+    )
+
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Apify token pool")
+    assert status == _CheckStatus.FAIL
+    assert "0/2 token(s) available" in detail
+    assert "2 exhausted" in detail
