@@ -29,14 +29,28 @@ give a historically high-converting tier more headroom) — check `run.json`'s
 cost-per-selected-job over a few days before tuning this, rather than
 guessing.
 
-Reports N raw items fetched. If N is 0, check credentials for whichever
-provider is active (`config.provider`): the default REST provider needs
-`api.transport` set plus `FANTASTIC_API_KEY`/`RAPIDAPI_KEY`; the legacy
-actor (`fantastic-jobs-actor`) needs `APIFY_TOKENS`/`APIFY_TOKEN`. Tell the
-candidate and stop — nothing downstream can run without jobs. If a query
-fails with a clean provider error (e.g. the actor's token budget exhausted),
-it's already tried rotating through every configured token — report the
-message to the candidate rather than retrying.
+Reports N raw items fetched across every provider enabled in
+`.careeros/config.yaml`'s `providers:` block. A provider that fails
+(invalid/exhausted credentials, budget cap hit, an account-level API error)
+does NOT abort the others — it's marked `skipped` with a plain-English
+reason in the printed output and in `raw.json`'s `meta.<provider>` block,
+and the run continues with whatever's left.
+
+**Stop and confirm with the candidate before moving to Step 2 if ANY
+provider was skipped this run — not just if every provider was.** Read out
+each skipped provider's own reason verbatim (don't paraphrase it away), and
+ask explicitly:
+- Do they want to fix it now (new/rotated API key, top up the Apify budget,
+  edit `.careeros/config.yaml`) and re-run `discover` before continuing, or
+- Continue the rest of today's pipeline with just the providers that
+  succeeded?
+
+Don't decide this yourself either way, and don't silently continue past a
+skip without asking — even a single skipped provider means today's job
+list is missing a source the candidate deliberately enabled. If N is 0 for
+the whole run (every provider skipped), the same discover output already
+lists every provider's reason in one place — tell the candidate and stop;
+nothing downstream can run without jobs.
 
 ## Step 2 — Normalize (deterministic)
 

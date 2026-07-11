@@ -216,6 +216,43 @@ def test_hard_provider_error_skips_that_provider_and_run_continues(tmp_path, mon
     assert len(raw["items"]["fake-after"]) == 1
 
 
+def test_weekly_capability_hard_error_skips_fantastic_jobs_and_run_continues(tmp_path, monkeypatch):
+    """Regression for a real bug found in live use 2026-07-11: Fantastic
+    Jobs (the only provider on the "weekly" capability path, resolved via
+    cfg.api which has a "plan" key) hit an account-level HTTP 403 (usage
+    meter exceeded). Before this fix, that ProviderError had no per-provider
+    catch inside the weekly branch, so it escaped to discover()'s
+    command-level handler and aborted the ENTIRE multi-provider run —
+    RemoteOK/We Work Remotely/every paid provider never even got attempted,
+    even though they were healthy. Must behave exactly like the monthly
+    branch's existing "hard error -> skip, run continues" guarantee."""
+    monkeypatch.chdir(tmp_path)
+    broke = _FakeProvider(
+        "fantastic-jobs", [_job("Never")],
+        fetch_error=ProviderError("fantastic-jobs (active-ats): API key rejected (HTTP 403)"),
+    )
+    after = _FakeProvider("fake-after3", [_job("Still runs")])
+    monkeypatch.setitem(registry._REGISTRY, "fantastic-jobs", broke)
+    monkeypatch.setitem(registry._REGISTRY, "fake-after3", after)
+    (tmp_path / ".careeros").mkdir()
+    (tmp_path / ".careeros" / "config.yaml").write_text(
+        "providers:\n"
+        "  fantastic-jobs:\n    enabled: true\n"
+        "  fake-after3:\n    enabled: true\n"
+    )
+
+    result = runner.invoke(app, ["discover", "--date", "t9"])
+    assert result.exit_code == 0, result.output
+    assert broke.fetch_called is True  # fetch() WAS attempted, and raised
+    assert after.fetch_called is True  # the run continued to the next provider, not aborted
+
+    raw = json.loads((tmp_path / ".careeros/runs/t9/01_discover/raw.json").read_text())
+    assert raw["meta"]["fantastic-jobs"]["skipped"] is True
+    assert "403" in raw["meta"]["fantastic-jobs"]["skip_reason"]
+    assert raw["meta"]["fake-after3"]["skipped"] is False
+    assert len(raw["items"]["fake-after3"]) == 1
+
+
 def test_explicit_provider_flag_forces_single_provider_ignoring_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     a = _FakeProvider("fake-a2", [_job("A")])
@@ -241,3 +278,26 @@ def test_no_enabled_providers_exits_cleanly(tmp_path, monkeypatch):
     result = runner.invoke(app, ["discover", "--date", "t7"])
     assert result.exit_code == 1
     assert "nothing to do" in result.output
+
+
+def test_every_provider_skipped_prints_plain_english_reasons_and_exits_zero(tmp_path, monkeypatch):
+    """When every ENABLED provider ends up skipped (not disabled — actually
+    enabled but each failed validate()/its guard/fetch()), discover must not
+    look like it silently succeeded with real jobs: it should spell out
+    every provider's skip reason in plain text. Exit code stays 0 (same as
+    a single skipped provider, e.g. the monthly-budget-guard test above) —
+    an all-skipped run is informational, not an error, by design; skills
+    reading this output decide whether that's acceptable to continue from,
+    not the CLI itself."""
+    monkeypatch.chdir(tmp_path)
+    broken = _FakeProvider("fake-brokenA", [_job("Never")], validate_errors=["no token configured"])
+    also_broken = _FakeProvider("fake-brokenB", [_job("Never")], validate_errors=["missing credentials"])
+    monkeypatch.setitem(registry._REGISTRY, "fake-brokenA", broken)
+    monkeypatch.setitem(registry._REGISTRY, "fake-brokenB", also_broken)
+    _write_config(tmp_path, "  fake-brokenA:\n    enabled: true\n  fake-brokenB:\n    enabled: true\n")
+
+    result = runner.invoke(app, ["discover", "--date", "t10"])
+    assert result.exit_code == 0, result.output
+    assert "every enabled provider was skipped" in result.output.lower()
+    assert "fake-brokenA: no token configured" in result.output
+    assert "fake-brokenB: missing credentials" in result.output

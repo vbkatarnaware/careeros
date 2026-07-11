@@ -532,7 +532,18 @@ def _discover_one_provider(
         for i, query in enumerate(queries):
             work_mode = (query or {}).get("_work_mode", "single")
             effective_limit = resolve_tier_limit(work_mode, provider_cfg, base_limit)
-            result = p.fetch(cfg, limit=effective_limit, search=search, query=query)
+            try:
+                result = p.fetch(cfg, limit=effective_limit, search=search, query=query)
+            except ProviderError as e:
+                # A HARD failure from the API/account itself (e.g. an
+                # invalid/exhausted key) — skip just this provider for this
+                # run rather than aborting every other enabled provider,
+                # mirroring the monthly-capability branch below. Any queries
+                # already completed in this segmented plan are discarded —
+                # a partial result from Fantastic Jobs' own account-level
+                # failure isn't safe to treat as "done."
+                typer.echo(f"[discover] {name}: skipped — {e}")
+                return ProviderResult.skip(name, str(e))
             cost += result.cost_usd
             typer.echo(
                 f"  [discover] {name} query {i + 1}/{len(queries)} ({work_mode}, "
@@ -652,6 +663,23 @@ def discover(
         f"[discover] {len(provider_names)} provider(s), {total_items} raw items total "
         f"(${total_cost:.4f}, {elapsed_all:.1f}s)"
     )
+
+    if total_items == 0 and results and all(r.skipped for r in results):
+        # Every enabled provider was skipped — not an error (a single
+        # skipped provider, e.g. budget exhausted, is expected/non-fatal by
+        # design, same exit code either way), but plain-English enough that
+        # nothing looks like it silently succeeded with real jobs.
+        typer.echo(
+            "[discover] Every enabled provider was skipped this run — no "
+            "jobs were fetched. Reasons:"
+        )
+        for r in results:
+            typer.echo(f"  - {r.provider}: {r.skip_reason or 'unknown reason'}")
+        typer.echo(
+            "[discover] Fix at least one provider's credentials/budget above "
+            "(see providers/README.md), or check .careeros/config.yaml, then "
+            "re-run discover."
+        )
 
     if dry_run:
         typer.echo(dumps({r.provider: r.items[:3] for r in results}))
