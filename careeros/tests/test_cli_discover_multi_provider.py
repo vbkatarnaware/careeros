@@ -301,3 +301,159 @@ def test_every_provider_skipped_prints_plain_english_reasons_and_exits_zero(tmp_
     assert "every enabled provider was skipped" in result.output.lower()
     assert "fake-brokenA: no token configured" in result.output
     assert "fake-brokenB: missing credentials" in result.output
+
+
+# ── v1.3: concurrent fetch (preflight / fetch / bookkeeping phases) ──────
+
+def test_none_capability_hard_error_skips_that_provider_and_run_continues(tmp_path, monkeypatch):
+    """Regression: the "none" capability branch (RemoteOK/We Work Remotely's
+    shape — no plan/max_monthly_budget_usd key) previously had NO try/except
+    around fetch() at all, unlike the weekly/monthly branches — a real
+    network/timeout ProviderError from a free provider would silently abort
+    the WHOLE multi-provider discover run. Found while refactoring for
+    concurrency; now consistent with every other capability."""
+    monkeypatch.chdir(tmp_path)
+    broke = _FakeProvider(
+        "fake-free-broke", [_job("Never")],
+        fetch_error=ProviderError("fake-free-broke: network timeout"),
+    )
+    after = _FakeProvider("fake-free-after", [_job("Still runs")])
+    monkeypatch.setitem(registry._REGISTRY, "fake-free-broke", broke)
+    monkeypatch.setitem(registry._REGISTRY, "fake-free-after", after)
+    _write_config(tmp_path, "  fake-free-broke:\n    enabled: true\n  fake-free-after:\n    enabled: true\n")
+
+    result = runner.invoke(app, ["discover", "--date", "t11"])
+    assert result.exit_code == 0, result.output
+    assert broke.fetch_called is True
+    assert after.fetch_called is True
+
+    raw = json.loads((tmp_path / ".careeros/runs/t11/01_discover/raw.json").read_text())
+    assert raw["meta"]["fake-free-broke"]["skipped"] is True
+    assert "timeout" in raw["meta"]["fake-free-broke"]["skip_reason"]
+    assert raw["meta"]["fake-free-after"]["skipped"] is False
+
+
+def test_concurrent_fetch_still_merges_in_config_order_regardless_of_completion_order(tmp_path, monkeypatch):
+    """The provider LISTED FIRST in config finishes fetching LAST (via a
+    sleep) — merge order in raw.json must still follow config order, not
+    completion order, since dedupe's "keep first" contract depends on it."""
+    import time as _time
+
+    class _SlowFakeProvider(_FakeProvider):
+        def __init__(self, provider_id, items, *, sleep_s=0.0):
+            super().__init__(provider_id, items)
+            self._sleep_s = sleep_s
+
+        def fetch(self, config, *, limit=100, search="", query=None):
+            _time.sleep(self._sleep_s)
+            return super().fetch(config, limit=limit, search=search, query=query)
+
+    slow_first = _SlowFakeProvider("fake-slow-first", [_job("First-listed")], sleep_s=0.15)
+    fast_second = _SlowFakeProvider("fake-fast-second", [_job("Second-listed")], sleep_s=0.0)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(registry._REGISTRY, "fake-slow-first", slow_first)
+    monkeypatch.setitem(registry._REGISTRY, "fake-fast-second", fast_second)
+    _write_config(
+        tmp_path,
+        "  fake-slow-first:\n    enabled: true\n  fake-fast-second:\n    enabled: true\n",
+    )
+
+    result = runner.invoke(app, ["discover", "--date", "t12"])
+    assert result.exit_code == 0, result.output
+
+    raw = json.loads((tmp_path / ".careeros/runs/t12/01_discover/raw.json").read_text())
+    # fake-fast-second's fetch() returns almost immediately and fake-slow-first's
+    # takes 150ms, so completion order is [fast, slow] — but raw.json's
+    # provider order must still be config order: [slow, fast].
+    assert raw["providers"] == ["fake-slow-first", "fake-fast-second"]
+
+
+def test_concurrent_fetches_actually_overlap_in_wall_clock(tmp_path, monkeypatch):
+    """Three providers each sleep 150ms inside fetch(). Serial execution
+    would take >=450ms; concurrent execution (discovery_max_workers default
+    4) should take well under that — proving the fetches really run in
+    parallel, not just that the code still produces correct results."""
+    import time as _time
+
+    class _SlowFakeProvider(_FakeProvider):
+        def fetch(self, config, *, limit=100, search="", query=None):
+            _time.sleep(0.15)
+            return super().fetch(config, limit=limit, search=search, query=query)
+
+    monkeypatch.chdir(tmp_path)
+    names = ["fake-par-a", "fake-par-b", "fake-par-c"]
+    for name in names:
+        monkeypatch.setitem(registry._REGISTRY, name, _SlowFakeProvider(name, [_job("x")]))
+    _write_config(tmp_path, "".join(f"  {n}:\n    enabled: true\n" for n in names))
+
+    start = _time.time()
+    result = runner.invoke(app, ["discover", "--date", "t13"])
+    elapsed = _time.time() - start
+
+    assert result.exit_code == 0, result.output
+    assert elapsed < 0.4, f"expected concurrent fetches to overlap, took {elapsed:.2f}s"
+
+
+def test_max_workers_1_forces_serial_and_still_merges_correctly(tmp_path, monkeypatch):
+    """discovery_max_workers: 1 restores today's fully-serial behavior —
+    still correct, just no overlap."""
+    import time as _time
+
+    class _SlowFakeProvider(_FakeProvider):
+        def fetch(self, config, *, limit=100, search="", query=None):
+            _time.sleep(0.1)
+            return super().fetch(config, limit=limit, search=search, query=query)
+
+    monkeypatch.chdir(tmp_path)
+    names = ["fake-serial-a", "fake-serial-b"]
+    for name in names:
+        monkeypatch.setitem(registry._REGISTRY, name, _SlowFakeProvider(name, [_job("x")]))
+    (tmp_path / ".careeros").mkdir()
+    (tmp_path / ".careeros" / "config.yaml").write_text(
+        "discovery_max_workers: 1\n"
+        "providers:\n" + "".join(f"  {n}:\n    enabled: true\n" for n in names)
+    )
+
+    start = _time.time()
+    result = runner.invoke(app, ["discover", "--date", "t14"])
+    elapsed = _time.time() - start
+
+    assert result.exit_code == 0, result.output
+    assert elapsed >= 0.2, f"expected serial (max_workers=1) fetches NOT to overlap, took {elapsed:.2f}s"
+    raw = json.loads((tmp_path / ".careeros/runs/t14/01_discover/raw.json").read_text())
+    assert raw["providers"] == ["fake-serial-a", "fake-serial-b"]
+
+
+def test_multiple_monthly_providers_concurrent_spend_all_recorded_no_lost_update(tmp_path, monkeypatch):
+    """Three monthly-capability (Apify-style) providers, each costing real
+    money, fetched CONCURRENTLY — bookkeeping happens serially afterward
+    (see _record_provider_consumption), so all three spends must land in
+    apify_budget.json with none lost to a write race."""
+
+    class _PaidFakeProvider(_FakeProvider):
+        def fetch(self, config, *, limit=100, search="", query=None):
+            return ProviderResult(
+                provider=self.id, items=list(self._items), cost_usd=1.0,
+                requests=1, records=len(self._items), seconds=0.01,
+            )
+
+    monkeypatch.chdir(tmp_path)
+    names = ["fake-spend-a", "fake-spend-b", "fake-spend-c"]
+    for name in names:
+        monkeypatch.setitem(registry._REGISTRY, name, _PaidFakeProvider(name, [_job(name)]))
+    (tmp_path / ".careeros").mkdir()
+    (tmp_path / ".careeros" / "config.yaml").write_text(
+        "providers:\n" + "".join(
+            f"  {n}:\n    enabled: true\n    max_monthly_budget_usd: 100\n" for n in names
+        )
+    )
+
+    result = runner.invoke(app, ["discover", "--date", "t15"])
+    assert result.exit_code == 0, result.output
+
+    from careeros.config import load_config
+    cfg = load_config()
+    state = budget.load_apify_state(cfg.careeros_dir, "t15")
+    # Each of the 3 providers spent $1.00 — total must be exactly $3.00, not
+    # less (a lost update would silently under-count).
+    assert state["spend_usd"] == 3.0

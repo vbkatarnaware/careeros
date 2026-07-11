@@ -70,6 +70,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "gate_batch_size": 50,
     "description_max_chars": 4000,
+    # v1.3: how many enabled providers' fetch() calls `discover` runs
+    # concurrently (each is a blocking network/Apify call, so this is real
+    # wall-clock savings, not a correctness risk — budget/quota state is
+    # always checked and recorded serially, only the network I/O itself
+    # runs in parallel; merge order is always config order regardless of
+    # completion order). Set to 1 to force the old fully-serial behavior
+    # (useful for debugging a specific provider in isolation).
+    "discovery_max_workers": 4,
     # Only stages actually read via cfg.prompts.get()/cfg.prompt_path() belong
     # here (gate, eval, resume, cover) — deep_report and apply are invoked by
     # skills/prep.md and skills/apply.md, which read their prompt files
@@ -248,6 +256,7 @@ class Config:
     consider_threshold: float
     gate_batch_size: int
     description_max_chars: int
+    discovery_max_workers: int = 4
     goals: dict[str, Any] = field(default_factory=dict)
     prompts: dict[str, str] = field(default_factory=dict)
     sheets: dict[str, Any] = field(default_factory=dict)
@@ -374,6 +383,7 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         consider_threshold=merged.get("consider_threshold", 3.5),
         gate_batch_size=merged["gate_batch_size"],
         description_max_chars=merged["description_max_chars"],
+        discovery_max_workers=merged.get("discovery_max_workers", 4),
         goals=merged.get("goals", {}),
         prompts=merged["prompts"],
         sheets=merged["sheets"],

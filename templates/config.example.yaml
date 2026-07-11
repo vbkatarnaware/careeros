@@ -37,6 +37,13 @@ threshold: 4.0          # APPLY: score >= this -> full pipeline (resume/cover/re
 consider_threshold: 3.5 # CONSIDER: this <= score < threshold -> Sheet row only (score + reason, no AI artifacts). Below this = omitted
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
 description_max_chars: 4000
+# How many enabled providers' discover() fetch() calls run CONCURRENTLY —
+# each is a blocking network/Apify call, so this is real wall-clock savings
+# with no correctness risk (budget/quota is always checked+recorded
+# serially; merge order is always config order, never completion order).
+# Set to 1 to force the old fully-serial behavior (e.g. to debug one
+# provider's timing/output in isolation without others' output interleaved).
+discovery_max_workers: 4
 
 # Your job-search target. Used only as CONTEXT in the discovery quota-guard's
 # recommendation (see the api: block below) — it never changes scoring.
