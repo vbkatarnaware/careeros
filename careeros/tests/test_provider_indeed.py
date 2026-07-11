@@ -6,6 +6,7 @@ shared `_apify_actor_common.run_actor` helper this provider delegates to."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from careeros.providers.base import ProviderResult
@@ -180,6 +181,7 @@ def test_validate_reports_missing_token(monkeypatch):
 class FakeConfig:
     apify = {"tokens_env": "APIFY_TOKENS"}
     providers: dict = {}
+    careeros_dir = Path("/tmp/fake-careeros-dir")
 
 
 def test_fetch_passes_actor_id_and_run_input_through():

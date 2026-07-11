@@ -11,14 +11,17 @@ existing working legacy path, so there is zero risk to it.
 
 from __future__ import annotations
 
+import datetime
 import os
 import time
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from apify_client import ApifyClient
 from apify_client.errors import ApifyApiError
 
+from careeros import budget
 from careeros.providers.base import ProviderError, ProviderResult
 
 
@@ -64,6 +67,7 @@ def run_actor(
     run_input: dict[str, Any],
     *,
     max_cost_usd: float | None = None,
+    careeros_dir: Path | None = None,
 ) -> ProviderResult:
     """Run one Apify actor with token-pool rotation + an optional hard
     per-call `max_total_charge_usd` cap (Apify enforces this server-side —
@@ -81,6 +85,15 @@ def run_actor(
     can settle asynchronously after `.call()` returns (found live on the
     legacy actor provider, 2026-07-08). Directionally useful; check the
     Apify console for the authoritative total.
+
+    `careeros_dir` (optional — omitted only by tests that don't care about
+    cross-call token memory) enables the rolling-month exhaustion cache
+    (`budget.apify_tokens.json`): a token that already failed with a
+    budget/consent error THIS billing cycle is skipped up front instead of
+    being retried and re-earning the same rejection on every provider call.
+    Rotation itself is otherwise silent — no "token index N failed" noise on
+    a normal, recoverable rotation; that's expected multi-key behavior, not
+    something worth alarming the user about.
     """
     start = time.time()
     tokens = iter_tokens(apify_cfg)
@@ -93,8 +106,17 @@ def run_actor(
 
     max_total_charge_usd = Decimal(str(max_cost_usd)) if max_cost_usd is not None else None
 
+    today_iso = datetime.date.today().isoformat()
+    tokens_state = (
+        budget.load_apify_tokens_state(careeros_dir, today_iso) if careeros_dir is not None else None
+    )
+
     last_error: Exception | None = None
-    for index, token in enumerate(tokens):
+    tried_any = False
+    for token in tokens:
+        if tokens_state is not None and budget.is_token_exhausted(tokens_state, token):
+            continue
+        tried_any = True
         client = ApifyClient(token)
         try:
             run = client.actor(actor_id).call(
@@ -105,8 +127,13 @@ def run_actor(
             # "Maximum charged results must be greater than zero" state seen
             # live when usage is already at the cap) — try the next token in
             # the pool rather than failing the whole provider immediately.
+            # Silent by design: this is expected, recoverable behavior for
+            # anyone running more than one Apify token, not a failure worth
+            # surfacing to the user.
             last_error = e
-            print(f"  [{provider_id}] token index {index} failed ({e}); trying next token…")
+            if tokens_state is not None:
+                budget.mark_token_exhausted(tokens_state, token)
+                budget.save_apify_tokens_state(careeros_dir, tokens_state)
             continue
 
         dataset_id = (
@@ -121,8 +148,19 @@ def run_actor(
             requests=1, records=len(items), seconds=time.time() - start,
         )
 
+    if not tried_any:
+        # Every configured token was already known-exhausted this billing
+        # cycle before we even tried one — same terminal state as trying
+        # and failing all of them, just without the wasted API calls.
+        raise ProviderError(
+            f"{provider_id}: all {len(tokens)} configured Apify token(s) are already known "
+            f"exhausted this billing cycle. Add a fresh key to "
+            f"{apify_cfg.get('tokens_env', 'APIFY_TOKENS')}, raise your Apify plan's limit, "
+            "or wait for next month's reset."
+        )
     raise ProviderError(
-        f"{provider_id}: all {len(tokens)} configured Apify token(s) failed (exhausted budget "
-        f"or invalid) — last error: {last_error}. Add a fresh token to "
-        f"{apify_cfg.get('tokens_env', 'APIFY_TOKENS')} or wait for the monthly reset."
+        f"{provider_id}: all {len(tokens)} configured Apify token(s) exhausted this billing "
+        f"cycle (last error: {last_error}). Add a fresh key to "
+        f"{apify_cfg.get('tokens_env', 'APIFY_TOKENS')}, raise your Apify plan's limit, "
+        "or wait for next month's reset."
     )

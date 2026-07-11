@@ -126,3 +126,72 @@ def test_check_apify_budget_message_flags_the_best_effort_caveat():
     reporting can undercount real settled cost."""
     ok, msg = budget.check_apify_budget({"spend_usd": 10.0}, 10.0)
     assert "estimate" in msg.lower()
+
+
+# ── v1.3: rolling-month Apify token-exhaustion cache ─────────────────────
+# A token that already failed with a budget/consent error this billing
+# cycle should be skipped on the NEXT provider call instead of re-earning
+# the same rejection — while never persisting the raw token itself, only a
+# short non-reversible fingerprint.
+
+def test_token_fingerprint_is_short_and_non_reversible():
+    fp = budget.token_fingerprint("super-secret-apify-token-value")
+    assert len(fp) == 12
+    assert "super-secret-apify-token-value" not in fp
+    # deterministic — the same token always fingerprints the same way, or
+    # exhaustion-skipping across calls within the same month wouldn't work.
+    assert fp == budget.token_fingerprint("super-secret-apify-token-value")
+
+
+def test_token_fingerprint_differs_for_different_tokens():
+    assert budget.token_fingerprint("token-a") != budget.token_fingerprint("token-b")
+
+
+def test_load_apify_tokens_state_defaults_to_no_exhausted_tokens_when_no_file(tmp_path):
+    state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    assert state["exhausted"] == []
+
+
+def test_mark_and_check_token_exhausted_roundtrips(tmp_path):
+    state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    assert budget.is_token_exhausted(state, "tok-abc") is False
+
+    budget.mark_token_exhausted(state, "tok-abc")
+    assert budget.is_token_exhausted(state, "tok-abc") is True
+    # A different token is unaffected.
+    assert budget.is_token_exhausted(state, "tok-xyz") is False
+
+
+def test_mark_token_exhausted_is_idempotent():
+    state = {"month_start": "2026-07-01", "exhausted": []}
+    budget.mark_token_exhausted(state, "tok-abc")
+    budget.mark_token_exhausted(state, "tok-abc")
+    assert state["exhausted"].count(budget.token_fingerprint("tok-abc")) == 1
+
+
+def test_apify_tokens_state_never_stores_the_raw_token(tmp_path):
+    state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    budget.mark_token_exhausted(state, "super-secret-apify-token-value")
+    budget.save_apify_tokens_state(tmp_path, state)
+
+    raw_file_contents = (tmp_path / budget.APIFY_TOKENS_FILENAME).read_text()
+    assert "super-secret-apify-token-value" not in raw_file_contents
+
+
+def test_save_and_reload_apify_tokens_state_roundtrips(tmp_path):
+    state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    budget.mark_token_exhausted(state, "tok-abc")
+    budget.save_apify_tokens_state(tmp_path, state)
+
+    reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-20")
+    assert budget.is_token_exhausted(reloaded, "tok-abc") is True
+
+
+def test_apify_tokens_state_rolls_over_into_a_new_month(tmp_path):
+    budget.save_apify_tokens_state(
+        tmp_path,
+        {"month_start": "2026-06-01", "exhausted": [budget.token_fingerprint("tok-abc")]},
+    )
+    reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-01")
+    assert reloaded["exhausted"] == []
+    assert budget.is_token_exhausted(reloaded, "tok-abc") is False

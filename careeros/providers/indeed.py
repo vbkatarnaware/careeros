@@ -145,7 +145,7 @@ class IndeedProvider:
         actor_id = provider_cfg.get("actor", ACTOR_ID)
         return run_actor(
             self.id, config.apify, actor_id, run_input,
-            max_cost_usd=provider_cfg.get("max_cost_usd"),
+            max_cost_usd=provider_cfg.get("max_cost_usd"), careeros_dir=config.careeros_dir,
         )
 
     def to_job_dict(self, raw: dict[str, Any]) -> dict[str, Any] | None:

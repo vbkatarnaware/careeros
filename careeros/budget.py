@@ -19,6 +19,7 @@ honoring an already-exhausted weekly budget.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -372,6 +373,62 @@ def check_apify_budget(
         f"Apify budget (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f} used this month"
         f" (${remaining:.4f} remaining)."
     )
+
+
+# ── rolling-month Apify token-exhaustion cache ──────────────────────────────
+# A token that failed with a budget/consent error (see
+# providers/_apify_actor_common.py's run_actor) stays exhausted for the rest
+# of Apify's own billing cycle — retrying it on every single provider call
+# just re-earns the same rejection. This cache lets run_actor skip a
+# known-exhausted token instead of re-trying it, WITHOUT ever touching
+# .careeros/secrets.env (secrets stay exactly where the user put them) and
+# WITHOUT ever persisting the raw token — only a short, non-reversible
+# fingerprint, same spirit as a redacted log. Rolls over automatically at
+# the same monthly boundary as apify_budget.json (`month_start` above).
+
+APIFY_TOKENS_FILENAME = "apify_tokens.json"
+
+
+def token_fingerprint(token: str) -> str:
+    """A short, non-reversible identifier for a token — safe to persist to
+    disk. Never store or log the raw token itself."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+
+
+def _apify_tokens_path(careeros_dir: Path) -> Path:
+    return Path(careeros_dir) / APIFY_TOKENS_FILENAME
+
+
+def load_apify_tokens_state(careeros_dir: Path, today_iso: str) -> dict[str, Any]:
+    """Return this month's {month_start, exhausted: [fingerprint, ...]}.
+    Rolls over automatically at the start of a new calendar month, same
+    pattern as `load_apify_state`."""
+    ms = month_start(today_iso)
+    path = _apify_tokens_path(careeros_dir)
+    if path.exists():
+        try:
+            state = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            state = {}
+        if state.get("month_start") == ms:
+            state.setdefault("exhausted", [])
+            return state
+    return {"month_start": ms, "exhausted": []}
+
+
+def save_apify_tokens_state(careeros_dir: Path, state: dict[str, Any]) -> None:
+    _apify_tokens_path(careeros_dir).write_text(json.dumps(state))
+
+
+def mark_token_exhausted(state: dict[str, Any], token: str) -> dict[str, Any]:
+    fp = token_fingerprint(token)
+    if fp not in state.get("exhausted", []):
+        state.setdefault("exhausted", []).append(fp)
+    return state
+
+
+def is_token_exhausted(state: dict[str, Any], token: str) -> bool:
+    return token_fingerprint(token) in state.get("exhausted", [])
 
 
 def check_before_run(

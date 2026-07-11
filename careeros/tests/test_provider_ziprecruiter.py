@@ -8,6 +8,7 @@ practice and must surface cleanly, not be swallowed."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from careeros.providers.base import ProviderError, ProviderResult
@@ -206,8 +207,9 @@ def test_fetch_propagates_provider_error_from_run_actor():
 
 class _FakeConfig:
     """Minimal stand-in for careeros.config.Config — only the attributes
-    ziprecruiter.py actually reads (`apify`, `providers`)."""
+    ziprecruiter.py actually reads (`apify`, `providers`, `careeros_dir`)."""
 
     def __init__(self, apify=None, providers=None):
         self.apify = apify or {}
         self.providers = providers or {}
+        self.careeros_dir = Path("/tmp/fake-careeros-dir")

@@ -116,6 +116,22 @@ below). `to_job_dict()` still uses the defensive `pick_field`/candidate-key
 pattern (below) rather than hardcoded field names, since Apify actor
 schemas aren't contractually guaranteed to stay stable across updates.
 
+**Token rotation (v1.3).** Set `APIFY_TOKENS` (comma-separated) instead of
+a single `APIFY_TOKEN` to configure more than one Apify account/key — every
+Apify-actor provider shares this same pool. Rotation to the next token on a
+budget/consent failure is **silent** (no per-token "failed, trying next…"
+noise) — it's expected, recoverable behavior when you've deliberately
+configured more than one key, not something worth alarming you about. A
+token that fails is cached by a short, non-reversible fingerprint (never the
+raw key) in `.careeros/apify_tokens.json` for the rest of that billing
+cycle, so it's skipped outright on later calls instead of being re-tried and
+re-earning the same rejection. If every configured token is exhausted, the
+whole provider call raises a single clear error naming the fix path (add a
+fresh key to `APIFY_TOKENS`, raise your Apify plan's limit, or wait for
+reset) — recommended for anyone running CareerOS regularly: either a paid
+Apify plan with real headroom, or several free/lower-tier accounts' tokens
+in the same `APIFY_TOKENS` pool.
+
 ### Optional — relevant, reasonably priced, worth enabling deliberately
 
 - **`naukri`** (`naukri.py`) — `memo23/naukri-scraper`. **Relevance:**

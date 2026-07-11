@@ -12,10 +12,14 @@ were the real gaps fixed here."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from unittest.mock import patch
 
 from careeros.providers.base import ProviderResult
 from careeros.providers.foundit import PROVIDER, _build_run_input
+
+_FAKE_CAREEROS_DIR = Path("/tmp/fake-careeros-dir")
 
 
 # ── _build_run_input: pure function, no mocking needed ──────────────────
@@ -139,6 +143,7 @@ def test_validate_empty_when_token_configured(monkeypatch):
     monkeypatch.delenv("APIFY_TOKENS", raising=False)
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify: dict = {}
 
     assert PROVIDER.validate(FakeConfig()) == []
@@ -149,6 +154,7 @@ def test_validate_non_empty_when_no_token_configured(monkeypatch):
     monkeypatch.delenv("APIFY_TOKENS", raising=False)
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify: dict = {}
 
     errors = PROVIDER.validate(FakeConfig())
@@ -162,6 +168,7 @@ def test_fetch_passes_actor_id_and_run_input_to_run_actor():
     fake_result = ProviderResult(provider="foundit", items=[{"title": "x"}])
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify = {"tokens_env": "APIFY_TOKENS"}
         providers = {"foundit": {"keyword": "Growth PM", "location": "Delhi"}}
 
@@ -185,6 +192,7 @@ def test_fetch_uses_configured_actor_override():
     fake_result = ProviderResult(provider="foundit")
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify = {}
         providers = {"foundit": {"actor": "someone-else/foundit-fork"}}
 
@@ -199,6 +207,7 @@ def test_fetch_passes_max_cost_usd_from_provider_cfg():
     fake_result = ProviderResult(provider="foundit")
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify = {}
         providers = {"foundit": {"max_cost_usd": 2.5}}
 
@@ -213,6 +222,7 @@ def test_fetch_handles_missing_provider_config_block():
     fake_result = ProviderResult(provider="foundit")
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify = {}
         providers: dict = {}
 
@@ -232,6 +242,7 @@ def test_fetch_accepts_query_kwarg_as_noop():
     fake_result = ProviderResult(provider="foundit")
 
     class FakeConfig:
+        careeros_dir = _FAKE_CAREEROS_DIR
         apify = {}
         providers: dict = {}
 

@@ -108,7 +108,15 @@ apify:
   tokens_env: APIFY_TOKENS      # comma-separated token pool — set this for
                                  # automatic rotation when one token's monthly
                                  # budget is exhausted (checked first, falls
-                                 # back to token_env if unset)
+                                 # back to token_env if unset). Rotation is
+                                 # silent and an exhausted token is cached
+                                 # (by fingerprint, not the raw key) for the
+                                 # rest of the billing cycle so it's skipped
+                                 # rather than retried — see providers/README.md.
+                                 # If you run CareerOS regularly, either a
+                                 # paid Apify plan with real headroom or
+                                 # several accounts' tokens listed here is
+                                 # recommended.
   # v1.2: shared rolling-month spend ceiling across EVERY Apify-actor
   # provider — a provider's own `max_monthly_budget_usd` (in its `providers:`
   # block above) overrides this if set; null there means "use this shared
