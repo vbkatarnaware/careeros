@@ -12,12 +12,19 @@ from careeros.config import Config
 
 
 def _cfg(**overrides) -> Config:
+    """v1.2: `_run_doctor_checks` reads `enabled_providers(cfg)` (the
+    `providers:` model), not `cfg.provider` — default to exactly ONE enabled
+    provider matching whatever `provider=` a test passes (mirroring the
+    single-provider behavior these tests were written against). A test that
+    wants a different/additional set can still pass `providers=...` directly."""
+    provider_name = overrides.get("provider", "fantastic-jobs")
     defaults = dict(
         provider="fantastic-jobs",
         threshold=4.0, consider_threshold=3.5,
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={},
         sheets={}, apify={}, api={}, fx_rates={}, drive={"enabled": False},
+        providers={provider_name: {"enabled": True}},
     )
     defaults.update(overrides)
     return Config(**defaults)

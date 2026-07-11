@@ -269,6 +269,111 @@ def clear_last_error(careeros_dir: Path) -> None:
         path.unlink()
 
 
+def guard_for(provider_config: dict[str, Any]) -> str:
+    """Which budget/quota CAPABILITY a provider's own resolved config block
+    declares — v1.2's uniform, name-free enforcement (`discover`'s loop never
+    branches on a provider's identity). Detected purely from which keys are
+    PRESENT in the dict (not their values), because each provider config
+    shape is structurally distinct by design:
+
+    - "weekly": the block has a "plan" key — this is Fantastic Jobs' own
+      `api:` block (the only config shape with that key), so this is its
+      EXISTING records/week quota guard, unchanged.
+    - "monthly": the block has a "max_monthly_budget_usd" key (even if its
+      value is null) — the Apify-actor-based providers' resolved config
+      (their own `providers.<name>` block) declares this key; a null value
+      just means "use the shared apify.max_monthly_budget_usd account
+      default," resolved by the caller, not here.
+    - "none": neither key present — an unmetered source (RemoteOK, We Work
+      Remotely) has no guard to apply.
+    """
+    if "plan" in provider_config:
+        return "weekly"
+    if "max_monthly_budget_usd" in provider_config:
+        return "monthly"
+    return "none"
+
+
+# ── rolling-month Apify spend tracking (the monthly-budget capability) ──────
+# Mirrors the rolling-week functions above exactly, one level up (month
+# instead of week) — a separate file/schema so neither counter's tests ever
+# have to change for the other's sake.
+
+APIFY_BUDGET_FILENAME = "apify_budget.json"
+
+
+def month_start(today_iso: str) -> str:
+    """ISO date of the 1st of `today_iso`'s month — same non-ISO-label
+    fallback as `week_start` (this repo's own QA runs use non-calendar date
+    labels; never let that crash the guard)."""
+    try:
+        d = date.fromisoformat(today_iso)
+    except (ValueError, TypeError):
+        d = date.today()
+    return d.replace(day=1).isoformat()
+
+
+def _apify_budget_path(careeros_dir: Path) -> Path:
+    return Path(careeros_dir) / APIFY_BUDGET_FILENAME
+
+
+def load_apify_state(careeros_dir: Path, today_iso: str) -> dict[str, Any]:
+    """Return this month's {month_start, spend_usd}. Rolls over automatically
+    at the start of a new calendar month, same pattern as `load_state`."""
+    ms = month_start(today_iso)
+    path = _apify_budget_path(careeros_dir)
+    if path.exists():
+        try:
+            state = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            state = {}
+        if state.get("month_start") == ms:
+            state.setdefault("spend_usd", 0.0)
+            return state
+    return {"month_start": ms, "spend_usd": 0.0}
+
+
+def save_apify_state(careeros_dir: Path, state: dict[str, Any]) -> None:
+    _apify_budget_path(careeros_dir).write_text(json.dumps(state))
+
+
+def record_apify_spend(state: dict[str, Any], cost_usd: float) -> dict[str, Any]:
+    state["spend_usd"] = round(float(state.get("spend_usd", 0.0)) + max(0.0, cost_usd), 6)
+    return state
+
+
+def check_apify_budget(
+    state: dict[str, Any], max_monthly_budget_usd: Optional[float]
+) -> tuple[bool, Optional[str]]:
+    """Best-effort SOFT guard — decide whether an Apify-actor provider should
+    run this call. Only PREVENTS when a budget is configured AND the
+    recorded estimate has already reached it.
+
+    HONEST LIMITATION (documented, not hidden): this can only be as accurate
+    as Apify's own reported per-run `usageTotalUsd`, which is a known LOWER
+    BOUND — real settled cost can be higher (charges settle asynchronously;
+    see `_apify_actor_common.run_actor`'s docstring). This is why every
+    Apify-actor call ALSO passes a hard `max_total_charge_usd` per-call cap
+    (enforced server-side by Apify) as the reliable half of this guard — this
+    function is the advisory, rolling-month half on top of that."""
+    if not max_monthly_budget_usd:
+        return True, None
+    spent = float(state.get("spend_usd", 0.0))
+    if spent >= max_monthly_budget_usd:
+        return False, (
+            f"Monthly Apify budget reached (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f}"
+            f" used since {state.get('month_start')}. This is a best-effort estimate (Apify's "
+            "reported usage can undercount real settled cost — also check your Apify console). "
+            "Raise max_monthly_budget_usd to continue, or wait for next month's reset."
+            " (Override: run `discover` with --ignore-budget.)"
+        )
+    remaining = max_monthly_budget_usd - spent
+    return True, (
+        f"Apify budget (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f} used this month"
+        f" (${remaining:.4f} remaining)."
+    )
+
+
 def check_before_run(
     state: dict[str, Any], quota: Optional[int]
 ) -> tuple[bool, Optional[str]]:

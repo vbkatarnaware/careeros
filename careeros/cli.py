@@ -39,7 +39,9 @@ import yaml
 from careeros import budget
 from careeros.apply import browser as apply_browser
 from careeros.cache import Cache, artifact_cache_key, eval_cache_key
-from careeros.config import Config, load_config
+from careeros.config import (
+    Config, LEGACY_PROVIDER_DEPRECATION_NOTICE, enabled_providers, load_config, provider_config_block,
+)
 from careeros.lint import format_issues, lint_file, verify_resume_bullets
 from careeros.models import Eval, Job, Profile, dumps
 from careeros.pipeline.dedupe import (
@@ -50,7 +52,7 @@ from careeros.pipeline.constraints import evaluate_constraints
 from careeros.pipeline.normalize import normalize_all
 from careeros.pipeline.queryplan import build_query_plan, resolve_tier_limit
 from careeros.pipeline.threshold import partition_evals
-from careeros.providers.base import ProviderError
+from careeros.providers.base import ProviderError, ProviderResult
 from careeros.providers.registry import get as get_provider
 from careeros.providers.registry import list_providers
 from careeros.report import render_daily_report, render_summary
@@ -81,16 +83,12 @@ def _main(
 
 
 def _provider_query_cfg(cfg: Config, provider_name: str) -> dict:
-    """Which provider-config block pipeline/queryplan.py's neutral
-    title_search/location_search/work_arrangement keys should overlay onto
-    for `discover`'s segmented-query plan (P2.7) — provider-keyed since
-    query-plan config is provider-specific, not a single generic Config
-    field. `config.api` and `config.apify` share the same key names by
-    design (see config.py), so queryplan.py itself never has to know which
-    provider is active."""
-    if provider_name == "fantastic-jobs-actor":
-        return cfg.apify
-    return cfg.api
+    """Thin cli.py-local alias for `config.provider_config_block` (v1.2) —
+    kept under this name since it's used throughout this file. See that
+    function's docstring for the exact per-provider resolution and why
+    `cfg.apify` is deliberately NOT merged in generically (it would leak
+    Apify-budget guard capability into the free providers)."""
+    return provider_config_block(cfg, provider_name)
 
 
 def _today() -> str:
@@ -157,27 +155,77 @@ def providers():
 def config():
     """Print the resolved config."""
     cfg = _config()
+    if cfg.provider_migrated:
+        typer.echo(f"NOTE: {LEGACY_PROVIDER_DEPRECATION_NOTICE.format(name=cfg.provider)}\n")
     typer.echo(yaml.dump({
-        "provider": cfg.provider,
-        "endpoint": cfg.api.get("endpoint", "both"),
+        "providers": cfg.providers,
         "threshold_apply": cfg.threshold,
         "threshold_consider": cfg.consider_threshold,
         "gate_batch_size": cfg.gate_batch_size, "prompts": cfg.prompts,
         "sheets": cfg.sheets,
     }, sort_keys=False))
 
-    # Discovery quota guard preview (REST provider only). Advisory — shows the
-    # recommendation you'd see at `discover` time so you can tune api.limit up
-    # front. Never changes anything.
-    if cfg.provider != "fantastic-jobs-actor":
-        try:
-            reqs = len(build_query_plan(_load_profile(cfg), cfg.api)) if cfg.profile_path.exists() else 1
-        except Exception:
-            reqs = 1
-        # "both" splits the per-tier allocation across endpoints, so records
-        # reason in tiers (reqs), not ×endpoints.
-        rec = budget.recommend(cfg.api, cfg.goals, reqs)
-        typer.echo("\n".join(rec.lines()))
+    # Per-enabled-provider budget/quota preview — CAPABILITY-driven (see
+    # budget.guard_for), never a name check. Advisory only, shows what
+    # `discover` would print/enforce; never changes anything.
+    for name in enabled_providers(cfg):
+        provider_cfg = _provider_query_cfg(cfg, name)
+        capability = budget.guard_for(provider_cfg)
+        if capability == "weekly":
+            try:
+                reqs = len(build_query_plan(_load_profile(cfg), provider_cfg)) if cfg.profile_path.exists() else 1
+            except Exception:
+                reqs = 1
+            rec = budget.recommend(provider_cfg, cfg.goals, reqs)
+            typer.echo(f"[{name}]")
+            typer.echo("\n".join(rec.lines()))
+        elif capability == "monthly":
+            max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
+            state = budget.load_apify_state(cfg.careeros_dir, _today())
+            spent = state.get("spend_usd", 0.0)
+            typer.echo(f"[{name}] Apify budget (estimated): ${spent:.4f}/${max_budget or 0:.2f} used this month")
+
+
+@app.command("migrate-config")
+def migrate_config():
+    """Rewrite .careeros/config.yaml's deprecated single `provider:` key to
+    the v1.2 `providers:` model, permanently, on disk. Same shape as
+    `careeros sheets migrate`: explicit, on-demand, idempotent — a no-op if
+    the file is already on the new model or doesn't set `provider:` at all.
+
+    This does NOT change what runs — it upgrades exactly ONE provider (the
+    one `provider:` already named) to `providers: {<that provider>:
+    {enabled: true}}`, nothing new is enabled. `load_config` already does
+    this same upgrade automatically, in memory, on every run (with a
+    one-time deprecation notice) — this command is what makes it permanent
+    so that notice stops appearing. See config.py's `_migrate_legacy_provider`
+    for the exact rule this mirrors."""
+    config_path = Path(".careeros/config.yaml")
+    if not config_path.exists():
+        typer.echo(f"[migrate-config] {config_path} not found — nothing to migrate.", err=True)
+        raise typer.Exit(1)
+
+    with open(config_path) as f:
+        raw_cfg = yaml.safe_load(f) or {}
+
+    if "providers" in raw_cfg:
+        typer.echo("[migrate-config] Already on the providers: model — nothing to do.")
+        return
+    if "provider" not in raw_cfg:
+        typer.echo("[migrate-config] No `provider:` key set — nothing to migrate.")
+        return
+
+    legacy_name = raw_cfg.pop("provider")
+    raw_cfg["providers"] = {legacy_name: {"enabled": True}}
+    with open(config_path, "w") as f:
+        yaml.dump(raw_cfg, f, sort_keys=False)
+
+    typer.echo(
+        f"[migrate-config] Rewrote {config_path}: provider: {legacy_name} -> "
+        f"providers: {{{legacy_name}: {{enabled: true}}}}. Same single source, "
+        "nothing new enabled — add more providers by hand when you're ready "
+        "(see providers/README.md)."
+    )
 
 
 # ── doctor ────────────────────────────────────────────────────────────────
@@ -228,8 +276,19 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
             results.append(_check_result(_CheckStatus.FAIL, "Profile (.careeros/profile.yaml)",
                                          f"invalid — {type(e).__name__}: {e}"))
 
-    # Discovery provider credentials
-    if cfg.provider == "fantastic-jobs":
+    # Discovery provider credentials — v1.2: looped over every ENABLED
+    # provider (config.providers), not a single cfg.provider check, since
+    # several can run at once. Fantastic Jobs and the legacy actor keep
+    # their existing rich, battle-tested diagnostics (transport/endpoint/
+    # last-error/discovery-limit for the former, token check for the
+    # latter) unchanged; every v1.2 provider gets a uniform check via its
+    # own `validate()` — the same method `discover` calls before `fetch()`
+    # — plus its Apify budget-vs-spend if its capability is "monthly" (see
+    # budget.guard_for). No provider is special-cased beyond preserving the
+    # two pre-existing diagnostics blocks as-is.
+    active = enabled_providers(cfg)
+
+    if "fantastic-jobs" in active:
         transport = cfg.api.get("transport")
         if transport == "direct":
             key_env = cfg.api.get("api_key_env", "FANTASTIC_API_KEY")
@@ -287,7 +346,7 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                         _CheckStatus.PASS, "Discovery limit",
                         f"current={rec.configured_limit}, recommended={rec.recommended_per_request} — within quota"
                     ))
-    elif cfg.provider == "fantastic-jobs-actor":
+    if "fantastic-jobs-actor" in active:
         token_env = cfg.apify.get("token_env", "APIFY_TOKEN")
         tokens_env = cfg.apify.get("tokens_env", "APIFY_TOKENS")
         if os.environ.get(tokens_env) or os.environ.get(token_env):
@@ -296,6 +355,26 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
         else:
             results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials (legacy actor)",
                                          f"neither {tokens_env} nor {token_env} is set"))
+
+    # Every other v1.2 provider: uniform validate()-based check, no special
+    # cases — plus its Apify budget-vs-spend when its capability is
+    # "monthly" (never a name check, see budget.guard_for).
+    for name in active:
+        if name in ("fantastic-jobs", "fantastic-jobs-actor"):
+            continue
+        provider_cfg = provider_config_block(cfg, name)
+        problems = get_provider(name).validate(cfg)
+        if problems:
+            results.append(_check_result(_CheckStatus.FAIL, f"Discovery credentials ({name})",
+                                         "; ".join(problems)))
+        else:
+            results.append(_check_result(_CheckStatus.PASS, f"Discovery credentials ({name})", "configured"))
+        if budget.guard_for(provider_cfg) == "monthly":
+            max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
+            state = budget.load_apify_state(cfg.careeros_dir, _today())
+            spent = state.get("spend_usd", 0.0)
+            results.append(_check_result(_CheckStatus.PASS, f"Apify budget ({name})",
+                                         f"${spent:.4f}/${max_budget or 0:.2f} used this month (estimated)"))
 
     # Sheets
     spreadsheet_id = cfg.sheets.get("spreadsheet_id")
@@ -388,91 +467,176 @@ def doctor():
 
 # ── discover ──────────────────────────────────────────────────────────────
 
+def _discover_one_provider(
+    cfg: Config, name: str, *, date: str, limit: Optional[int], search: str, ignore_budget: bool,
+) -> ProviderResult:
+    """Run exactly one provider's fetch, enforcing whichever budget/quota
+    CAPABILITY its own config declares (see `budget.guard_for` — never a
+    branch on `name`). Returns a `ProviderResult`; a provider that's enabled
+    but can't run this call (failed `validate()`, or its guard says stop)
+    comes back with `skipped=True` rather than raising, so `discover`'s loop
+    can record it and move on to the rest.
+
+    Only the "weekly" capability (Fantastic Jobs' own `api:` block) gets the
+    full segmented per-work-mode query plan (`pipeline/queryplan.py`) — that
+    plan is shaped around that provider's rich title/location/work-arrangement
+    filters. Every other provider gets exactly ONE fetch call: issuing N
+    near-identical calls to a provider that doesn't understand the segmented
+    spec would just waste real money for zero benefit (most of the v1.2
+    additions are paid Apify actors)."""
+    p = get_provider(name)
+    provider_cfg = _provider_query_cfg(cfg, name)
+
+    problems = p.validate(cfg)
+    if problems:
+        msg = "; ".join(problems)
+        typer.echo(f"[discover] {name}: skipped — {msg}")
+        return ProviderResult.skip(name, msg)
+
+    capability = budget.guard_for(provider_cfg)
+
+    if capability == "weekly":
+        if search or not cfg.profile_path.exists():
+            queries: list[Optional[dict]] = [None]
+        else:
+            queries = build_query_plan(_load_profile(cfg), provider_cfg) or [None]
+
+        explicit_limit = provider_cfg.get("limit")
+        has_explicit_limit = limit is not None or (isinstance(explicit_limit, int) and explicit_limit > 0)
+        base_limit = limit if limit is not None else (explicit_limit or 100)
+
+        # "both" SPLITS base_limit across the 2 endpoints, so records/tier
+        # stays = base_limit regardless of endpoint count — reason the record
+        # budget in query TIERS; the HTTP call count (tiers x endpoints) is
+        # tracked separately for the informational request counter.
+        num_endpoints = 2 if provider_cfg.get("endpoint", "both") == "both" else 1
+        rec = budget.recommend(provider_cfg, cfg.goals, len(queries), cli_default_limit=base_limit)
+        if not has_explicit_limit and rec.recommended_per_request is not None:
+            base_limit = rec.recommended_per_request
+            rec = budget.recommend(provider_cfg, cfg.goals, len(queries), cli_default_limit=base_limit)
+        http_requests = len(queries) * num_endpoints
+        for line in rec.lines():
+            typer.echo(f"[discover] {name}: {line}")
+        quota = budget.weekly_quota(provider_cfg)
+        weekly_state = budget.load_state(cfg.careeros_dir, date)
+        ok, msg = budget.check_before_run(weekly_state, quota)
+        if msg:
+            typer.echo(f"[discover] {name}: {msg}")
+        if not ok and not ignore_budget:
+            typer.echo(f"[discover] {name}: skipped to protect your weekly quota. Re-run with --ignore-budget to override.")
+            return ProviderResult.skip(name, "weekly record quota exhausted")
+
+        items: list = []
+        cost = 0.0
+        start = time.time()
+        for i, query in enumerate(queries):
+            work_mode = (query or {}).get("_work_mode", "single")
+            effective_limit = resolve_tier_limit(work_mode, provider_cfg, base_limit)
+            result = p.fetch(cfg, limit=effective_limit, search=search, query=query)
+            cost += result.cost_usd
+            typer.echo(
+                f"  [discover] {name} query {i + 1}/{len(queries)} ({work_mode}, "
+                f"limit={effective_limit}): {len(result.items)} items (${result.cost_usd:.4f})"
+            )
+            items.extend(result.items)
+        # The API was consumed regardless of --dry-run, so record it against
+        # the rolling weekly budget before anything else can early-return.
+        budget.record_consumption(weekly_state, records=len(items), requests=http_requests)
+        budget.save_state(cfg.careeros_dir, weekly_state)
+        return ProviderResult(
+            provider=name, items=items, cost_usd=cost,
+            requests=http_requests, records=len(items), seconds=time.time() - start,
+        )
+
+    if capability == "monthly":
+        max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
+        apify_state = budget.load_apify_state(cfg.careeros_dir, date)
+        ok, msg = budget.check_apify_budget(apify_state, max_budget)
+        if msg:
+            typer.echo(f"[discover] {name}: {msg}")
+        if not ok and not ignore_budget:
+            return ProviderResult.skip(name, "monthly Apify budget exhausted")
+
+        effective_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
+        try:
+            result = p.fetch(cfg, limit=effective_limit, search=search, query=None)
+        except ProviderError as e:
+            # A HARD failure from the actor/account itself (e.g. every
+            # rotated Apify token exhausted or out of balance) — distinct
+            # from our own soft max_monthly_budget_usd guard above. Tell the
+            # user clearly and skip just THIS provider, mirroring the
+            # weekly-quota guard's "tell and move on" behavior, rather than
+            # aborting the whole multi-provider discover run.
+            typer.echo(f"[discover] {name}: skipped — {e}")
+            return ProviderResult.skip(name, f"Apify usage/quota exhausted: {e}")
+        typer.echo(
+            f"[discover] {name}: {len(result.items)} items (${result.cost_usd:.4f}, {result.seconds:.1f}s)"
+        )
+        budget.record_apify_spend(apify_state, result.cost_usd)
+        budget.save_apify_state(cfg.careeros_dir, apify_state)
+        return result
+
+    # capability == "none": unmetered, no guard (RemoteOK, We Work Remotely).
+    effective_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
+    result = p.fetch(cfg, limit=effective_limit, search=search, query=None)
+    typer.echo(f"[discover] {name}: {len(result.items)} items ({result.seconds:.1f}s)")
+    return result
+
+
 @app.command()
 def discover(
-    provider: Optional[str] = typer.Option(None, help="Provider id (default: config.provider)"),
+    provider: Optional[str] = typer.Option(
+        None, help="Force exactly ONE provider id, ignoring config.providers — the manual "
+                    "dry-run/trial workflow (providers/README.md) before enabling a source for real"),
     date: str = typer.Option(None, help="Run date, default today"),
     limit: Optional[int] = typer.Option(
-        None, help="Per-query max records; default from config.api.limit, else 100. Overridden per-tier by tier_limits"),
+        None, help="Per-query max records; default from each provider's own configured limit, "
+                    "else 100. Overridden per-tier by tier_limits (Fantastic Jobs only)"),
     search: str = typer.Option(
         "", help="Manual single-query override — bypasses profile-driven segmentation"),
     dry_run: bool = typer.Option(False, help="Fetch and print, don't write raw.json"),
     ignore_budget: bool = typer.Option(
-        False, "--ignore-budget", help="Bypass the weekly quota guard for this run"),
+        False, "--ignore-budget", help="Bypass every provider's budget/quota guard for this run"),
 ):
-    """[dev] Discover: call a provider, write 01_discover/raw.json.
+    """[dev] Discover: run every enabled provider (config.providers, IN
+    CONFIG ORDER — dedupe keeps the FIRST occurrence of a duplicate role, so
+    list your primary/most-trusted source first), write 01_discover/raw.json.
 
-    By default (discovery_mode: "profile") this runs one segmented query per
-    profile.work_mode_priority tier — see pipeline/queryplan.py; the
-    discovery benchmark found a single broad query yields far fewer
-    apply-worthy jobs than targeted per-work-mode ones. `discovery_mode:
-    "single"`, `--search`, or a missing profile.yaml all fall back to
-    today's one-query behavior."""
+    v1.2: multiple providers run side by side in one call — see
+    config.providers. `--provider NAME` forces exactly one, ignoring
+    config.providers entirely (the manual trial workflow).
+
+    Budget/quota enforcement is CAPABILITY-driven, never by provider identity
+    (see `budget.guard_for` / `_discover_one_provider`): a provider whose own
+    config declares a weekly record quota (Fantastic Jobs) gets that guard
+    (unchanged — the segmented per-work-mode query plan, P2.8's quota-aware
+    default limit, everything); one declaring a monthly USD budget (every
+    Apify-actor provider) gets the rolling-month soft guard; an unmetered
+    free provider (RemoteOK, We Work Remotely) gets none. A provider that's
+    ENABLED but can't run this call (failed `validate()`, or its guard says
+    stop) is recorded as `skipped` with a reason — never silently dropped —
+    and the run continues with whatever else is enabled."""
     cfg = _config()
     date = date or _today()
-    provider_name = provider or cfg.provider
-    p = get_provider(provider_name)
-    provider_cfg = _provider_query_cfg(cfg, provider_name)
 
-    if search or not cfg.profile_path.exists():
-        queries: list[Optional[dict]] = [None]
+    if provider:
+        provider_names = [provider]
     else:
-        queries = build_query_plan(_load_profile(cfg), provider_cfg) or [None]
-
-    # api.limit is the user's default per-query record cap; an explicit
-    # --limit still wins, and tier_limits still override per work-mode tier.
-    explicit_limit = provider_cfg.get("limit")
-    has_explicit_limit = limit is not None or (isinstance(explicit_limit, int) and explicit_limit > 0)
-    base_limit = limit if limit is not None else (explicit_limit or 100)
-
-    # ── Quota guard (P2.8). REST provider only — the legacy actor has its own
-    # per-call USD cost model. Recommend + explain + warn + prevent, but never
-    # rewrite api.limit; the user owns the final number (see careeros/budget.py).
-    guard_on = provider_cfg is cfg.api
-    budget_state: dict = {}
-    if guard_on:
-        # "both" SPLITS base_limit across the 2 endpoints, so records/tier stays
-        # = base_limit regardless of endpoint count — reason the record budget in
-        # query TIERS. The HTTP call count (tiers × endpoints) is tracked
-        # separately for the informational request counter.
-        num_endpoints = 2 if provider_cfg.get("endpoint", "both") == "both" else 1
-        rec = budget.recommend(cfg.api, cfg.goals, len(queries), cli_default_limit=base_limit)
-        # P2.9: with no explicit limit (CLI --limit or api.limit) and a known
-        # weekly quota (e.g. plan: free), USE the computed recommendation as
-        # the actual per-query fetch limit instead of the hardcoded 100 —
-        # closing the gap between what `careeros config`/`start` already
-        # recommend and what `discover` actually fetches. Recompute `rec` so
-        # the printed lines describe what's ACTUALLY about to run, not a
-        # hypothetical 100-record default. An explicit limit is NEVER touched.
-        if not has_explicit_limit and rec.recommended_per_request is not None:
-            base_limit = rec.recommended_per_request
-            rec = budget.recommend(cfg.api, cfg.goals, len(queries), cli_default_limit=base_limit)
-        http_requests = len(queries) * num_endpoints
-        for line in rec.lines():
-            typer.echo(f"[discover] {line}")
-        quota = budget.weekly_quota(cfg.api)
-        budget_state = budget.load_state(cfg.careeros_dir, date)
-        ok, msg = budget.check_before_run(budget_state, quota)
-        if msg:
-            typer.echo(f"[discover] {msg}")
-        if not ok and not ignore_budget:
-            typer.echo("[discover] Skipped to protect your weekly quota. Re-run with --ignore-budget to override.")
-            raise typer.Exit(0)
-
-    raw_items: list = []
-    total_cost_usd = 0.0
-    start = time.time()
-    try:
-        for i, query in enumerate(queries):
-            work_mode = (query or {}).get("_work_mode", "single")
-            effective_limit = resolve_tier_limit(work_mode, provider_cfg, base_limit)
-            items, query_cost = p.fetch(cfg, limit=effective_limit, search=search, query=query)
-            total_cost_usd += query_cost
+        provider_names = enabled_providers(cfg)
+        if not provider_names:
             typer.echo(
-                f"  [discover] query {i + 1}/{len(queries)} ({work_mode}, "
-                f"limit={effective_limit}): {len(items)} items (${query_cost:.4f})"
+                "[discover] No providers enabled in config.providers — nothing to do. "
+                "Set at least one `enabled: true` in .careeros/config.yaml.", err=True
             )
-            raw_items.extend(items)
+            raise typer.Exit(1)
+
+    results: list[ProviderResult] = []
+    start_all = time.time()
+    try:
+        for name in provider_names:
+            results.append(_discover_one_provider(
+                cfg, name, date=date, limit=limit, search=search, ignore_budget=ignore_budget,
+            ))
     except ProviderError as e:
         # P2.9: persist the classified failure so `careeros doctor` can show
         # it later without a live API call (see budget.record_last_error).
@@ -480,42 +644,52 @@ def discover(
         typer.echo(f"[discover] {e}", err=True)
         raise typer.Exit(1)
     budget.clear_last_error(cfg.careeros_dir)
-    elapsed = time.time() - start
+    elapsed_all = time.time() - start_all
 
-    # The API was consumed regardless of --dry-run, so record it against the
-    # rolling weekly budget before anything else can early-return.
-    if guard_on:
-        budget.record_consumption(budget_state, records=len(raw_items), requests=http_requests)
-        budget.save_state(cfg.careeros_dir, budget_state)
-
+    total_items = sum(len(r.items) for r in results)
+    total_cost = sum(r.cost_usd for r in results)
     typer.echo(
-        f"[discover] {provider_name}: {len(raw_items)} raw items across "
-        f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'} "
-        f"(${total_cost_usd:.4f}, {elapsed:.1f}s)"
+        f"[discover] {len(provider_names)} provider(s), {total_items} raw items total "
+        f"(${total_cost:.4f}, {elapsed_all:.1f}s)"
     )
 
     if dry_run:
-        typer.echo(dumps(raw_items[:3]))
+        typer.echo(dumps({r.provider: r.items[:3] for r in results}))
         return
 
     stage_path = runmeta.stage_dir(cfg.runs_dir, date, "discover")
     with open(stage_path / "raw.json", "w") as f:
         f.write(dumps({
-            "provider": provider_name,
-            "queries": [(q or {}).get("_work_mode", "single") for q in queries],
-            "items": raw_items,
+            "providers": provider_names,
+            "items": {r.provider: r.items for r in results},
+            "meta": {
+                r.provider: {
+                    "cost_usd": r.cost_usd, "requests": r.requests, "records": r.records,
+                    "seconds": round(r.seconds, 2), "warnings": r.warnings, "errors": r.errors,
+                    "skipped": r.skipped, "skip_reason": r.skip_reason,
+                }
+                for r in results
+            },
         }))
 
     runmeta.record_stage(cfg.runs_dir, date, "discover",
-                          count_in=0, count_out=len(raw_items), seconds=elapsed,
-                          apify_cost_usd=total_cost_usd)
+                          count_in=0, count_out=total_items, seconds=elapsed_all,
+                          apify_cost_usd=total_cost)
 
 
 # ── normalize ─────────────────────────────────────────────────────────────
 
 @app.command()
 def normalize(date: str = typer.Option(None, help="Run date, default today")):
-    """[dev] Normalize: 01_discover/raw.json -> 02_normalize/jobs.json."""
+    """[dev] Normalize: 01_discover/raw.json -> 02_normalize/jobs.json.
+
+    v1.2: raw.json holds one item-list PER provider that ran (see
+    `discover`) — this maps each provider's items with ITS OWN
+    `to_job_dict`, then concatenates every provider's jobs into ONE flat
+    list, in the same order `discover` ran them. Every stage from here on
+    (dedupe onward) reads that flat list and has no idea how many providers
+    contributed to it — that's what keeps the rest of the pipeline
+    completely provider-agnostic."""
     cfg = _config()
     date = date or _today()
 
@@ -527,21 +701,27 @@ def normalize(date: str = typer.Option(None, help="Run date, default today")):
     import json
     with open(raw_path) as f:
         raw = json.load(f)
-    provider_name = raw["provider"]
-    p = get_provider(provider_name)
 
     start = time.time()
-    jobs = normalize_all(raw["items"], p, source=provider_name,
-                          description_max_chars=cfg.description_max_chars)
+    jobs: list[Job] = []
+    total_raw = 0
+    for provider_name in raw.get("providers", []):
+        raw_items = raw.get("items", {}).get(provider_name, [])
+        total_raw += len(raw_items)
+        if not raw_items:
+            continue
+        p = get_provider(provider_name)
+        jobs.extend(normalize_all(raw_items, p, source=provider_name,
+                                   description_max_chars=cfg.description_max_chars))
     elapsed = time.time() - start
 
     out_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
     with open(out_path, "w") as f:
         f.write(dumps([j.to_dict() for j in jobs]))
 
-    typer.echo(f"[normalize] {len(raw['items'])} raw -> {len(jobs)} jobs ({elapsed:.1f}s)")
+    typer.echo(f"[normalize] {total_raw} raw -> {len(jobs)} jobs ({elapsed:.1f}s)")
     runmeta.record_stage(cfg.runs_dir, date, "normalize",
-                          count_in=len(raw["items"]), count_out=len(jobs), seconds=elapsed)
+                          count_in=total_raw, count_out=len(jobs), seconds=elapsed)
 
 
 # ── dedupe ────────────────────────────────────────────────────────────────
@@ -1413,13 +1593,22 @@ def render_report(job_id: str, date: str = typer.Option(None)):
 
 
 def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
-    """P2.9 Discovery KPI join — read-only over files `discover` already
-    wrote plus the rolling-week budget state. Fetches nothing, mutates
-    nothing; the join key is raw item `source_type`/`source` (present on
-    every Fantastic Jobs item — see providers/fantastic_jobs.py). Requests
-    this run are recomputed deterministically from raw.json's `queries` list
-    length × endpoint count (both already persisted at discover time), so no
-    new per-run request count needs to be stored."""
+    """P2.9 Discovery KPI join, extended for v1.2's multi-provider raw.json
+    shape (`{"providers": [...], "items": {name: [...]}, "meta": {name:
+    {...}}}` — see `discover`). Read-only over files `discover` already
+    wrote plus the rolling-week budget state; fetches nothing, mutates
+    nothing.
+
+    The ATS-vs-job-board split and top-platforms list are Fantastic-Jobs-
+    specific concepts (`source_type`/`source` are only meaningful on ITS
+    items — providers/fantastic_jobs.py), so they're computed over ONLY that
+    provider's own item slice, when it ran — never over other providers'
+    items, which don't carry those fields.
+
+    `stats["providers"]` is the NEW per-provider discovery-summary table
+    (v1.2 revision #6): one entry per provider `discover` recorded (ran,
+    skipped, or errored), straight from each `ProviderResult`'s persisted
+    metadata — this is what `summary.md` renders as the discovery table."""
     import json
 
     raw_path = runmeta.stage_dir(cfg.runs_dir, date, "discover") / "raw.json"
@@ -1427,13 +1616,17 @@ def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
         return None
     with open(raw_path) as f:
         raw = json.load(f)
-    items = raw.get("items", [])
 
-    ats_count = sum(1 for it in items if it.get("source_type") == "ats")
-    jb_count = len(items) - ats_count
+    provider_names: list[str] = raw.get("providers", [])
+    items_by_provider: dict = raw.get("items", {})
+    meta_by_provider: dict = raw.get("meta", {})
+
+    fj_items = items_by_provider.get("fantastic-jobs", [])
+    ats_count = sum(1 for it in fj_items if it.get("source_type") == "ats")
+    jb_count = len(fj_items) - ats_count if fj_items else 0
 
     platform_counts: dict[str, int] = {}
-    for it in items:
+    for it in fj_items:
         src = it.get("source")
         if src:
             platform_counts[src] = platform_counts.get(src, 0) + 1
@@ -1441,15 +1634,28 @@ def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
 
     stats: dict = {"ats_count": ats_count, "jb_count": jb_count, "top_platforms": top_platforms}
 
-    if raw.get("provider") == "fantastic-jobs":
-        num_queries = len(raw.get("queries", []))
-        num_endpoints = 2 if cfg.api.get("endpoint", "both") == "both" else 1
+    if "fantastic-jobs" in provider_names:
+        fj_meta = meta_by_provider.get("fantastic-jobs", {})
         state = budget.load_state(cfg.careeros_dir, date)
-        stats["requests_this_run"] = num_queries * num_endpoints
+        stats["requests_this_run"] = fj_meta.get("requests", 0)
         stats["requests_this_week"] = state.get("requests", 0)
-        stats["records_this_run"] = len(items)
+        stats["records_this_run"] = fj_meta.get("records", len(fj_items))
         stats["records_this_week"] = state.get("records", 0)
         stats["records_quota"] = budget.weekly_quota(cfg.api)
+
+    stats["providers"] = [
+        {
+            "provider": name,
+            "records": len(items_by_provider.get(name, [])),
+            "requests": meta_by_provider.get(name, {}).get("requests", 0),
+            "cost_usd": meta_by_provider.get(name, {}).get("cost_usd", 0.0),
+            "seconds": meta_by_provider.get(name, {}).get("seconds", 0.0),
+            "skipped": meta_by_provider.get(name, {}).get("skipped", False),
+            "skip_reason": meta_by_provider.get(name, {}).get("skip_reason"),
+        }
+        for name in provider_names
+    ]
+    stats["merged_total"] = sum(p["records"] for p in stats["providers"])
 
     return stats
 

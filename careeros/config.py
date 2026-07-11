@@ -15,10 +15,45 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    # "fantastic-jobs" (REST, default, maintained) or "fantastic-jobs-actor"
-    # (legacy Apify actor — reference/no-code backend, see
-    # providers/legacy/fantastic_jobs_actor.py). See `providers` command.
+    # DEPRECATED single-provider key, kept only as a migration INPUT (v1.2).
+    # A config file that still sets `provider:` (and has no `providers:`
+    # block) is auto-upgraded in memory by `_migrate_legacy_provider` below
+    # to `providers: {<that provider>: {enabled: true}}` — same behavior,
+    # one provider only, nothing new silently enabled. Run
+    # `careeros migrate-config` to write that upgrade to disk permanently.
+    # Scheduled for removal in v2.0 — `providers:` (below) is the ONE model
+    # going forward; nothing in this codebase reads `provider` except that
+    # migration shim.
     "provider": "fantastic-jobs",
+    # THE discovery source model (v1.2). Keys are provider ids (see
+    # `providers/registry.py`); each value is that provider's own config
+    # block — always at least `{"enabled": bool}`, plus whatever else that
+    # provider declares it needs (a `limit`, a `max_monthly_budget_usd`,
+    # etc.). `discover` runs every `enabled: true` entry, IN THIS ORDER
+    # (Python/YAML preserve mapping order) — put your primary/most-trusted
+    # source first, since `pipeline/dedupe.py` keeps the FIRST occurrence of
+    # a duplicate role. `fantastic-jobs`'s own DETAILED config (transport,
+    # endpoint, search filters, quota) intentionally stays in the separate
+    # `api:` block below, unmoved — `providers:` only controls which sources
+    # run, `api:` is Fantastic Jobs' existing, frozen, tested configuration.
+    "providers": {
+        # Core — on by default, no signup required.
+        "fantastic-jobs": {"enabled": True},
+        "remoteok": {"enabled": True},
+        "we-work-remotely": {"enabled": True},
+        # Paid sources — off by default (a fresh clone has no credential
+        # configured; these cost real money per job). `limit` caps records
+        # per fetch; `max_monthly_budget_usd: null` means "use the shared
+        # apify.max_monthly_budget_usd account default" below rather than
+        # its own separate sub-cap. See providers/README.md's "Shipped
+        # providers" for the evidence-backed category (Optional/
+        # Experimental/Not Recommended) behind each of these.
+        "naukri": {"enabled": False, "limit": 100, "max_monthly_budget_usd": None},        # Optional
+        "glassdoor": {"enabled": False, "limit": 100, "max_monthly_budget_usd": None},     # Optional
+        "ziprecruiter": {"enabled": False, "limit": 100, "max_monthly_budget_usd": None},  # Optional
+        "indeed": {"enabled": False, "limit": 100, "max_monthly_budget_usd": None},        # Experimental
+        "foundit": {"enabled": False, "limit": 100, "max_monthly_budget_usd": None},       # Not Recommended
+    },
     # Two-tier selection (P2.8). APPLY: score >= threshold -> full pipeline
     # (resume + cover + report + Drive + Sheet). CONSIDER: consider_threshold
     # <= score < threshold -> Sheet row only (score + reasons, NO AI artifacts,
@@ -91,6 +126,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # cost so one run can't silently exhaust a token's monthly budget —
         # the real failure mode hit during QA. None = no cap.
         "max_cost_usd": 1.0,
+        # v1.2: shared account-level rolling-month spend ceiling across every
+        # Apify-actor-based provider (fantastic-jobs-actor, naukri, foundit,
+        # indeed, glassdoor, ziprecruiter — they all bill against the SAME
+        # Apify account balance). A provider's own `max_monthly_budget_usd`
+        # (in its `providers:` block) overrides this if set; null there means
+        # "use this shared default." A modest starting default — raise it in
+        # your own config once you know your real usage. See budget.py's
+        # `check_apify_budget` for the honest "best-effort, not a precise
+        # ceiling" caveat, and set a matching hard limit in the Apify
+        # console too.
+        "max_monthly_budget_usd": 10,
         # Optional per-work-mode-tier limit override, keyed by the same tier
         # strings as profile.work_mode_priority (e.g. {"global_remote": 15}).
         # Falls back to `discover --limit` for any tier not listed here.
@@ -197,7 +243,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 @dataclass
 class Config:
-    provider: str
+    provider: str  # DEPRECATED — see DEFAULT_CONFIG's comment. Use `providers` (below).
     threshold: float
     consider_threshold: float
     gate_batch_size: int
@@ -209,6 +255,12 @@ class Config:
     api: dict[str, Any] = field(default_factory=dict)
     fx_rates: dict[str, float] = field(default_factory=dict)
     drive: dict[str, Any] = field(default_factory=dict)
+    providers: dict[str, Any] = field(default_factory=dict)
+    # True when `provider:` was auto-upgraded from the deprecated single-key
+    # input this load (see `_migrate_legacy_provider`) — `doctor`/`config`
+    # use this to print the one-time deprecation notice pointing at
+    # `careeros migrate-config`, without re-deriving it themselves.
+    provider_migrated: bool = False
 
     @property
     def careeros_dir(self) -> Path:
@@ -241,13 +293,81 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+LEGACY_PROVIDER_DEPRECATION_NOTICE = (
+    "config.yaml still uses the deprecated `provider:` key. Auto-upgraded for "
+    "this run to `providers: {{{name}: {{enabled: true}}}}` — same single "
+    "source, nothing new enabled. Run `careeros migrate-config` to write this "
+    "to config.yaml permanently (this fallback is removed in v2.0)."
+)
+
+
+def _migrate_legacy_provider(raw_user_cfg: dict, merged: dict) -> tuple[dict, bool]:
+    """v1.2: ONE config model (`providers:`) — this is the temporary,
+    isolated upgrade-on-read path off the deprecated `provider:` key, not a
+    second live config system. Only the RAW file as the user wrote it is
+    consulted (never the already-defaulted `merged` dict), so this only
+    triggers for a config that genuinely still uses the old key:
+
+    - `providers:` present in the raw file -> new model already in use,
+      nothing to migrate (even if a stale `provider:` line is also present).
+    - `providers:` absent AND `provider:` present -> the deprecated input:
+      upgrade in memory to `providers: {<that provider>: {enabled: true}}`,
+      REPLACING (not merging with) the default `providers` dict — this
+      preserves exact single-provider behavior; it must never silently
+      enable the new free sources for someone who never asked for them.
+    - Neither present -> nothing user-authored to migrate; the default
+      `providers` dict (new-model defaults) already applies.
+
+    Returns (possibly-updated merged dict, whether a migration happened).
+    """
+    if "providers" in raw_user_cfg:
+        return merged, False
+    if "provider" not in raw_user_cfg:
+        return merged, False
+    legacy_name = raw_user_cfg["provider"]
+    merged = dict(merged)
+    merged["providers"] = {legacy_name: {"enabled": True}}
+    return merged, True
+
+
+def _resolve_providers(user_providers: dict) -> dict:
+    """v1.2 revision #2: the user's OWN `providers:` block is authoritative
+    for both MEMBERSHIP and ORDER — it does NOT deep-merge against
+    DEFAULT_CONFIG's `providers` dict at the top level. A plain `_deep_merge`
+    would silently reintroduce every default provider the user didn't
+    mention (since dict `out[k] = v` never removes an existing key) and
+    would ALWAYS lose the user's ordering (Python dict key order is fixed at
+    first insertion — DEFAULT_CONFIG's order wins regardless of what order
+    the user's own keys appear in their file). Each individual provider's
+    OWN sub-block still deep-merges against its DEFAULT_CONFIG counterpart
+    (if one exists), so `providers: {naukri: {enabled: true}}` still picks
+    up naukri's shipped `limit`/`max_monthly_budget_usd` defaults — only the
+    overall set-and-order of WHICH providers are listed is the user's."""
+    default_providers = DEFAULT_CONFIG.get("providers", {})
+    resolved: dict = {}
+    for name, block in user_providers.items():
+        base_block = default_providers.get(name, {})
+        resolved[name] = _deep_merge(base_block, block) if isinstance(block, dict) else block
+    return resolved
+
+
 def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
     path = Path(path)
     merged = dict(DEFAULT_CONFIG)
+    migrated = False
     if path.exists():
         with open(path) as f:
             user_cfg = yaml.safe_load(f) or {}
-        merged = _deep_merge(merged, user_cfg)
+        if "providers" in user_cfg:
+            resolved_providers = _resolve_providers(user_cfg["providers"])
+            user_cfg_for_merge = {k: v for k, v in user_cfg.items() if k != "providers"}
+            merged = _deep_merge(merged, user_cfg_for_merge)
+            merged["providers"] = resolved_providers
+        else:
+            merged = _deep_merge(merged, user_cfg)
+        merged, migrated = _migrate_legacy_provider(user_cfg, merged)
+        if migrated:
+            print(LEGACY_PROVIDER_DEPRECATION_NOTICE.format(name=user_cfg["provider"]))
     return Config(
         provider=merged["provider"],
         threshold=merged["threshold"],
@@ -261,4 +381,35 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         api=merged["api"],
         fx_rates=merged["fx_rates"],
         drive=merged["drive"],
+        providers=merged["providers"],
+        provider_migrated=migrated,
     )
+
+
+def enabled_providers(cfg: Config) -> list[str]:
+    """Provider ids to run, IN CONFIG ORDER (v1.2 revision #2 — Python/YAML
+    dicts preserve insertion order, so this is exactly the order `providers:`
+    lists them in config.yaml). Order matters: `pipeline/dedupe.py` keeps the
+    FIRST occurrence of a duplicate role, so a source listed earlier wins."""
+    return [name for name, block in (cfg.providers or {}).items() if (block or {}).get("enabled", False)]
+
+
+def provider_config_block(cfg: Config, provider_name: str) -> dict[str, Any]:
+    """The config dict a provider's OWN capability/limits are read from for
+    `budget.guard_for` and the query-plan overlay — DELIBERATELY UNMERGED
+    with `cfg.apify`, so guard-capability detection stays purely structural:
+    Fantastic Jobs' block is `cfg.api` (has "plan" -> weekly guard); the
+    legacy actor's is `cfg.apify` (has "max_monthly_budget_usd" -> monthly
+    guard); every v1.2 Apify-based provider's is its own `cfg.providers[name]`
+    entry (also has "max_monthly_budget_usd", even if null -> monthly guard);
+    RemoteOK/We Work Remotely's blocks have neither key -> no guard. Merging
+    `cfg.apify` in here would leak "max_monthly_budget_usd" into the FREE
+    providers' resolved config too, wrongly guarding them — so a provider
+    that needs shared Apify AUTH (`token_env`/`tokens_env`) reads `config.apify`
+    directly inside its own `fetch()`, not through this resolver; this
+    function is for guard/limit purposes only."""
+    if provider_name == "fantastic-jobs":
+        return cfg.api
+    if provider_name == "fantastic-jobs-actor":
+        return cfg.apify
+    return cfg.providers.get(provider_name, {}) or {}

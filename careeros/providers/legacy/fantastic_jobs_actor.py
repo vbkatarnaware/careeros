@@ -56,7 +56,7 @@ from careeros.config import Config
 from careeros.providers._apify_common import (
     COMPANY_KEYS, DESCRIPTION_KEYS, TITLE_KEYS, URL_KEYS, pick_field,
 )
-from careeros.providers.base import ProviderError
+from careeros.providers.base import ProviderError, ProviderResult
 
 ACTOR_ID = "fantastic-jobs/career-site-job-listing-api"
 MIN_LIMIT = 10  # actor rejects limit < 10
@@ -151,10 +151,22 @@ def _merge_query(apify_cfg: dict[str, Any], query: dict[str, Any] | None) -> dic
 class FantasticJobsActorProvider:
     id = "fantastic-jobs-actor"
 
+    def validate(self, config: Config) -> list[str]:
+        """Config/credential problems only — no network call. Reuses
+        `_iter_tokens` purely to check whether ANY token is configured."""
+        if not _iter_tokens(config.apify):
+            apify_cfg = config.apify
+            return [
+                f"No Apify token configured — set {apify_cfg.get('tokens_env', 'APIFY_TOKENS')} "
+                f"(comma-separated, for rotation) or {apify_cfg.get('token_env', 'APIFY_TOKEN')} "
+                "(single token). See providers/README.md."
+            ]
+        return []
+
     def fetch(
         self, config: Config, *, limit: int = 100, search: str = "",
         query: dict[str, Any] | None = None,
-    ) -> tuple[list[dict[str, Any]], float]:
+    ) -> ProviderResult:
         """`query`, when given (see pipeline/queryplan.py), overrides the
         matching config.apify keys for this one call only — e.g. a segmented
         discovery plan's per-work-mode location_search/work_arrangement. No
@@ -162,7 +174,7 @@ class FantasticJobsActorProvider:
         `_build_run_input` already reads, so every existing filter keeps
         working unchanged for both the segmented and legacy single-query paths.
 
-        Returns `(items, cost_usd)`. `cost_usd` is the finished run's own
+        `cost_usd` on the returned `ProviderResult` is the finished run's own
         `usageTotalUsd` field, read with zero extra API call. IMPORTANT
         (found live, 2026-07-08): this figure can materially UNDERCOUNT the
         true final cost — a verification run reported $0.02 across 3 queries
@@ -174,6 +186,8 @@ class FantasticJobsActorProvider:
         best-effort LOWER BOUND / directional signal, not the authoritative
         final spend — check your Apify console for the real settled total.
         """
+        import time as _time
+        start = _time.time()
         apify_cfg = config.apify
         tokens = _iter_tokens(apify_cfg)
         if not tokens:
@@ -213,7 +227,10 @@ class FantasticJobsActorProvider:
             if not dataset_id:
                 raise ProviderError("fantastic-jobs-actor: actor run returned no dataset id")
             items = list(client.dataset(dataset_id).iterate_items())
-            return items, _extract_usage_usd(run)
+            return ProviderResult(
+                provider=self.id, items=items, cost_usd=_extract_usage_usd(run),
+                requests=1, records=len(items), seconds=_time.time() - start,
+            )
 
         raise ProviderError(
             f"All {len(tokens)} configured Apify token(s) failed (exhausted budget or invalid) — "

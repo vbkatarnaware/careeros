@@ -55,7 +55,7 @@ from careeros.config import Config
 from careeros.providers._apify_common import (
     COMPANY_KEYS, DESCRIPTION_KEYS, TITLE_KEYS, URL_KEYS, pick_field,
 )
-from careeros.providers.base import ProviderError
+from careeros.providers.base import ProviderError, ProviderResult
 
 _DIRECT_BASE_URL = "https://data.fantastic.jobs"
 _RAPIDAPI_HOST_DEFAULT = "active-jobs-db.p.rapidapi.com"
@@ -258,10 +258,22 @@ def _fetch_one_endpoint(
 class FantasticJobsProvider:
     id = "fantastic-jobs"
 
+    def validate(self, config: Config) -> list[str]:
+        """Config/credential problems only — no network call (doctor/discover
+        both need this to be free and instant). Reuses `_base_url_and_headers`
+        purely for its validation logic by calling it and catching the
+        `ProviderError` it already raises for an unset transport or a missing
+        key, rather than duplicating that logic here."""
+        try:
+            _base_url_and_headers(config.api)
+        except ProviderError as e:
+            return [str(e)]
+        return []
+
     def fetch(
         self, config: Config, *, limit: int = 100, search: str = "",
         query: dict[str, Any] | None = None,
-    ) -> tuple[list[dict[str, Any]], float]:
+    ) -> ProviderResult:
         """Single-page REST fetch — see the module docstring for the
         deliberate parity scope (no pagination/incremental sync in P2.7).
 
@@ -280,11 +292,13 @@ class FantasticJobsProvider:
         HTTP call; the raw union is returned, and downstream normalize+dedupe
         (job-id-keyed) collapses the small real overlap (no extra dedup here).
 
-        Returns `(items, cost_usd)`. `cost_usd` is always 0.0: unlike the
+        `cost_usd` on the returned `ProviderResult` is always 0.0: unlike the
         Apify actor's pay-per-result billing, both REST transports are
         subscription/credit-metered, not priced per call, so there is no
         real per-call USD figure to report (0.0 is the documented contract
         for a non-metered-per-call source — see providers/base.py)."""
+        import time as _time
+        start = _time.time()
         api_cfg = config.api
         effective_cfg = _merge_query(api_cfg, query)
         base_url, headers = _base_url_and_headers(effective_cfg)
@@ -296,7 +310,11 @@ class FantasticJobsProvider:
         for ep in endpoints:
             ep_params = _build_params(effective_cfg, limit=ep_limits[ep], search=search)
             items.extend(_fetch_one_endpoint(base_url, headers, ep, ep_params))
-        return items, 0.0
+        return ProviderResult(
+            provider=self.id, items=items, cost_usd=0.0,
+            requests=len(endpoints), records=len(items),
+            seconds=_time.time() - start,
+        )
 
     def to_job_dict(self, raw: dict[str, Any]) -> dict[str, Any] | None:
         # Copied verbatim from the legacy actor provider — same dataset,

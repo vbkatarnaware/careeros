@@ -4,6 +4,93 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-07-11
+
+### Added
+
+- **Multi-provider discovery.** `.careeros/config.yaml` gets a new
+  `providers:` block — a dict of provider id -> `{enabled, ...its own
+  config}` — replacing the old single `provider:` key as the one discovery
+  source model. Every `enabled: true` provider runs in `discover`, IN THE
+  ORDER LISTED (dedupe keeps the first occurrence of a duplicate role, so
+  list your primary source first), and their results merge into the same
+  flat job list every later pipeline stage already consumed — `normalize`
+  onward is completely unaware of how many providers ran.
+- **Seven new discovery sources**, classified by evidence from a real
+  combined live validation (not by assumption) into four tiers — see
+  `providers/README.md`'s "Shipped providers" section for the full
+  relevance/cost/reliability findings behind each:
+  - **Core** (on by default, zero setup): `remoteok`, `we-work-remotely` —
+    free, direct, no signup.
+  - **Optional** (off by default, recommended to enable deliberately):
+    `naukri` (10/10 relevance at n=10, flat ~$0.0005-0.005/run — the
+    strongest single recommendation of the five), `glassdoor` (relevant,
+    converges to ~$0.005/job at realistic batch sizes — judge its cost from
+    a `limit >= 20-30` run, never a `--limit 3` trial), `ziprecruiter`
+    (~$0.004/job at n=30 — comparable to Glassdoor, not the cost outlier a
+    small trial run suggested; known ~63% actor run-success rate, handled
+    gracefully with a retry next run).
+  - **Experimental**: `indeed` — good relevance for some queries (e.g.
+    "Software Engineer") but ~10% relevant at n=20 for this project's
+    default "Product Manager" query; verify against your own search terms
+    before enabling.
+  - **Not Recommended**: `foundit` (Monster India, rebranded) — irrelevant
+    results across multiple independently tested queries, ruling out a
+    query-construction bug; kept registered for completeness, not for
+    enabling.
+  All five Apify-actor sources ship `enabled: false` regardless of tier — a
+  fresh clone has no Apify token configured. See `providers/README.md` for
+  the "Turning on a paid provider" workflow.
+- **The `ProviderResult` contract.** Every provider (old and new) now
+  implements exactly `validate(config)`, `fetch(config, **kwargs) ->
+  ProviderResult`, `to_job_dict(raw)` — no special cases. `ProviderResult`
+  carries per-provider metadata (cost, requests, records, duration,
+  warnings/errors, and an explicit `skipped`/`skip_reason` for a provider
+  that was enabled but couldn't run this call) surfaced in `run.json` and a
+  new provider-by-provider table in `summary.md`.
+- **Capability-driven budget/quota enforcement**, never a check on a
+  provider's name. Fantastic Jobs keeps its existing weekly-record-quota
+  guard untouched; every Apify-actor provider shares a new rolling-month
+  USD budget (`apify.max_monthly_budget_usd`, default $10, overridable
+  per-provider) — a best-effort soft guard backed by a hard per-call
+  `max_total_charge_usd` cap Apify enforces server-side. `careeros doctor`
+  shows every enabled provider's credentials status (via its own
+  `validate()`) and, for Apify-actor providers, budget-vs-spend.
+- **`careeros migrate-config`** — rewrites a config still using the
+  deprecated single `provider:` key to the new `providers:` model,
+  permanently, on disk. Idempotent, safe to re-run (same shape as
+  `careeros sheets migrate`).
+- **Provider-centric onboarding.** `careeros init`'s guided setup now asks
+  about optional paid sources by name — Naukri, Glassdoor, ZipRecruiter —
+  with a one-line evidence-based pitch for each, not "enable Apify." If you
+  opt in, it asks for a monthly budget and which providers to enable, saves
+  the choice to config, and only then mentions the shared Apify credential
+  those sources run on behind the scenes. Foundit isn't offered by default;
+  Indeed is mentioned only if asked. Editable later via `careeros doctor`
+  or the config file directly.
+
+### Fixed
+
+- **Glassdoor: relative `applyUrl`/`jobLink` silently dropped every job at
+  production batch size.** A small (`--limit 3`) trial sample happened to
+  return absolute URLs; a `limit: 30` combined-validation run (the kind of
+  real, at-scale check driving this release) showed the actor's real output
+  is a site-relative partner-tracking path (`/partner/jobListing.htm?...`),
+  which `to_job_dict` was rejecting outright. Now resolved against
+  `https://www.glassdoor.com` before validation. Caught specifically
+  because this release's validation ran at realistic scale instead of
+  trusting a small trial — see `providers/README.md`'s "Cost: don't trust a
+  `--limit 3` trial" for the general lesson.
+
+### Changed
+
+- The old `provider:` config key is deprecated. A config that still sets it
+  (with no `providers:` block) is auto-upgraded IN MEMORY on every load —
+  same single source, nothing new enabled — with a one-time notice pointing
+  at `careeros migrate-config`. Scheduled for removal in v2.0.
+- `careeros init` and `templates/config.example.yaml` now ship the
+  `providers:` model directly; a fresh clone never sees the deprecated key.
+
 ## [1.1.0] - 2026-07-10
 
 ### Added

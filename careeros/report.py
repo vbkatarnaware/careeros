@@ -108,6 +108,26 @@ def _discovery_kpi_block(
                     "(no weekly quota configured — set api.plan)"
                 )
 
+    providers = discovery_stats.get("providers") if discovery_stats else None
+    if providers:
+        lines.append("")
+        lines.append("| Provider | Records | Requests | Cost | Time | Status |")
+        lines.append("|---|---|---|---|---|---|")
+        for p in providers:
+            if p.get("skipped"):
+                status = f"skipped: {p.get('skip_reason') or 'unknown reason'}"
+            else:
+                status = "ran"
+            lines.append(
+                f"| {p['provider']} | {p.get('records', 0)} | {p.get('requests', 0)} | "
+                f"${p.get('cost_usd', 0.0):.4f} | {p.get('seconds', 0.0):.1f}s | {status} |"
+            )
+        merged = discovery_stats.get("merged_total", sum(p.get("records", 0) for p in providers))
+        lines.append(f"| **Merged total** | **{merged}** | | | | before dedupe |")
+        deduped = totals.get("deduped")
+        if deduped is not None:
+            lines.append(f"| **After dedupe** | **{deduped}** | | | | fed to the pipeline |")
+
     return "\n".join(lines) if lines else "_No discovery data recorded yet._"
 
 

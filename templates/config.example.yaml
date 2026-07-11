@@ -2,10 +2,37 @@
 # Every key here has a built-in default (see careeros/config.py); only
 # override what you need to change.
 
-# "fantastic-jobs" (REST, default, maintained — see the `api:` block below)
-# or "fantastic-jobs-actor" (legacy Apify actor — see the `apify:` block;
-# kept as a reference/no-code backend, not the actively maintained path).
-provider: fantastic-jobs
+# THE discovery source model (v1.2). `providers:` controls which sources are
+# ENABLED and RUN ORDER (dedupe keeps the FIRST occurrence of a duplicate
+# role, so list your primary/most-trusted source first) — it does NOT hold
+# each provider's detailed settings. Fantastic Jobs' own detailed config
+# (transport, endpoint, search filters, weekly quota) stays in the separate
+# `api:` block below, unmoved — mature, tested, frozen. Every other
+# provider's config lives inline in its own block here.
+providers:
+  fantastic-jobs: { enabled: true }      # Core — your main source — detail in api: below
+  remoteok: { enabled: true }            # Core — free, direct, no signup — providers/remoteok.py
+  we-work-remotely: { enabled: true }    # Core — free, direct, no signup — providers/we_work_remotely.py
+  # Paid sources — OFF by default: they cost real money per job, a fresh
+  # clone has no credential configured yet, and each carries its own
+  # evidence-backed caveat worth reading before enabling — see
+  # providers/README.md's "Shipped providers" section (relevance/cost/
+  # reliability findings from live verification, not assumptions) and
+  # "Cost: don't trust a `--limit 3` trial" before judging any of these on
+  # a quick dry-run. Live-verify one with:
+  #   careeros discover --provider <name> --dry-run --limit 3   (shape/relevance check)
+  #   careeros discover --provider <name> --limit 30             (real cost check)
+  # Optional (relevant, reasonably priced — recommended to enable deliberately):
+  naukri: { enabled: false, limit: 100, max_monthly_budget_usd: null }
+  glassdoor: { enabled: false, limit: 100, max_monthly_budget_usd: null }
+  ziprecruiter: { enabled: false, limit: 100, max_monthly_budget_usd: null } # ~63% actor run-success rate — expect an occasional empty run
+  # Experimental (works, but underperforms for this project's default
+  # "Product Manager" search — retarget search_keyword or verify first):
+  indeed: { enabled: false, limit: 100, max_monthly_budget_usd: null }
+  # Not Recommended (irrelevant results in live testing across multiple
+  # search terms — kept registered for completeness, not for enabling):
+  foundit: { enabled: false, limit: 100, max_monthly_budget_usd: null }       # = Monster India, rebranded
+
 threshold: 4.0          # APPLY: score >= this -> full pipeline (resume/cover/report + Drive + Sheet)
 consider_threshold: 3.5 # CONSIDER: this <= score < threshold -> Sheet row only (score + reason, no AI artifacts). Below this = omitted
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
@@ -31,7 +58,8 @@ sheets:
   worksheet: "Jobs"
 
 # Config for the DEFAULT `fantastic-jobs` provider (the official Fantastic
-# Jobs REST API). Only read when provider: fantastic-jobs (above).
+# Jobs REST API). Only read when providers.fantastic-jobs.enabled: true
+# (above) — this block itself does NOT enable/disable the provider.
 api:
   # REQUIRED — no default. "direct" (developer.fantastic.jobs) or "rapidapi"
   # (RapidAPI's "Active Jobs DB"). Both return the identical dataset; pick
@@ -70,15 +98,26 @@ api:
   active_days_per_week: 7          # how the weekly quota is spread when recommending a daily limit
   limit: null                      # your per-query record cap; null -> 100. Guard warns if it blows the quota
 
-# LEGACY — only read when provider: fantastic-jobs-actor. Kept for no-code/
-# Zapier/n8n/MCP-style setups; not the actively maintained discovery path
-# (see providers/legacy/fantastic_jobs_actor.py).
+# Shared Apify config: token auth (used by EVERY Apify-actor-based provider —
+# fantastic-jobs-actor below, plus naukri/foundit/indeed/glassdoor/
+# ziprecruiter above, all billing against the SAME Apify account) and the
+# legacy actor's own detailed settings (only read when
+# providers.fantastic-jobs-actor.enabled: true).
 apify:
   token_env: APIFY_TOKEN        # single-token env var (back-compat)
   tokens_env: APIFY_TOKENS      # comma-separated token pool — set this for
                                  # automatic rotation when one token's monthly
                                  # budget is exhausted (checked first, falls
                                  # back to token_env if unset)
+  # v1.2: shared rolling-month spend ceiling across EVERY Apify-actor
+  # provider — a provider's own `max_monthly_budget_usd` (in its `providers:`
+  # block above) overrides this if set; null there means "use this shared
+  # default." Best-effort SOFT guard, not a precise ceiling — Apify's own
+  # reported usage can undercount real settled cost (see budget.py's
+  # check_apify_budget docstring); also set a matching hard cap in your
+  # Apify console. A modest starting default — raise it once you know your
+  # real usage.
+  max_monthly_budget_usd: 10
   actor: "fantastic-jobs/career-site-job-listing-api"
   time_range: "7d"                    # actor timeRange: 1h | 24h | 7d | 6m
   # "profile" (default): `discover` runs one segmented query per

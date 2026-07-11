@@ -149,6 +149,55 @@ this candidate's own configured tiers.
   or via `careeros doctor`, which shows the current vs. recommended limit on
   every run.
 
+### Optional paid job sources (v1.2)
+
+Three sources are already on by default and need nothing from the
+candidate: Fantastic Jobs (the primary source, configured above),
+RemoteOK, and We Work Remotely. This step is about additional, paid job
+sources the candidate can opt into — reason about these as named job
+boards, not as any particular fetch mechanism; that's an implementation
+detail that only comes up later, if at all (see the credential note
+below).
+
+Ask: **"Want to enable any paid job sources beyond the free ones? A few
+options, each a few tenths of a cent per job:**
+- **Naukri** — India-focused, low overlap with your main source, every job
+  in testing was genuinely relevant.
+- **Glassdoor** — general job board, relevant results, but runs slower
+  (up to a few minutes).
+- **ZipRecruiter** — the most relevant results of the paid options in
+  testing, but roughly 1 in 3 runs fails outright and returns nothing
+  (CareerOS handles that gracefully and just tries again next run — it
+  won't break your daily discovery).
+
+**You can skip this and add sources later."** (Indeed is available too but
+tends to return weak results for a "Product Manager"-style search
+specifically — mention it only if asked, don't offer it by default. Don't
+offer Foundit — evidence says its results are consistently low-quality
+regardless of search term.)
+
+- If no (or they want to decide later): leave every paid provider at
+  `enabled: false` in `providers:` (already the default — nothing to
+  write). Mention `providers/README.md`'s "Shipped providers" section for
+  the full evidence behind each one, and its "Turning on a paid provider"
+  section for when they're ready.
+- If yes: ask **"What's your monthly budget for these paid sources, in
+  USD? (This is a shared soft cap across all of them — suggested default:
+  $10.)"** — accept any positive number, prefill $10 if they just want the
+  default, and write it to `apify.max_monthly_budget_usd` in config.yaml.
+  For each source they want on, set `providers.<name>.enabled: true` in
+  config.yaml. Mention this is a best-effort estimate, not a hard ceiling
+  (`careeros doctor` shows current spend vs. budget). Only now, if they
+  don't already have one configured, mention that these paid sources share
+  one credential behind the scenes (an Apify account — `APIFY_TOKEN` or
+  `APIFY_TOKENS` in `.careeros/secrets.env`) and point them to
+  `providers/README.md` for setup; it's worth also setting a matching hard
+  spend limit in that account's own console.
+- Either way, mention `apify.max_monthly_budget_usd` and each provider's
+  `enabled`/`limit` are editable any time by hand-editing config.yaml, and
+  `careeros doctor` always shows current budget-vs-spend for whatever's
+  enabled.
+
 ## Step 6 — Deal-breakers and logistics
 
 - Any location a hybrid/on-site role would be a hard no outside of? →

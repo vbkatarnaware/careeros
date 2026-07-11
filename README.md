@@ -183,6 +183,7 @@ not a separate command you need to remember (see Commands below).
 | `careeros publish <job-id>` | Upload one job's current artifacts to Drive and patch just that Sheet row — use after `prep`/`apply <job-id>` so the link shows up without a full `daily` run |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
+| `careeros migrate-config` | One-time, idempotent rewrite of a config still using the deprecated single `provider:` key to the current `providers:` model |
 | `careeros backfill-drive` | Add Drive artifacts + clickable Sheet links to Apply-tier rows from before Drive was enabled. Defaults to `--dry-run` |
 | `careeros sheets migrate` | Clean up an existing Sheet right now: remove deprecated columns, add new ones, apply formatting — the same pass `sheets append` already runs automatically on every write |
 | `careeros sheets sync-status` | Patch the Application Answers status of EXISTING Sheet rows from a re-run of `apply --prepare/--finalize`, without appending new rows — use after reclassifying old jobs into the newer status taxonomy |
@@ -248,20 +249,24 @@ Sheets credentials, then run `careeros daily`.
 
 Then:
 
-1. **Set the discovery provider's credentials.** `careeros` ships defaulted
-   to `provider: fantastic-jobs` — the official Fantastic Jobs REST API
-   (recommended for all new users). Pick one transport in
-   `.careeros/config.yaml`'s `api:` block and export the matching key:
+1. **Set your discovery providers' credentials.** `careeros` runs three
+   **Core** sources by default (`.careeros/config.yaml`'s `providers:`
+   block): the official Fantastic Jobs REST API (your main source — needs a
+   key), plus RemoteOK and We Work Remotely (free, direct, no signup —
+   nothing to configure). For Fantastic Jobs, pick one transport in
+   `api:` and export the matching key:
    - `api.transport: direct` → `export FANTASTIC_API_KEY=...` ([developer.fantastic.jobs](https://developer.fantastic.jobs))
    - `api.transport: rapidapi` → `export RAPIDAPI_KEY=...` (RapidAPI's "Active Jobs DB")
 
-   *(Prefer a no-code/Zapier-style setup instead? Set `provider:
-   fantastic-jobs-actor` and `export APIFY_TOKEN=...` — the legacy Apify
-   actor backend, kept as a reference/advanced option; see
-   `careeros/providers/README.md`. For multiple accounts, set
-   `export APIFY_TOKENS=tok1,tok2,...` — a comma-separated rotation pool that
-   is preferred over `APIFY_TOKEN` and auto-rotates when a token's budget is
-   exhausted.)*
+   *(Want more sources? `/careeros start` (below) offers a handful of
+   **Optional** paid job boards by name — Naukri, Glassdoor, ZipRecruiter —
+   each with a one-line evidence-based pitch; opt in, set a monthly budget,
+   and they run on a single shared Apify credential behind the scenes (`export
+   APIFY_TOKEN=...`, or `APIFY_TOKENS=tok1,tok2,...` for multi-account
+   rotation). See `careeros/providers/README.md`'s "Shipped providers" for
+   the full relevance/cost/reliability evidence behind every source,
+   including the legacy Apify-actor Fantastic Jobs backend
+   (`fantastic-jobs-actor`) kept as an advanced reference option.)*
 2. **Set up your profile**: `/careeros start` inside your host coding CLI —
    opens by asking you to paste your CV (optional; `skip` to answer
    questions instead), then extracts your facts into `.careeros/profile.yaml`
@@ -508,9 +513,11 @@ cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 
 ## What's built today (v1 vertical slice)
 
-The full pipeline runs end to end: profile-driven segmented discovery through
-the Fantastic Jobs REST API (a legacy Apify-actor provider remains available
-— see `careeros/providers/README.md`), deterministic
+The full pipeline runs end to end: profile-driven segmented discovery merged
+across multiple providers (Fantastic Jobs REST plus free RemoteOK/We Work
+Remotely on by default; Naukri/Glassdoor/ZipRecruiter/Indeed/Foundit and the
+legacy Apify-actor Fantastic Jobs backend available opt-in — see
+`careeros/providers/README.md` for the evidence behind each), deterministic
 normalize/dedupe/constraints/two-tier threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, automatic Application
