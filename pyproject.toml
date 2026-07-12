@@ -1,6 +1,6 @@
 [project]
 name = "careeros"
-version = "1.3.1"
+version = "1.3.2"
 description = "An AI-powered, deterministic job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,10 +19,14 @@ dependencies = [
 dev = ["pytest>=8.0"]
 # Optional Google Drive artifact backup (P2.6, drive.enabled: true). Not a
 # core dependency — a fresh OSS clone never needs these to run `daily`.
-drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0"]
-# Optional PDF rendering for resume/cover (Phase 3, v1.1). Pure-Python, no
-# system binaries — a fresh OSS clone never needs this unless Drive is on;
-# without it, Drive upload falls back to Markdown + a warning.
+# Includes `fpdf2` (v1.3.2) so Resume/Cover Letter PDF rendering — the
+# ONLY two artifacts Drive ever attempts PDF for — works by default with
+# just this one extra; no separate `[pdf]` install step to forget.
+drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0", "fpdf2>=2.7"]
+# Standalone alias for `fpdf2` alone (pure-Python, no system binaries) —
+# for anyone who wants careeros/pdf.py's PDF rendering without the rest of
+# the [drive] extra's Google API deps. `[drive]` already includes this;
+# most users never need to install `[pdf]` separately.
 pdf = ["fpdf2>=2.7"]
 # Optional background form-reading for the `apply` stage's automatic
 # Application Answers (P2.10, careeros/apply/browser.py). Only reached as a

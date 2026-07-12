@@ -4,6 +4,30 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-07-12
+
+### Fixed
+
+- **Resume/Cover Letter silently uploaded to Drive as Markdown instead of
+  PDF.** The `[pdf]` extra (`fpdf2`) was a separate, easy-to-forget install
+  step from `[drive]` — a missing `fpdf2` degraded every Resume/Cover
+  upload to `.md` with only a per-file warning, easy to miss. `fpdf2` is
+  now bundled into the `[drive]` extra, so `pip install -e ".[drive]"`
+  alone gets PDF rendering by default; `careeros doctor` (with
+  `drive.enabled: true`) now also proactively checks for it and FAILs with
+  a clear fix if it's ever missing, instead of only surfacing a buried
+  warning during `daily`.
+- **Only Resume and Cover Letter ever attempt PDF now.** Application
+  Answers, Evaluation, and Deep Report always upload as Markdown — not
+  "PDF with a fallback," simply never attempted, since only Resume/Cover
+  are ever attached to a job application.
+- **A Resume/Cover previously uploaded as `.md` (before PDF rendering was
+  available) is no longer left orphaned in Drive once PDF rendering
+  works.** Drive matches existing files by exact filename, so a new
+  `.pdf` upload didn't replace an old `.md` — both used to sit side by
+  side in the flat Drive folder. Re-uploading now explicitly deletes the
+  stale `.md` when a `.pdf` supersedes it for the same job.
+
 ## [1.3.1] - 2026-07-12
 
 ### Added

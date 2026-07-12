@@ -7,6 +7,7 @@ existing test file needed this pattern before)."""
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 from careeros import budget
 from careeros.cli import _CheckStatus, _run_doctor_checks
@@ -221,6 +222,61 @@ def test_drive_enabled_missing_root_folder_id_fails(tmp_path, monkeypatch):
     status, detail = _status_for(results, "Google Drive")
     assert status == _CheckStatus.FAIL
     assert "root_folder_id" in detail
+
+
+def test_pdf_check_passes_when_fpdf2_installed_and_drive_enabled(tmp_path, monkeypatch):
+    """v1.3.2: fpdf2 ships as part of the [drive] extra, so PDF rendering for
+    Resume/Cover should PASS whenever Drive's own credentials check passes."""
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    creds = tmp_path / "c.json"
+    creds.write_text("{}")
+    secret = tmp_path / "secret.json"
+    secret.write_text("{}")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
+               sheets={"spreadsheet_id": "sid", "credentials_path": str(creds)},
+               drive={"enabled": True, "client_secret_path": str(secret), "root_folder_id": "f"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "PDF rendering")
+    assert status == _CheckStatus.PASS
+    assert "fpdf2 installed" in detail
+
+
+def test_pdf_check_fails_when_fpdf2_missing_and_drive_enabled(tmp_path, monkeypatch):
+    """The exact 2026-07-12 incident: fpdf2 missing silently degraded every
+    Resume/Cover upload to Markdown. doctor must now catch this proactively
+    instead of only a buried per-file warning during `daily`."""
+    import sys
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    creds = tmp_path / "c.json"
+    creds.write_text("{}")
+    secret = tmp_path / "secret.json"
+    secret.write_text("{}")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
+               sheets={"spreadsheet_id": "sid", "credentials_path": str(creds)},
+               drive={"enabled": True, "client_secret_path": str(secret), "root_folder_id": "f"})
+    with patch.dict(sys.modules, {"fpdf": None}):  # simulates fpdf2 not installed
+        results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "PDF rendering")
+    assert status == _CheckStatus.FAIL
+    assert 'pip install -e ".[drive]"' in detail
+
+
+def test_pdf_check_absent_when_drive_disabled(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    creds = tmp_path / "c.json"
+    creds.write_text("{}")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
+               sheets={"spreadsheet_id": "sid", "credentials_path": str(creds)},
+               drive={"enabled": False})
+    results = _run_doctor_checks(cfg)
+    status, _ = _status_for(results, "PDF rendering")
+    assert status is None  # not checked at all when Drive is off
 
 
 def test_no_last_discovery_error_shows_pass(tmp_path, monkeypatch):

@@ -481,6 +481,20 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                 results.append(_check_result(_CheckStatus.FAIL, "Google Drive (enabled)",
                                              'credentials configured but [drive] extra not installed — '
                                              'run: pip install -e ".[drive]"'))
+        # PDF rendering for Resume/Cover (the only two artifacts Drive ever
+        # attempts PDF for). `fpdf2` ships as part of the [drive] extra
+        # (v1.3.2), so this should always be present once [drive] is —
+        # checked separately (not folded into the Google Drive check above)
+        # so a missing fpdf2 is its own clear, actionable line rather than
+        # being silently swallowed as a per-file warning during `daily`.
+        try:
+            import fpdf  # noqa: F401
+            results.append(_check_result(_CheckStatus.PASS, "PDF rendering (Resume/Cover)",
+                                         "fpdf2 installed"))
+        except ImportError:
+            results.append(_check_result(_CheckStatus.FAIL, "PDF rendering (Resume/Cover)",
+                                         'fpdf2 not installed — Resume/Cover would silently upload as '
+                                         'Markdown instead of PDF. Run: pip install -e ".[drive]"'))
     else:
         results.append(_check_result(_CheckStatus.WARN, "Google Drive", "disabled (drive.enabled: false) — optional"))
 

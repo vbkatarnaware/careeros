@@ -196,7 +196,7 @@ drive:
   # folder as "Company - Role - <Artifact>.<ext>" — no per-company, no
   # per-job subfolders. Point this at a folder you already created/shared
   # (its id is the last segment of its drive.google.com/drive/folders/<id>
-  # URL). Needs pip install -e ".[drive,pdf]" — see docs/google-setup.md.
+  # URL). Needs pip install -e ".[drive]" — see docs/google-setup.md.
   root_folder_id: null
   # Optional: group each day's uploads under a YYYY-MM-DD subfolder inside
   # root_folder_id instead of the flat root. Off by default.

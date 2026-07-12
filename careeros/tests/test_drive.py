@@ -84,6 +84,10 @@ class _FakeDriveService:
             raise KeyError(f"no such file: {fileId}")
         return _Exec({"id": fileId, "trashed": self.store[fileId].get("trashed", False)})
 
+    def delete(self, fileId):
+        del self.store[fileId]
+        return _Exec(None)
+
 
 class _Exec:
     def __init__(self, result):
@@ -312,10 +316,11 @@ def test_upload_run_uploads_deep_report_link_and_file_id(tmp_path):
     assert r.deep_report_file_id in service.store
 
 
-def test_upload_run_uploads_answers_as_pdf_when_present(tmp_path):
-    """P2.10: Application Answers uploads as PDF (same fallback-to-MD rule
-    as resume/cover) only when artifacts_dir/answers.md exists locally --
-    never fabricated for a job that has none."""
+def test_upload_run_answers_is_always_markdown_never_pdf(tmp_path):
+    """v1.3.2: PDF is attempted for Resume/Cover ONLY. Application Answers
+    always uploads as Markdown -- even when render_markdown_to_pdf WOULD
+    succeed, proving this isn't a fallback, it's simply never attempted --
+    and never fabricated for a job that has no answers.md locally."""
     run_json = tmp_path / "run.json"; run_json.write_text("{}")
     summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
     artifacts_dir = _make_artifacts(tmp_path, answers=True)
@@ -325,33 +330,17 @@ def test_upload_run_uploads_answers_as_pdf_when_present(tmp_path):
     service = _FakeDriveService()
     with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
          patch("careeros.drive._drive_service", return_value=service), \
-         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake"):
+         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake") as mock_render:
         results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
 
     r = results["job-1"]
     assert r.answers_link and r.answers_file_id
     names = {rec["name"] for rec in service.store.values()}
-    assert "Bjak - PM - Application Answers.pdf" in names
-
-
-def test_upload_run_answers_falls_back_to_markdown_when_pdf_extra_unavailable(tmp_path):
-    run_json = tmp_path / "run.json"; run_json.write_text("{}")
-    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
-    artifacts_dir = _make_artifacts(tmp_path, answers=True)
-    job = make_job(id="job-1", company="Bjak", title="PM")
-    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
-
-    service = _FakeDriveService()
-    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
-         patch("careeros.drive._drive_service", return_value=service), \
-         patch("careeros.drive.render_markdown_to_pdf", return_value=None):
-        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
-
-    r = results["job-1"]
-    assert len(r.warnings) == 3  # resume + cover + answers all fell back
-    names = {rec["name"] for rec in service.store.values()}
     assert "Bjak - PM - Application Answers.md" in names
     assert "Bjak - PM - Application Answers.pdf" not in names
+    assert not any("Answers" in w for w in r.warnings)  # no fallback warning -- never attempted, not a failure
+    # render_markdown_to_pdf is only ever called for Resume + Cover Letter (2), never Answers.
+    assert mock_render.call_count == 2
 
 
 def test_upload_run_reupload_same_job_updates_in_place_not_duplicated(tmp_path):
@@ -374,6 +363,42 @@ def test_upload_run_reupload_same_job_updates_in_place_not_duplicated(tmp_path):
         count_after_second = len(service.store)
 
     assert count_after_first == count_after_second
+
+
+def test_upload_run_pdf_now_available_deletes_stale_markdown_for_same_job(tmp_path):
+    """v1.3.2: if a job's Resume/Cover was previously uploaded as .md (e.g.
+    before fpdf2 was installed) and PDF rendering later becomes available,
+    re-uploading must replace it -- not leave the old .md orphaned alongside
+    the new .pdf in the flat Drive folder (Drive matches files by exact
+    filename including extension, so a .pdf upload doesn't find/update an
+    existing .md on its own -- this is the explicit cleanup for that)."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path)
+    job = make_job(id="job-1", company="Bjak", title="PM")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=None):  # fpdf2 not installed yet
+        upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    names_before = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - PM - Resume.md" in names_before
+    assert "Bjak - PM - Cover Letter.md" in names_before
+
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake"):  # fpdf2 now installed
+        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    names_after = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - PM - Resume.pdf" in names_after
+    assert "Bjak - PM - Cover Letter.pdf" in names_after
+    assert "Bjak - PM - Resume.md" not in names_after      # stale .md cleaned up
+    assert "Bjak - PM - Cover Letter.md" not in names_after
+    assert results["job-1"].warnings == []
 
 
 def test_upload_run_skips_missing_artifact_files_without_failing(tmp_path):

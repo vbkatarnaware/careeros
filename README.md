@@ -156,10 +156,11 @@ auto-load a per-tool file.
     Required, ❌ Closed, ⚙️ Playwright Missing, 📄 No Essay Questions, or 🌐
     Network Error — not fabricated; see "Application Answers" below.
 10. **Drive** *(optional, off by default)* — additive backup of Apply-tier
-    artifacts (Resume/Cover/Application Answers as PDF, Evaluation, Deep
-    Report if present) into one flat Drive folder via your own OAuth desktop
-    grant. Idempotent (re-uploads update in place). Any failure here only
-    warns; it never blocks the rest of the pipeline.
+    artifacts (Resume/Cover as PDF, Application Answers/Evaluation/Deep
+    Report as Markdown, Deep Report only if present) into one flat Drive
+    folder via your own OAuth desktop grant. Idempotent (re-uploads update
+    in place). Any failure here only warns; it never blocks the rest of the
+    pipeline.
 11. **Sheets** — append one row per Apply job (with per-file Drive links if
     step 10 ran — Resume/Cover/Evaluation/Deep Report/Application Answers,
     no shared-folder link) and one row per Consider job (score + reason
@@ -392,14 +393,15 @@ Answers links to one specific row on demand — see below.
 ## Google Drive backup (optional)
 
 Off by default. When `drive.enabled: true`, `careeros drive` uploads every
-Apply-tier job's Resume + Cover Letter + Application Answers (as **PDF**,
-Answers only if generated — see below), Evaluation, and Deep Report (if
-you've run `prep` on it) — plus the day's `run.json` and `summary.md` —
-into **one flat folder** (`drive.root_folder_id`) as an **additive**
-backup; your local `.careeros/runs/` Markdown is never moved, replaced, or
-read back by any pipeline stage. Files are named
-`Company - Role - Resume.pdf`, `Company - Role - Cover Letter.pdf`,
-`Company - Role - Application Answers.pdf`, `Company - Role - Evaluation.md`,
+Apply-tier job's Resume + Cover Letter (as **PDF** — the only two artifacts
+PDF is ever attempted for), Application Answers (Markdown, always — see
+below), Evaluation, and Deep Report (if you've run `prep` on it) — plus the
+day's `run.json` and `summary.md` — into **one flat folder**
+(`drive.root_folder_id`) as an **additive** backup; your local
+`.careeros/runs/` Markdown is never moved, replaced, or read back by any
+pipeline stage. Files are named `Company - Role - Resume.pdf`,
+`Company - Role - Cover Letter.pdf`,
+`Company - Role - Application Answers.md`, `Company - Role - Evaluation.md`,
 `Company - Role - Deep Report.md` — no per-company or per-job subfolders
 (set `drive.date_subfolder: true` if you'd rather group each day's uploads
 under a `YYYY-MM-DD/` subfolder instead). Consider-tier jobs never generate
@@ -407,16 +409,20 @@ artifacts, so they never upload anything.
 
 Re-running `daily` (or `backfill-drive`/`publish`) for the same job updates
 its existing files in place rather than duplicating them — uploads are
-idempotent. Needs two optional extras:
+idempotent. Needs one optional extra:
 
 ```
-pip install -e ".[drive,pdf]"
+pip install -e ".[drive]"
 ```
 
-`[drive]` (Google API client + OAuth) is required for any upload at all.
-`[pdf]` (pure-Python `fpdf2`, no system binaries) renders the PDFs; without
-it, Resume/Cover Letter/Application Answers upload as Markdown instead and a
-warning is printed — Drive backup still works, just not with PDFs.
+This installs the Google API client + OAuth deps (required for any upload
+at all) **and** `fpdf2` (pure-Python, no system binaries) for Resume/Cover
+PDF rendering — one extra, both by default, nothing else to install
+separately. If PDF rendering is ever unavailable anyway (a corrupted
+install, or an edge-case render failure), Resume/Cover falls back to
+Markdown instead and a warning is printed — Drive backup still works, just
+not with PDFs; `careeros doctor` also flags this proactively when Drive is
+enabled.
 
 You'll also need an OAuth **Desktop app** client secret (Google Cloud Console
 → Credentials → Create Credentials → OAuth client ID → Desktop app) — not a

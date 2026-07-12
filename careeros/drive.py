@@ -10,18 +10,24 @@ Flat layout (Phase 3, locked): ONE root folder (`drive.root_folder_id`), no
 per-company or per-job subfolders. An optional per-run date subfolder is
 available via `drive.date_subfolder: true` (default false — flat). Files are
 named `Company - Role - <Artifact>.<ext>`, so every job's files sit directly
-in the same folder, sorted naturally by company. Resume, Cover Letter, and
-(P2.10) Application Answers are uploaded as PDF (rendered by careeros/pdf.py)
-whenever the optional `[pdf]` extra is installed — that is the mandatory
-default, not a nice-to-have; if the extra is missing (or a render fails for
-some edge-case markdown), this falls back to uploading the `.md` source
-instead and returns a warning string, but never raises for that reason
-alone. Evaluation and Deep Report stay Markdown (no PDF requested for
-those). Deep Report is uploaded only if `artifacts_dir/deep_report.md`
-exists locally (it's `prep`-only — `daily` never forces its generation);
-Application Answers only if `artifacts_dir/answers.md` exists (written by
-the `apply` stage — see `careeros/apply/` — for Apply-tier jobs whose
-question-form was readable, or by an on-demand `careeros apply <job-id>`).
+in the same folder, sorted naturally by company. **Only Resume and Cover
+Letter** are ever uploaded as PDF (rendered by careeros/pdf.py) — the `[pdf]`
+extra (`fpdf2`) is folded into the `[drive]` extra (v1.3.2), so a fresh OSS
+clone that installs `[drive]` gets PDF rendering for these two by default; if
+it's still somehow missing (or a render fails for some edge-case markdown),
+this falls back to uploading the `.md` source instead and returns a warning
+string, but never raises for that reason alone. If a job's Resume/Cover was
+previously uploaded as `.md` (before PDF rendering was available) and is now
+re-uploaded as `.pdf`, the stale `.md` is deleted — Drive matches files by
+exact filename including extension, so the new `.pdf` upload wouldn't
+otherwise replace it, just sit alongside it as an orphan. Application
+Answers, Evaluation, and Deep Report are **always** Markdown — PDF is never
+attempted for them. Deep Report is uploaded only if
+`artifacts_dir/deep_report.md` exists locally (it's `prep`-only — `daily`
+never forces its generation); Application Answers only if
+`artifacts_dir/answers.md` exists (written by the `apply` stage — see
+`careeros/apply/` — for Apply-tier jobs whose question-form was readable, or
+by an on-demand `careeros apply <job-id>`).
 
 Uses the existing OAuth DESKTOP client (an "installed app" client secret,
 NOT a service-account key) so uploads land in the configured user's own
@@ -222,6 +228,25 @@ def _upload_text(service, media_upload_cls, name: str, content: str, parent_id: 
                           "text/markdown", parent_id, job_id)
 
 
+def _delete_stale_markdown_variant(
+    service, prefix: str, label: str, job_id: str, parent_id: str, keep_file_id: str,
+) -> None:
+    """After uploading a job's Resume/Cover as `.pdf`, delete a leftover
+    `.md` file for the SAME job/label if one exists (e.g. from before the
+    `[pdf]` extra was installed, or from before this fix). `_find_file_by_name`
+    matches by exact filename including extension, so a new `.pdf` upload
+    does NOT find/replace an old `.md` — without this cleanup, the stale
+    `.md` sits orphaned in the flat Drive folder next to the new `.pdf`."""
+    stale_name = f"{prefix} - {label}.md"
+    existing = _find_file_by_name(service, stale_name, parent_id)
+    if (
+        existing
+        and existing["id"] != keep_file_id
+        and existing.get("appProperties", {}).get(_JOB_ID_PROPERTY) == job_id
+    ):
+        service.files().delete(fileId=existing["id"]).execute()
+
+
 def _upload_text_file(service, media_upload_cls, name: str, content: str, parent_id: str) -> None:
     """Create-or-overwrite a small run-level text file (run.json, summary.md)
     by name — no job-id tagging, since these aren't per-job artifacts."""
@@ -240,9 +265,10 @@ def _upload_text_file(service, media_upload_cls, name: str, content: str, parent
 def _upload_job_artifacts(
     service, media_upload_cls, job: Any, artifacts_dir: Path, parent_id: str,
 ) -> JobUploadResult:
-    """Uploads one job's Resume/Cover/Application Answers (PDF, falling back
-    to MD) + Evaluation (MD) + Deep Report (MD, only if present). Never
-    fabricates: a missing source file is simply skipped, not invented."""
+    """Uploads one job's Resume/Cover (PDF — the only two artifacts PDF is
+    ever attempted for) + Application Answers/Evaluation/Deep Report
+    (Markdown, always — never PDF-attempted). Never fabricates: a missing
+    source file is simply skipped, not invented."""
     company = _sanitize_filename_component(job.company)
     role = _sanitize_filename_component(job.title)
     prefix = f"{company} - {role}"
@@ -251,9 +277,7 @@ def _upload_job_artifacts(
     cover_link = cover_file_id = ""
     answers_link = answers_file_id = ""
 
-    for label, md_filename in (
-        ("Resume", "resume.md"), ("Cover Letter", "cover.md"), ("Application Answers", "answers.md"),
-    ):
+    for label, md_filename in (("Resume", "resume.md"), ("Cover Letter", "cover.md")):
         src = artifacts_dir / md_filename
         if not src.exists():
             continue
@@ -262,16 +286,22 @@ def _upload_job_artifacts(
         if pdf_bytes is not None:
             file_id, link = _upload_bytes(service, media_upload_cls, f"{prefix} - {label}.pdf",
                                           pdf_bytes, "application/pdf", parent_id, job.id)
+            _delete_stale_markdown_variant(service, prefix, label, job.id, parent_id, file_id)
         else:
             warnings.append(f"PDF rendering unavailable or failed — uploaded {label} as Markdown, not PDF")
             file_id, link = _upload_text(service, media_upload_cls, f"{prefix} - {label}.md",
                                          md_text, parent_id, job.id)
         if label == "Resume":
             resume_link, resume_file_id = link, file_id
-        elif label == "Cover Letter":
-            cover_link, cover_file_id = link, file_id
         else:
-            answers_link, answers_file_id = link, file_id
+            cover_link, cover_file_id = link, file_id
+
+    answers_src = artifacts_dir / "answers.md"
+    if answers_src.exists():
+        answers_file_id, answers_link = _upload_text(
+            service, media_upload_cls, f"{prefix} - Application Answers.md",
+            answers_src.read_text(), parent_id, job.id,
+        )
 
     eval_link = eval_file_id = ""
     eval_src = artifacts_dir / "daily_report.md"
