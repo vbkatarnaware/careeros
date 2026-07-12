@@ -203,3 +203,26 @@ def test_discovery_kpi_provider_table_shows_duration_and_status_per_provider():
     assert "| glassdoor | 0 | 0 | $0.0000 | 0.0s | skipped: monthly Apify budget exhausted |" in md
     assert "**Merged total** | **42**" in md
     assert "**After dedupe** | **40**" in md
+
+
+def test_discovery_kpi_provider_table_shows_live_quota_when_present():
+    """2026-07-12 fix: a provider's LIVE quota (e.g. Fantastic Jobs'
+    x-ratelimit-* headers) must be visible next to a running provider — the
+    real, provider-verified number, never a locally calculated estimate. A
+    provider that doesn't report one (live_quota is None) must render
+    exactly as before, with no suffix."""
+    stats = {
+        "providers": [
+            {"provider": "fantastic-jobs", "records": 72, "requests": 6,
+             "cost_usd": 0.0, "seconds": 4.6, "skipped": False,
+             "live_quota": {"requests_remaining": "94", "jobs_remaining": "428"}},
+            {"provider": "remoteok", "records": 42, "requests": 1,
+             "cost_usd": 0.0, "seconds": 1.23, "skipped": False,
+             "live_quota": None},
+        ],
+        "merged_total": 114,
+    }
+    md = render_summary("2026-07-12", {"totals": {"discovered": 114}},
+                         [], [], {}, threshold=4.0, discovery_stats=stats)
+    assert "| fantastic-jobs | 72 | 6 | $0.0000 | 4.6s | ran (428 jobs left, live) |" in md
+    assert "| remoteok | 42 | 1 | $0.0000 | 1.2s | ran |" in md

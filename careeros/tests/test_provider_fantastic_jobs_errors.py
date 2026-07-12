@@ -30,7 +30,24 @@ def _fetch():
 
 def test_200_with_list_body_returns_items():
     with patch("requests.get", return_value=_resp(200, json_body=[{"id": "1"}])):
-        assert _fetch() == [{"id": "1"}]
+        items, live_quota = _fetch()
+        assert items == [{"id": "1"}]
+        assert live_quota is None  # no x-ratelimit-* headers on this mock response
+
+
+def test_200_surfaces_live_ratelimit_headers():
+    """The whole point of the fix: live quota headers must be read on the
+    SUCCESS path too, not just 429 — this is the real, provider-verified
+    remaining quota `doctor`/the discovery summary should show, never a
+    locally calculated guess (see AGENT_GUIDE.md)."""
+    resp = _resp(200, headers={
+        "x-ratelimit-requests-remaining": "42",
+        "x-ratelimit-jobs-remaining": "1000",
+    }, json_body=[{"id": "1"}])
+    with patch("requests.get", return_value=resp):
+        items, live_quota = _fetch()
+        assert items == [{"id": "1"}]
+        assert live_quota == {"requests_remaining": "42", "jobs_remaining": "1000"}
 
 
 def test_401_is_classified_as_invalid_api_key():

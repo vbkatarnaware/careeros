@@ -400,9 +400,14 @@ def _apify_tokens_path(careeros_dir: Path) -> Path:
 
 
 def load_apify_tokens_state(careeros_dir: Path, today_iso: str) -> dict[str, Any]:
-    """Return this month's {month_start, exhausted: [fingerprint, ...]}.
+    """Return this month's {month_start, exhausted: {fingerprint: last_marked_date_iso}}.
     Rolls over automatically at the start of a new calendar month, same
-    pattern as `load_apify_state`."""
+    pattern as `load_apify_state`.
+
+    `exhausted` is keyed by fingerprint -> the ISO date it was last marked
+    exhausted (not a bare list) — see `is_token_exhausted`'s docstring for
+    why the date matters: a mark only skips a token PRE-EMPTIVELY on the
+    SAME day it was recorded, never for the rest of the month unverified."""
     ms = month_start(today_iso)
     path = _apify_tokens_path(careeros_dir)
     if path.exists():
@@ -411,24 +416,47 @@ def load_apify_tokens_state(careeros_dir: Path, today_iso: str) -> dict[str, Any
         except (json.JSONDecodeError, OSError):
             state = {}
         if state.get("month_start") == ms:
-            state.setdefault("exhausted", [])
+            exhausted = state.get("exhausted")
+            if isinstance(exhausted, list):
+                # Migrate the pre-2026-07-12 bare-list format: treat every
+                # entry as marked on month_start (never today), so it
+                # naturally gets one fresh live retry on the next call
+                # instead of crashing or silently staying stuck exhausted.
+                state["exhausted"] = {fp: ms for fp in exhausted}
+            else:
+                state.setdefault("exhausted", {})
             return state
-    return {"month_start": ms, "exhausted": []}
+    return {"month_start": ms, "exhausted": {}}
 
 
 def save_apify_tokens_state(careeros_dir: Path, state: dict[str, Any]) -> None:
     _apify_tokens_path(careeros_dir).write_text(json.dumps(state))
 
 
-def mark_token_exhausted(state: dict[str, Any], token: str) -> dict[str, Any]:
+def mark_token_exhausted(state: dict[str, Any], token: str, today_iso: Optional[str] = None) -> dict[str, Any]:
     fp = token_fingerprint(token)
-    if fp not in state.get("exhausted", []):
-        state.setdefault("exhausted", []).append(fp)
+    state.setdefault("exhausted", {})[fp] = today_iso or date.today().isoformat()
     return state
 
 
-def is_token_exhausted(state: dict[str, Any], token: str) -> bool:
-    return token_fingerprint(token) in state.get("exhausted", [])
+def is_token_exhausted(state: dict[str, Any], token: str, today_iso: Optional[str] = None) -> bool:
+    """A token counts as pre-emptively exhausted (skip without trying) ONLY
+    if it was ALREADY verified-dead earlier the SAME day — this is what lets
+    `run_actor` avoid re-hitting a known-dead token on every provider call
+    within one day's run. On any OTHER day (including still within the same
+    billing month), a previously-exhausted token gets ONE fresh live retry
+    before being trusted as exhausted again — never a silent skip for the
+    rest of the month from a single earlier failure. This is what makes a
+    mid-month top-up (same token, more balance) or a same-token-different-day
+    recovery visible the very next run, instead of only at month rollover.
+    See AGENT_GUIDE.md: verify against the live source, never a stored
+    calculation alone."""
+    fp = token_fingerprint(token)
+    marked_date = state.get("exhausted", {}).get(fp)
+    if marked_date is None:
+        return False
+    today_iso = today_iso or date.today().isoformat()
+    return marked_date == today_iso
 
 
 def check_before_run(

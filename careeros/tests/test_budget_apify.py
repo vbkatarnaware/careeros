@@ -149,49 +149,81 @@ def test_token_fingerprint_differs_for_different_tokens():
 
 def test_load_apify_tokens_state_defaults_to_no_exhausted_tokens_when_no_file(tmp_path):
     state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
-    assert state["exhausted"] == []
+    assert state["exhausted"] == {}
 
 
-def test_mark_and_check_token_exhausted_roundtrips(tmp_path):
+def test_mark_and_check_token_exhausted_roundtrips_same_day(tmp_path):
     state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
-    assert budget.is_token_exhausted(state, "tok-abc") is False
+    assert budget.is_token_exhausted(state, "tok-abc", "2026-07-15") is False
 
-    budget.mark_token_exhausted(state, "tok-abc")
-    assert budget.is_token_exhausted(state, "tok-abc") is True
+    budget.mark_token_exhausted(state, "tok-abc", "2026-07-15")
+    # Same-day re-check: pre-emptively exhausted, no live retry needed —
+    # this is the "don't re-hit a known-dead token every provider call
+    # within one day's run" optimization the cache exists for.
+    assert budget.is_token_exhausted(state, "tok-abc", "2026-07-15") is True
     # A different token is unaffected.
-    assert budget.is_token_exhausted(state, "tok-xyz") is False
+    assert budget.is_token_exhausted(state, "tok-xyz", "2026-07-15") is False
+
+
+def test_is_token_exhausted_only_skips_pre_emptively_on_the_same_day(tmp_path):
+    """The core fix (2026-07-12): a token marked exhausted must get a fresh
+    LIVE retry on any OTHER day — never a silent skip for the rest of the
+    month from one earlier failure. This is what makes a mid-month top-up
+    (same token, more balance restored) visible the very next run, instead
+    of only at month rollover. See AGENT_GUIDE.md / budget.is_token_exhausted."""
+    state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    budget.mark_token_exhausted(state, "tok-abc", "2026-07-15")
+
+    assert budget.is_token_exhausted(state, "tok-abc", "2026-07-15") is True
+    # A day later, same billing month, same token: must NOT be pre-emptively
+    # skipped — give it one real live attempt before trusting the old mark.
+    assert budget.is_token_exhausted(state, "tok-abc", "2026-07-16") is False
 
 
 def test_mark_token_exhausted_is_idempotent():
-    state = {"month_start": "2026-07-01", "exhausted": []}
-    budget.mark_token_exhausted(state, "tok-abc")
-    budget.mark_token_exhausted(state, "tok-abc")
-    assert state["exhausted"].count(budget.token_fingerprint("tok-abc")) == 1
+    state = {"month_start": "2026-07-01", "exhausted": {}}
+    budget.mark_token_exhausted(state, "tok-abc", "2026-07-15")
+    budget.mark_token_exhausted(state, "tok-abc", "2026-07-15")
+    assert len(state["exhausted"]) == 1
+    assert state["exhausted"][budget.token_fingerprint("tok-abc")] == "2026-07-15"
 
 
 def test_apify_tokens_state_never_stores_the_raw_token(tmp_path):
     state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
-    budget.mark_token_exhausted(state, "super-secret-apify-token-value")
+    budget.mark_token_exhausted(state, "super-secret-apify-token-value", "2026-07-15")
     budget.save_apify_tokens_state(tmp_path, state)
 
     raw_file_contents = (tmp_path / budget.APIFY_TOKENS_FILENAME).read_text()
     assert "super-secret-apify-token-value" not in raw_file_contents
 
 
-def test_save_and_reload_apify_tokens_state_roundtrips(tmp_path):
+def test_save_and_reload_apify_tokens_state_roundtrips_same_day(tmp_path):
     state = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
-    budget.mark_token_exhausted(state, "tok-abc")
+    budget.mark_token_exhausted(state, "tok-abc", "2026-07-15")
     budget.save_apify_tokens_state(tmp_path, state)
 
-    reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-20")
-    assert budget.is_token_exhausted(reloaded, "tok-abc") is True
+    reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    assert budget.is_token_exhausted(reloaded, "tok-abc", "2026-07-15") is True
+
+
+def test_load_apify_tokens_state_migrates_old_list_format(tmp_path):
+    """Pre-2026-07-12 on-disk state stored `exhausted` as a bare list of
+    fingerprints (no date). Loading it must not crash, and every migrated
+    entry should get a fresh live retry (never today's date) rather than
+    being silently treated as still-exhausted with no re-verification."""
+    fp = budget.token_fingerprint("tok-abc")
+    budget.save_apify_tokens_state(tmp_path, {"month_start": "2026-07-01", "exhausted": [fp]})
+
+    reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-15")
+    assert isinstance(reloaded["exhausted"], dict)
+    assert budget.is_token_exhausted(reloaded, "tok-abc", "2026-07-15") is False
 
 
 def test_apify_tokens_state_rolls_over_into_a_new_month(tmp_path):
     budget.save_apify_tokens_state(
         tmp_path,
-        {"month_start": "2026-06-01", "exhausted": [budget.token_fingerprint("tok-abc")]},
+        {"month_start": "2026-06-01", "exhausted": {budget.token_fingerprint("tok-abc"): "2026-06-15"}},
     )
     reloaded = budget.load_apify_tokens_state(tmp_path, "2026-07-01")
-    assert reloaded["exhausted"] == []
-    assert budget.is_token_exhausted(reloaded, "tok-abc") is False
+    assert reloaded["exhausted"] == {}
+    assert budget.is_token_exhausted(reloaded, "tok-abc", "2026-07-01") is False

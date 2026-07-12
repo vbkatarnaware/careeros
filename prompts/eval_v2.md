@@ -16,6 +16,14 @@ dimensions; weights unchanged from v1.
 
 # Final Evaluation — Career Ops rubric, JSON output only
 
+This is a REASONING stage — every score must come from actually reading the
+job and the profile, per `AGENT_GUIDE.md`'s "Reasoning stages must be
+reasoned, never scripted." Never write a script (keyword-matching, a fixed
+formula, or otherwise) to produce rubric values, even for a large batch —
+split across sub-agents instead if needed. The only arithmetic allowed here
+is the rubric's own weighted-average formula, applied to values you actually
+reasoned about.
+
 Evaluate each job against the candidate profile using the rubric below.
 Write ONE JSON file per job (`<job-id>.json`), matching
 `schemas/eval.schema.json` exactly. **No markdown report, no prose outside
@@ -23,6 +31,35 @@ the JSON fields.** This is CareerOS's deliberate departure from Career
 Ops-style long-form evaluation reports: the JSON itself is the entire
 output, and the Level-1 daily report is later rendered from it with zero
 additional AI cost.
+
+## The scoring contract: green means apply-able
+
+`score` is not an abstract fit-quality number — it is **applyability**.
+`score >= threshold` ("green") must mean the job **satisfies every hard
+criterion AND matches the candidate's stated preferences** (remote per
+`work_mode_priority`, or onsite in an `location.onsite_ok` city), on top of
+being a good profile fit. The *spread within green* (e.g. 4.1 vs 4.7) comes
+only from how good the fit is — stronger domain/role/skills match scores
+higher, an adjacent-but-real match scores lower, but both stay green because
+nothing disqualifying is present.
+
+A job that is a **strong profile fit but violates a preference or hits a
+deal-breaker** (onsite outside `onsite_ok` with no remote path, a JD-stated
+visa/citizenship bar the candidate can't meet, a salary band below
+`comp.floor_lpa` in JD prose) must never show green. Set
+`recommendation: "skip"` and explain why in `fit_paragraph` — this is what
+routes it to Consider (a visible near-miss) instead of Apply.
+
+**Score every one of the 5 rubric dimensions honestly** — including
+`logistics` — even when you already know the job will be `"skip"`. **Never
+zero a dimension, or otherwise fudge a dimension's value, to force the score
+down.** The rubric must stay legible: a reader should be able to see *why*
+the fit was strong even on a job you're skipping. The mechanism that keeps
+green honest is NOT a hand-tuned dimension — it's `recommendation`, which
+`careeros evaluate --finalize` uses as a deterministic backstop: any eval
+with `recommendation: "skip"` has its stored `score` capped below `threshold`
+automatically, even if your honest weighted average would have cleared it.
+So score honestly; the finalize step guarantees green never lies.
 
 ## Jobs reaching you already passed hard constraints
 
@@ -50,7 +87,7 @@ rounded to 1 decimal.
 | `seniority_fit` | 0.20 | A growth-fit measure, not a rigid level-match. Respect `deal_breakers.min_years_ok` — a JD at or below that bar is a straightforward match, not a downlevel to penalize. Follow `ranking_notes` for how to treat a step-down or step-up in level (e.g. many profiles want NO artificial boost for a junior-titled role just because it's junior — score a step-down as moderate unless the opportunity is genuinely exceptional, and an over-senior JD as a real, honestly-scored gap). |
 | `skills_match` | 0.25 | Hard requirements the candidate demonstrably has, per `profile.yaml`'s `experience[].bullets` and `skills[]` — never credit a skill that isn't in the profile just because the JD wants it. If `ranking_notes` calls out a specific background (e.g. AI/LLM/automation experience) that should boost fit when genuinely relevant to this JD, apply that boost only when the JD's actual substance calls for it, not just a keyword match (e.g. an "AI"-titled role that's actually a different discipline entirely does not earn the boost). |
 | `domain` | 0.15 | Relevance of the candidate's actual industry/domain background to this JD's domain. |
-| `logistics` | 0.10 | Since the hard location/salary constraints already passed, this dimension is a RANKING signal among constraint-passing jobs: use `profile.yaml`'s `work_mode_priority` (ordered, tier 1 = highest) to rank remote-vs-onsite variants, and `comp.preferred_lpa` as a positive signal when comp is known and at/above it. This is not a pass/fail check anymore — score honestly on preference-fit. |
+| `logistics` | 0.10 | Since the hard location/salary constraints already passed, this dimension is a RANKING signal among constraint-passing jobs: use `profile.yaml`'s `work_mode_priority` (ordered, tier 1 = highest) to rank remote-vs-onsite variants, and `comp.preferred_lpa` as a positive signal when comp is known and at/above it. This is not a pass/fail check anymore — score honestly on preference-fit. **Never 0.0 (or any other value chosen to force the total down) as a stand-in for a deal-breaker** — that belongs in `recommendation`, per the scoring contract above. Anchor scale (adapt tier labels to this candidate's actual `work_mode_priority`/`location`/`comp`): top-priority remote tier ~5.0 · next remote/onsite tier ~4.0-4.5 · a lower-priority onsite tier ~3.5 · remote in a country needing visa sponsorship ~2.0-2.5 · onsite outside `onsite_ok` ~1.0 · an explicit no-sponsorship/no-relocation statement ~0.5. |
 
 ## Grounding rule (non-negotiable)
 
@@ -95,11 +132,12 @@ Field-specific notes:
   further AI call — write them as the actual Level-1 report content, not as
   throwaway filler. `fit_paragraph` also becomes the cover letter's spine, so
   make it something worth reusing verbatim.
-- `recommendation`: `"apply"` if `score >= 4.0` (the default threshold; the
-  candidate's actual configured threshold may differ — check
-  `.careeros/config.yaml`) AND no deal-breaker was found per the rule above;
-  else `"skip"`. Confidence reflects your certainty in the *evaluation*, not
-  a hedge on the recommendation.
+- `recommendation`: `"apply"` if the honest weighted `score >= 4.0` (the
+  default threshold; the candidate's actual configured threshold may differ —
+  check `.careeros/config.yaml`) AND the job matches the candidate's stated
+  location/work-mode preference AND no JD deal-breaker was found per the rule
+  above; else `"skip"`. Confidence reflects your certainty in the
+  *evaluation*, not a hedge on the recommendation.
 
 Once every job's file is written, run:
 

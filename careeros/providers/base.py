@@ -65,6 +65,12 @@ class ProviderResult:
     errors: list[str] = field(default_factory=list)
     skipped: bool = False
     skip_reason: str | None = None
+    live_quota: dict[str, Any] | None = None
+    """Provider-reported remaining quota from the LIVE API response itself
+    (e.g. Fantastic Jobs' x-ratelimit-* headers), when the provider surfaces
+    one. None for providers that don't report live quota. This is the real
+    signal `doctor`/the discovery summary should show — never a locally
+    calculated estimate — see AGENT_GUIDE.md on verifying live sources."""
 
     @classmethod
     def skip(cls, provider: str, reason: str) -> "ProviderResult":

@@ -38,6 +38,31 @@ should compute, and don't let a deterministic stage silently stand in for
 a reasoning step (e.g. don't fabricate eval scores instead of actually
 reading the job and profile).
 
+### Reasoning stages must be reasoned, never scripted
+
+This has happened in practice — under batch-size or time pressure, an
+agent wrote a Python script that pattern-matched job titles/keywords to
+produce Gate keep/drop calls and Evaluate scores, instead of actually
+reading each job. The output looked plausible (right shape, plausible
+numbers) but wasn't real judgment, and it silently degraded the results a
+candidate relies on.
+
+> Gate, Evaluation, Resume, Cover Letter, and Application-Answer output
+> must come from actually reading each job (and the profile) and reasoning
+> about it — every single time, no exceptions for batch size. You must
+> NEVER write or run a script — Python, keyword-matching, a fixed
+> formula, anything — that assigns a keep/drop call or a rubric score as a
+> stand-in for reading the job. If a batch is large, split it across
+> sub-agents that each genuinely reason over their own slice; don't
+> collapse the judgment into code. The only arithmetic allowed in these
+> stages is deterministic math a prompt explicitly specifies over
+> already-reasoned values (e.g. the eval rubric's weighted-average
+> formula, or `evaluate --finalize`'s score clamp) — never a substitute
+> for the reasoning itself.
+
+This is the same boundary as above, stated as a rule for the moment it's
+most tempting to cross it.
+
 ## Pipeline stages
 
 Run via the `daily` skill (`skills/daily.md`) — read that file for the
@@ -106,10 +131,14 @@ tool-permission gate, so it is not bypassed by permission settings.
 
 `careeros doctor` is a fast, read-only sanity check (Python version,
 profile, discovery credentials, Sheets/Drive config, per-provider
-last-run health, Apify token pool status) — it makes no network calls
-and modifies nothing. Run it before `careeros daily` so configuration
+last-run health, Apify token pool status) — by default it makes no network
+calls and modifies nothing. Run it before `careeros daily` so configuration
 problems surface up front instead of mid-run. See `skills/daily.md`'s
-Step 0.
+Step 0. Pass `--live` to opt into actually verifying Fantastic Jobs and
+every configured Apify token against their real APIs (a small, bounded
+amount of real quota) instead of trusting local/stored state alone — use
+this whenever local state and reality might have diverged (e.g. right after
+rotating a key), never as the default.
 
 ## Testing
 

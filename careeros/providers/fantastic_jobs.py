@@ -183,7 +183,7 @@ def _endpoint_limits(effective_cfg: dict[str, Any], endpoints: tuple[str, ...], 
 
 def _fetch_one_endpoint(
     base_url: str, headers: dict[str, str], endpoint: str, params: dict[str, Any],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, str] | None]:
     """Every failure mode is classified into a plain-English cause + next
     action (P2.9) — never a generic "request failed"/"HTTP 500" dead end.
     Weekly RECORD quota exhaustion is caught earlier, pre-call, by
@@ -252,7 +252,21 @@ def _fetch_one_endpoint(
     items = resp.json()
     if not isinstance(items, list):
         raise ProviderError(f"fantastic-jobs ({endpoint}): unexpected response shape (expected a JSON array)")
-    return items
+
+    # Read the LIVE quota headers on the success path too, not just 429 —
+    # this is the real, provider-verified remaining quota (never a locally
+    # calculated guess), surfaced via ProviderResult so `doctor`/the
+    # discovery summary can show it instead of only the local weekly
+    # counter (see AGENT_GUIDE.md: verify against the live source).
+    live_quota = None
+    remaining_requests = resp.headers.get("x-ratelimit-requests-remaining")
+    remaining_jobs = resp.headers.get("x-ratelimit-jobs-remaining")
+    if remaining_requests is not None or remaining_jobs is not None:
+        live_quota = {
+            "requests_remaining": remaining_requests,
+            "jobs_remaining": remaining_jobs,
+        }
+    return items, live_quota
 
 
 class FantasticJobsProvider:
@@ -307,13 +321,18 @@ class FantasticJobsProvider:
         endpoints = _BOTH_ENDPOINTS if endpoint == "both" else (endpoint,)
         ep_limits = _endpoint_limits(effective_cfg, endpoints, limit)
         items: list[dict[str, Any]] = []
+        live_quota: dict[str, str] | None = None
         for ep in endpoints:
             ep_params = _build_params(effective_cfg, limit=ep_limits[ep], search=search)
-            items.extend(_fetch_one_endpoint(base_url, headers, ep, ep_params))
+            ep_items, ep_live_quota = _fetch_one_endpoint(base_url, headers, ep, ep_params)
+            items.extend(ep_items)
+            if ep_live_quota is not None:
+                live_quota = ep_live_quota  # last endpoint's reading wins (freshest)
         return ProviderResult(
             provider=self.id, items=items, cost_usd=0.0,
             requests=len(endpoints), records=len(items),
             seconds=_time.time() - start,
+            live_quota=live_quota,
         )
 
     def to_job_dict(self, raw: dict[str, Any]) -> dict[str, Any] | None:

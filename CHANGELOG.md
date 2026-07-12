@@ -4,6 +4,57 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-07-12
+
+### Added
+
+- **`careeros doctor --live`.** Opt-in flag that actually verifies
+  Fantastic Jobs and every configured Apify token against their real APIs
+  right now (a small, bounded amount of real quota: one 1-record fetch,
+  plus a free account-usage check per Apify token, no actor run) instead of
+  only reporting local/stored state — catches a bad or exhausted key before
+  your first `daily` run, not mid-`discover`.
+- **Live provider-quota surfacing.** The discovery summary table now shows
+  each provider's real, provider-reported remaining quota (e.g. Fantastic
+  Jobs' `x-ratelimit-*` headers) when available, next to its record count
+  and timing.
+
+### Fixed
+
+- **Score/recommendation could disagree.** `evaluate`'s `score` is meant to
+  mean *applyability* — a green (≥ threshold) score should always mean the
+  candidate can actually apply — but a job with a real deal-breaker (an
+  onsite location outside your accepted cities, a stated preference
+  violation) could still show a high score alongside
+  `recommendation: "skip"`. `careeros evaluate --finalize` now
+  deterministically caps a skip-recommendation eval's stored score below
+  threshold, so the two signals can never disagree, regardless of which
+  agent/model produced the evaluation. The 5 rubric dimensions themselves
+  stay honest and untouched — only the final score is clamped — so the
+  "why" behind a skip is still legible. `prompts/eval_v2.md` documents the
+  contract explicitly, including an anchor scale for scoring `logistics`
+  honestly as a preference-ranking signal rather than a pass/fail gate.
+- **Fantastic Jobs' weekly quota counter was locally calculated, not
+  live-verified.** The local `.careeros/discovery_budget.json` weekly
+  record counter is independent of which API key is configured, so
+  rotating in a fresh key did nothing to clear a "quota exhausted" state.
+  The counter is now advisory-only; the live API call (and its
+  `x-ratelimit-*` response headers) is authoritative, so a fresh key works
+  immediately.
+- **An exhausted Apify token stayed "exhausted" for the rest of the billing
+  cycle**, even after a mid-month top-up on the same token, with zero
+  re-verification. A token now only pre-emptively skips on the *same day*
+  it was marked exhausted — any other day gets one fresh live retry before
+  being trusted as exhausted again. Old on-disk state (the pre-1.3.1
+  bare-list format) migrates automatically.
+- **AI reasoning stages could be silently replaced by scripts.** A new
+  standing rule in `AGENT_GUIDE.md` ("Reasoning stages must be reasoned,
+  never scripted"), referenced from `prompts/gate_v1.md`,
+  `prompts/eval_v2.md`, and `skills/daily.md`'s Gate/Evaluate steps, makes
+  explicit that Gate/Evaluate/Resume/Cover/Application-Answer output must
+  always come from real per-job reasoning — never a keyword-matching or
+  formulaic script standing in for it, even under batch-size pressure.
+
 ## [1.3.0] - 2026-07-11
 
 ### Added

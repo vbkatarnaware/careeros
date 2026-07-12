@@ -118,6 +118,14 @@ def _discovery_kpi_block(
                 status = f"skipped: {p.get('skip_reason') or 'unknown reason'}"
             else:
                 status = "ran"
+                # LIVE quota reported by the provider's own API on this run
+                # (e.g. Fantastic Jobs' x-ratelimit-* headers), never a
+                # locally calculated estimate — see AGENT_GUIDE.md.
+                live_quota = p.get("live_quota")
+                if live_quota:
+                    jobs_left = live_quota.get("jobs_remaining")
+                    if jobs_left is not None:
+                        status += f" ({jobs_left} jobs left, live)"
             lines.append(
                 f"| {p['provider']} | {p.get('records', 0)} | {p.get('requests', 0)} | "
                 f"${p.get('cost_usd', 0.0):.4f} | {p.get('seconds', 0.0):.1f}s | {status} |"

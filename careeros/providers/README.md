@@ -123,9 +123,12 @@ budget/consent failure is **silent** (no per-token "failed, trying next…"
 noise) — it's expected, recoverable behavior when you've deliberately
 configured more than one key, not something worth alarming you about. A
 token that fails is cached by a short, non-reversible fingerprint (never the
-raw key) in `.careeros/apify_tokens.json` for the rest of that billing
-cycle, so it's skipped outright on later calls instead of being re-tried and
-re-earning the same rejection. If every configured token is exhausted, the
+raw key) in `.careeros/apify_tokens.json` — but only for the SAME day it
+failed, so it's skipped outright on later calls *that day* instead of being
+re-tried and re-earning the same rejection. Any other day (including a
+same-token top-up mid-month), it gets one fresh live retry before being
+trusted as exhausted again — never a silent skip for the rest of the
+billing cycle from a single earlier failure. If every configured token is exhausted, the
 whole provider call raises a single clear error naming the fix path (add a
 fresh key to `APIFY_TOKENS`, raise your Apify plan's limit, or wait for
 reset) — recommended for anyone running CareerOS regularly: either a paid

@@ -109,6 +109,10 @@ Report the eligible/rejected split.
 
 ## Step 5 — AI Gate (cheap reasoning)
 
+Per `AGENT_GUIDE.md`'s "Reasoning stages must be reasoned, never scripted":
+every keep/drop call in this step must come from actually reading the job,
+regardless of batch size — never a script.
+
 ```
 careeros gate --prepare --date {today}
 ```
@@ -125,6 +129,13 @@ If finalize reports validation errors, fix only the listed items and
 re-run `--finalize` — do not regenerate the whole batch.
 
 ## Step 6 — Final Evaluation (the real reasoning step)
+
+Per `AGENT_GUIDE.md`'s "Reasoning stages must be reasoned, never scripted"
+and its scoring contract: score every rubric dimension honestly (including
+`logistics` — never zero it, or otherwise fudge it, to force a deal-breaker
+through). `evaluate --finalize` enforces the "green means apply-able"
+guarantee deterministically, so you never need to hand-tune a dimension to
+make a skip-recommendation job score low.
 
 ```
 careeros evaluate --prepare --date {today}

@@ -114,7 +114,12 @@ def run_actor(
     last_error: Exception | None = None
     tried_any = False
     for token in tokens:
-        if tokens_state is not None and budget.is_token_exhausted(tokens_state, token):
+        # `is_token_exhausted` only skips a token pre-emptively if it was
+        # ALREADY verified-dead earlier THIS SAME day — any other day
+        # (including a same-token top-up mid-month) gets one fresh live
+        # retry below before being trusted as exhausted again. See
+        # budget.is_token_exhausted's docstring / AGENT_GUIDE.md.
+        if tokens_state is not None and budget.is_token_exhausted(tokens_state, token, today_iso):
             continue
         tried_any = True
         client = ApifyClient(token)
@@ -132,7 +137,7 @@ def run_actor(
             # surfacing to the user.
             last_error = e
             if tokens_state is not None:
-                budget.mark_token_exhausted(tokens_state, token)
+                budget.mark_token_exhausted(tokens_state, token, today_iso)
                 budget.save_apify_tokens_state(careeros_dir, tokens_state)
             continue
 
@@ -143,6 +148,14 @@ def run_actor(
         if not dataset_id:
             raise ProviderError(f"{provider_id}: actor run returned no dataset id")
         items = list(client.dataset(dataset_id).iterate_items())
+        if tokens_state is not None:
+            # A live success clears any older exhausted-mark for this token
+            # (e.g. a mid-month top-up) — keeps doctor's token-health display
+            # accurate instead of showing a stale "exhausted" from days ago
+            # that `is_token_exhausted` would no longer even honor.
+            fp = budget.token_fingerprint(token)
+            if tokens_state.get("exhausted", {}).pop(fp, None) is not None:
+                budget.save_apify_tokens_state(careeros_dir, tokens_state)
         return ProviderResult(
             provider=provider_id, items=items, cost_usd=_extract_usage_usd(run),
             requests=1, records=len(items), seconds=time.time() - start,

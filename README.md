@@ -126,7 +126,12 @@ auto-load a per-tool file.
    fell short — with **no** AI artifacts and no Drive, so near-misses stay
    visible at zero extra AI cost. Below 3.5 is omitted from the Sheet. A hard
    constraint failure (location/salary deal-breaker) is always omitted, never
-   shown as Consider.
+   shown as Consider. The score and recommendation can never disagree: `score`
+   means applyability, not just fit quality, so a job blocked by a
+   deal-breaker or a stated preference (e.g. onsite outside your accepted
+   cities) never shows as a green Apply-tier score — `evaluate --finalize`
+   deterministically caps the score below threshold whenever the
+   recommendation is "skip", even if the raw fit alone would have cleared it.
 8. **Artifacts** — resume + cover letter (selected from `profile.yaml`,
    never invented, cache-checked) + a daily report (rendered from the eval
    JSON, zero AI).
@@ -182,7 +187,7 @@ not a separate command you need to remember (see Commands below).
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
 | `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call). Never modifies anything |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything. Add `--live` to actually verify Fantastic Jobs + every configured Apify token against their real APIs right now, instead of trusting local/stored state alone |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
 | `careeros apply <job-id>` | Detect ATS, draft application answers for one job (any score) using your own real browser or pasted questions |
@@ -302,7 +307,13 @@ Then:
    Fantastic Jobs outage, transient rate-limiting, or your request/record
    quota being exhausted are each reported with a distinct, plain-English
    next action instead of a generic error; `doctor` also shows the last
-   failure from local state, with no extra API call.
+   failure from local state, with no extra API call. Want to catch a bad or
+   exhausted key *before* your first `daily` run instead of finding out
+   mid-`discover`? Run `careeros doctor --live` — it actually pings
+   Fantastic Jobs and every configured Apify token right now (a small,
+   bounded amount of real quota: one 1-record fetch, plus a free
+   account-usage check per Apify token, no actor run) and reports their real
+   status instead of only local state.
 5. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Example run
@@ -559,6 +570,12 @@ in `templates/`); replace it with your own facts — via `/careeros start`
 Adding a provider is one file — see `careeros/providers/README.md`. The
 pipeline never imports a provider directly, so new sources never touch
 `pipeline/`, `cli.py`, or any stage.
+
+Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) before touching pipeline code or AI
+prompts — it's the canonical source for the rules that actually govern this
+codebase: the deterministic/reasoning boundary, and that Gate/Evaluate/
+Resume/Cover/Application-Answer output must always come from real
+per-job reasoning, never a script standing in for it.
 
 ### Testing
 

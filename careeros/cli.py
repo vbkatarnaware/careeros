@@ -516,18 +516,93 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
     return results
 
 
+def _run_doctor_live_checks(cfg: Config) -> list[tuple[str, str, str]]:
+    """LIVE checks — actually reach each enabled external source and report
+    what it says right now, instead of a locally stored/calculated guess.
+    This is the answer to "the API is running or not" being verified every
+    day, per AGENT_GUIDE.md — `_run_doctor_checks` above stays network-free
+    (so plain `doctor` never spends quota just by being run); this function
+    is opt-in via `--live` and spends a small, bounded amount of real quota
+    (one 1-record Fantastic Jobs fetch; one free, non-actor-run Apify
+    account-usage call per configured token) specifically to verify."""
+    import os
+
+    results: list[tuple[str, str, str]] = []
+    active = enabled_providers(cfg)
+
+    if "fantastic-jobs" in active:
+        try:
+            provider = get_provider("fantastic-jobs")
+            result = provider.fetch(cfg, limit=1, search="", query=None)
+            if result.live_quota:
+                rq = result.live_quota.get("requests_remaining")
+                rj = result.live_quota.get("jobs_remaining")
+                results.append(_check_result(
+                    _CheckStatus.PASS, "Fantastic Jobs (LIVE)",
+                    f"reachable — requests_remaining={rq or 'n/a'}, jobs_remaining={rj or 'n/a'}"
+                ))
+            else:
+                results.append(_check_result(
+                    _CheckStatus.PASS, "Fantastic Jobs (LIVE)",
+                    "reachable — no rate-limit headers returned on this response"
+                ))
+        except ProviderError as e:
+            results.append(_check_result(_CheckStatus.FAIL, "Fantastic Jobs (LIVE)", str(e)))
+
+    if any(budget.guard_for(provider_config_block(cfg, name)) == "monthly" for name in active):
+        tokens = iter_tokens(cfg.apify)
+        if not tokens:
+            results.append(_check_result(_CheckStatus.WARN, "Apify tokens (LIVE)", "no tokens configured"))
+        else:
+            from apify_client import ApifyClient
+            from apify_client.errors import ApifyApiError
+
+            for i, token in enumerate(tokens, start=1):
+                fp = budget.token_fingerprint(token)
+                try:
+                    usage = ApifyClient(token).user().monthly_usage()
+                    spent = usage.total_usage_credits_usd_after_volume_discount
+                    results.append(_check_result(
+                        _CheckStatus.PASS, f"Apify token {i}/{len(tokens)} (LIVE, {fp})",
+                        f"reachable — ${spent:.4f} used this billing cycle (live, not the local estimate)"
+                    ))
+                except ApifyApiError as e:
+                    results.append(_check_result(
+                        _CheckStatus.FAIL, f"Apify token {i}/{len(tokens)} (LIVE, {fp})",
+                        f"rejected/exhausted — {e}"
+                    ))
+
+    return results
+
+
 @app.command()
-def doctor():
+def doctor(
+    live: bool = typer.Option(
+        False, "--live",
+        help="Also verify each enabled provider against its LIVE API (spends a small, "
+             "bounded amount of real quota) instead of only local/stored state.",
+    ),
+):
     """First-run checklist: Python version, profile, discovery credentials,
     Sheets, and (if enabled) Drive. Checks only — never modifies anything.
     Exits non-zero if any check FAILs, so it's safe to gate a first `daily`
-    run on `careeros doctor && careeros daily`-style scripting."""
+    run on `careeros doctor && careeros daily`-style scripting. Pass --live
+    to also verify each provider against its real API right now, rather
+    than trusting local/stored state alone (see AGENT_GUIDE.md)."""
     cfg = _config()
     results = _run_doctor_checks(cfg)
 
     icon = {_CheckStatus.PASS: "✓", _CheckStatus.WARN: "!", _CheckStatus.FAIL: "✗"}
     for status, label, detail in results:
         typer.echo(f"[{icon[status]}] {label:32} {detail}")
+
+    if live:
+        typer.echo("")
+        typer.echo("Live checks (verifying against real APIs, not stored state):")
+        live_results = _run_doctor_live_checks(cfg)
+        for status, label, detail in live_results:
+            typer.echo(f"[{icon[status]}] {label:32} {detail}")
+        results = results + live_results
 
     fails = [r for r in results if r[0] == _CheckStatus.FAIL]
     typer.echo("")
@@ -605,14 +680,26 @@ def _preflight_provider(
         http_requests = len(queries) * num_endpoints
         for line in rec.lines():
             typer.echo(f"[discover] {name}: {line}")
+        # LIVE quota is authoritative, never the local counter alone (a real
+        # incident: a rotated-in fresh API key still got reported "exhausted"
+        # because the local .careeros/discovery_budget.json counter is a
+        # Monday-reset calculation entirely independent of WHICH key is
+        # configured). `check_before_run` still runs here so its message is
+        # printed as an early-warning estimate, but its verdict no longer
+        # hard-skips the run — the fetch phase's real HTTP call is what
+        # verifies quota against the live API (see `_fetch_one_endpoint`'s
+        # 429/x-ratelimit-* handling), and a genuinely exhausted key is
+        # skipped there, from the live response, not a local guess.
         quota = budget.weekly_quota(provider_cfg)
         weekly_state = budget.load_state(cfg.careeros_dir, date)
         ok, msg = budget.check_before_run(weekly_state, quota)
         if msg:
             typer.echo(f"[discover] {name}: {msg}")
-        if not ok and not ignore_budget:
-            typer.echo(f"[discover] {name}: skipped to protect your weekly quota. Re-run with --ignore-budget to override.")
-            return ProviderResult.skip(name, "weekly record quota exhausted")
+        if not ok:
+            typer.echo(
+                f"[discover] {name}: local estimate says quota may be exhausted — "
+                "verifying against the live API instead of skipping on that estimate alone."
+            )
 
         return _ProviderPlan(
             name=name, capability="weekly", queries=queries,
@@ -882,6 +969,7 @@ def discover(
                     "cost_usd": r.cost_usd, "requests": r.requests, "records": r.records,
                     "seconds": round(r.seconds, 2), "warnings": r.warnings, "errors": r.errors,
                     "skipped": r.skipped, "skip_reason": r.skip_reason,
+                    "live_quota": r.live_quota,
                 }
                 for r in results
             },
@@ -1242,6 +1330,7 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
             expected_ids = {e["job"]["id"] for e in json.load(f)}
 
     all_records = []
+    record_paths: dict[int, Path] = {}
     missing = []
     for job_id in expected_ids:
         out_path = stage_dir / f"{job_id}.json"
@@ -1250,6 +1339,7 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
             continue
         with open(out_path) as f:
             all_records.append(json.load(f))
+        record_paths[len(all_records) - 1] = out_path
 
     # Also fold in cache-hit files already written during --prepare, so the
     # finalize summary reflects the FULL evaluated set for this run, not just
@@ -1261,6 +1351,7 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
         if job_id not in expected_ids:
             with open(path) as f:
                 all_records.append(json.load(f))
+            record_paths[len(all_records) - 1] = path
 
     if missing:
         typer.echo(f"[evaluate:finalize] Missing output for: {', '.join(missing)}", err=True)
@@ -1271,6 +1362,31 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
     if errors:
         typer.echo("[evaluate:finalize] Schema validation FAILED:\n" + "\n".join(errors), err=True)
         raise typer.Exit(1)
+
+    # Deterministic scoring-contract clamp (AGENT_GUIDE.md: "green means
+    # apply-able"). A "skip" recommendation (deal-breaker or a stated
+    # preference violation) must never leave an apply-tier score sitting on
+    # disk — the agent scores the 5 rubric dimensions honestly, but the
+    # dimensions alone (logistics is only 10% weight) can't reliably pull an
+    # otherwise-strong fit below threshold. This backstop guarantees
+    # score/recommendation never disagree, regardless of which agent/model
+    # wrote the eval, without asking anyone to fudge a rubric dimension.
+    clamp_ceiling = round(cfg.threshold - 0.1, 1)
+    clamped = 0
+    for idx, record in enumerate(all_records):
+        if record.get("recommendation") == "skip" and record.get("score", 0) >= cfg.threshold:
+            record["score"] = min(record["score"], clamp_ceiling)
+            clamped += 1
+            path = record_paths.get(idx)
+            if path is not None:
+                with open(path, "w") as f:
+                    json.dump(record, f, indent=2, sort_keys=True)
+    if clamped:
+        typer.echo(
+            f"[evaluate:finalize] Clamped {clamped} skip-recommendation eval(s) "
+            f"to score <= {clamp_ceiling} (a deal-breaker/preference violation "
+            f"must never leave an apply-tier score)."
+        )
 
     profile = _load_profile(cfg)
     prompt_version = cfg.prompts.get("eval", "v1")
@@ -1867,6 +1983,11 @@ def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
             "seconds": meta_by_provider.get(name, {}).get("seconds", 0.0),
             "skipped": meta_by_provider.get(name, {}).get("skipped", False),
             "skip_reason": meta_by_provider.get(name, {}).get("skip_reason"),
+            # LIVE quota as reported by the provider's own API response on
+            # this run (e.g. Fantastic Jobs' x-ratelimit-* headers) — never
+            # a locally calculated estimate. None for providers that don't
+            # report one. See AGENT_GUIDE.md / ProviderResult.live_quota.
+            "live_quota": meta_by_provider.get(name, {}).get("live_quota"),
         }
         for name in provider_names
     ]
