@@ -236,15 +236,27 @@ def _delete_stale_markdown_variant(
     `[pdf]` extra was installed, or from before this fix). `_find_file_by_name`
     matches by exact filename including extension, so a new `.pdf` upload
     does NOT find/replace an old `.md` — without this cleanup, the stale
-    `.md` sits orphaned in the flat Drive folder next to the new `.pdf`."""
-    stale_name = f"{prefix} - {label}.md"
-    existing = _find_file_by_name(service, stale_name, parent_id)
-    if (
-        existing
-        and existing["id"] != keep_file_id
-        and existing.get("appProperties", {}).get(_JOB_ID_PROPERTY) == job_id
-    ):
-        service.files().delete(fileId=existing["id"]).execute()
+    `.md` sits orphaned in the flat Drive folder next to the new `.pdf`.
+
+    Uses a `name contains` query (not an exact match) and filters results by
+    `appProperties.careeros_job_id`, NOT by exact filename — a genuine name
+    collision between two DIFFERENT jobs (same Company/Role string) gets its
+    `.md` disambiguated with a numeric suffix (e.g. "... - Resume (2).md";
+    see `_upload_bytes`), so the stale file to clean up isn't always the
+    unsuffixed base name. Filtering by job_id (never by name alone) is what
+    keeps this safe from deleting a different job's file that merely shares
+    the same Company/Role prefix."""
+    safe_needle = f"{prefix} - {label}".replace("'", "\\'")
+    query = f"name contains '{safe_needle}' and '{parent_id}' in parents and trashed = false"
+    results = service.files().list(q=query, fields="files(id, name, appProperties)").execute()
+    for f in results.get("files", []):
+        if f["id"] == keep_file_id:
+            continue
+        if not f.get("name", "").endswith(".md"):
+            continue
+        if f.get("appProperties", {}).get(_JOB_ID_PROPERTY) != job_id:
+            continue
+        service.files().delete(fileId=f["id"]).execute()
 
 
 def _upload_text_file(service, media_upload_cls, name: str, content: str, parent_id: str) -> None:

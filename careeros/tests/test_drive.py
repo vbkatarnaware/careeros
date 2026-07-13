@@ -50,13 +50,19 @@ class _FakeDriveService:
         return self
 
     def list(self, q, fields="files(id, name)"):
-        # Parse the two query shapes this module builds: name+parent(+mimeType).
-        name = q.split("name = '")[1].split("'")[0].replace("\\'", "'")
+        # Parse the query shapes this module builds: name (exact or
+        # "contains") + parent (+ optional mimeType).
+        is_contains = "name contains '" in q
+        needle_key = "name contains '" if is_contains else "name = '"
+        needle = q.split(needle_key)[1].split("'")[0].replace("\\'", "'")
         parent = q.split("'")[-2] if q.count("'") >= 4 else None
         is_folder_query = "mimeType = 'application/vnd.google-apps.folder'" in q
         matches = []
         for fid, rec in self.store.items():
-            if rec["name"] != name:
+            if is_contains:
+                if needle not in rec["name"]:
+                    continue
+            elif rec["name"] != needle:
                 continue
             if parent not in rec["parents"]:
                 continue
@@ -399,6 +405,53 @@ def test_upload_run_pdf_now_available_deletes_stale_markdown_for_same_job(tmp_pa
     assert "Bjak - PM - Resume.md" not in names_after      # stale .md cleaned up
     assert "Bjak - PM - Cover Letter.md" not in names_after
     assert results["job-1"].warnings == []
+
+
+def test_upload_run_pdf_now_available_cleans_up_suffixed_stale_markdown(tmp_path):
+    """Real incident found during v1.3.2's own release verification: TWO
+    DIFFERENT jobs sharing the exact same Company/Role string collide on
+    name -- the second job's .md upload gets disambiguated to "... (2).md"
+    (see _upload_bytes). The stale-.md cleanup must find THAT suffixed
+    variant too (by job_id, not just the unsuffixed base name), and must
+    NEVER touch the first job's own files even though they share a prefix."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    dir_a = _make_artifacts(tmp_path / "a")
+    dir_b = _make_artifacts(tmp_path / "b")
+    job_a = make_job(id="job-a", company="Tata Consultancy Services", title="Product Manager")
+    job_b = make_job(id="job-b", company="Tata Consultancy Services", title="Product Manager")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    # Both jobs upload as .md first (fpdf2 not installed yet) -- job_b's
+    # name collides with job_a's and gets suffixed "(2)".
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=None):
+        upload_run(cfg, "2026-07-08", run_json, summary_md, [(job_a, dir_a), (job_b, dir_b)])
+
+    names_before = {rec["name"] for rec in service.store.values()}
+    assert "Tata Consultancy Services - Product Manager - Resume.md" in names_before
+    assert "Tata Consultancy Services - Product Manager - Resume (2).md" in names_before
+
+    # Now fpdf2 is available -- re-publish both jobs.
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=b"%PDF-fake"):
+        upload_run(cfg, "2026-07-08", run_json, summary_md, [(job_a, dir_a), (job_b, dir_b)])
+
+    names_after = {rec["name"] for rec in service.store.values()}
+    assert "Tata Consultancy Services - Product Manager - Resume.pdf" in names_after
+    assert "Tata Consultancy Services - Product Manager - Resume (2).pdf" in names_after
+    # Both stale .md variants -- base AND suffixed -- must be gone.
+    assert "Tata Consultancy Services - Product Manager - Resume.md" not in names_after
+    assert "Tata Consultancy Services - Product Manager - Resume (2).md" not in names_after
+    assert "Tata Consultancy Services - Product Manager - Cover Letter.md" not in names_after
+    assert "Tata Consultancy Services - Product Manager - Cover Letter (2).md" not in names_after
+    # Each job's .pdf is still tagged to the correct, distinct job_id.
+    by_name = {rec["name"]: rec for rec in service.store.values()}
+    assert by_name["Tata Consultancy Services - Product Manager - Resume.pdf"]["appProperties"]["careeros_job_id"] == "job-a"
+    assert by_name["Tata Consultancy Services - Product Manager - Resume (2).pdf"]["appProperties"]["careeros_job_id"] == "job-b"
 
 
 def test_upload_run_skips_missing_artifact_files_without_failing(tmp_path):
