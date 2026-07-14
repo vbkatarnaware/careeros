@@ -1,6 +1,6 @@
 <!--
 Ported verbatim from the candidate's Career Ops archive (voice-dna.md).
-Imported by resume_v1.md, cover_v1.md, deep_report_v1.md, and apply_v1.md —
+Imported by resume_v2.md, cover_v1.md, deep_report_v1.md, and apply_v1.md —
 this is the shared writing spine for every AI-generated artifact in
 CareerOS. Do not edit content here for a single stage's needs; if one stage
 genuinely needs different tone rules, override them locally in that stage's

@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/careeros/schemas/resume.schema.json",
+  "title": "Resume tailoring (v2)",
+  "description": "Output of the resume content step (prompts/resume_v2.md), written to artifacts/<job-id>/resume.json. This is a TAILORING-ZONES-ONLY payload — canonical facts (candidate name/contact, company, role, dates, location, education, project bullets) are never present here; they come from profile.yaml and are merged in by careeros/typst_render.py, which is structurally incapable of altering them. The LLM may only reword bullet language to mirror a JD's keywords (every metric/entity in the source bullet must survive the reword — enforced deterministically by careeros/lint.py's verify_resume_facts), select/order skills, select which profile.yaml experience companies appear, and select which 2-3 profile.yaml projects appear (never reword project text). No section here may name the target company (transferable-language rule).",
+  "type": "object",
+  "required": ["tagline", "summary", "experience", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "tagline": {
+      "type": "string",
+      "description": "One-line resume tagline. Usually copied as-is from profile.yaml's own `tagline` field; may be lightly reworded to emphasize JD-relevant themes, but must stay generic/transferable — never mentions the target company."
+    },
+    "summary": {
+      "type": "string",
+      "description": "3-4 sentences. Reworded from profile.yaml's summary_variants (pick the closest jd_tags match, then rephrase to mirror the JD's language) while preserving every domain/fact claim. Never mentions the target company."
+    },
+    "companies": {
+      "type": "array",
+      "description": "A JD-relevant selection of which profile.yaml experience companies to include (see prompts/resume_v2.md's company-selection step for the actual rules — e.g. Yarn Bazaar is filler for years-of-experience padding, drop it and Kaagjaat both when a JD explicitly wants post-college-only experience). Each value must exactly match a profile.yaml experience[].company. Every named company must also have a matching entry in `experience` below. Optional: if omitted, the renderer falls back to including every profile.yaml company (legacy/fail-soft behavior).",
+      "items": { "type": "string" }
+    },
+    "experience": {
+      "type": "array",
+      "description": "One entry per company named in `companies` (or, if `companies` is omitted, one per profile.yaml experience company), most recent first. NOT free-form — `company` must exactly match a profile.yaml experience[].company.",
+      "items": {
+        "type": "object",
+        "required": ["company", "bullets"],
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "type": "string",
+            "description": "Must exactly match a profile.yaml experience[].company value."
+          },
+          "bullets": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 4,
+            "description": "Reworded versions of that company's profile.yaml bullets (cap: 3-4, most JD-relevant first). Every number/%/$/headcount in a reworded bullet MUST already appear in one of that company's canonical profile.yaml bullets — verify_resume_facts (careeros/lint.py) enforces this deterministically and rejects any bullet introducing a number the profile never stated. Reword the language freely; never invent a fact, never name the target company."
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "A curated, JD-relevant selection/ordering of profile.yaml's skills, grouped by category. Every item must exist in profile.yaml's skills[].name — never invent a skill the candidate doesn't have just because the JD wants it.",
+      "items": {
+        "type": "object",
+        "required": ["category", "items"],
+        "additionalProperties": false,
+        "properties": {
+          "category": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "A JD-relevant selection of 2-3 profile.yaml projects, most relevant first. Each `name` must exactly match a profile.yaml projects[].name; the renderer looks up that project's canonical bullets/url and renders them verbatim (project bullets are never reworded, same selector-not-writer rule as v1). Optional: if omitted, the renderer falls back to including every profile.yaml project.",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Must exactly match a profile.yaml projects[].name value."
+          }
+        }
+      }
+    }
+  }
+}

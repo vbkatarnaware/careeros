@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/careeros/schemas/profile.schema.json",
   "title": "Profile",
-  "description": "The candidate's facts — the only other source of truth besides Eval. This is a lean port of Career Ops' career.yml graph: 'fit + facts only' for v1 (adaptive-framing tables, negotiation scripts, and exit-narrative prose are deferred). The governing rule this schema exists to enforce: every 'bullets[].text' is verbatim, ready-to-use prose. Nothing downstream (gate, evaluate, resume, cover) may rewrite it — only select, reorder, and reframe around it. If a fact isn't here, it doesn't exist for tailoring purposes.",
+  "description": "The candidate's facts — the only other source of truth besides Eval. This is a lean port of Career Ops' career.yml graph: 'fit + facts only' for v1 (adaptive-framing tables, negotiation scripts, and exit-narrative prose are deferred). The governing rule this schema exists to enforce (v2, resume_v2.md): every 'bullets[].text' is the canonical, fact-bearing source sentence. Downstream resume generation may REWORD a bullet's language per-JD to mirror keywords, but every hard fact in it (each number, percentage, currency amount, company/product name, and technology named in the source) MUST survive into the rewrite verbatim, and no new number/metric may be introduced. If a fact isn't here, it doesn't exist for tailoring purposes. Cover letters and other artifacts still select/reorder/reframe around bullets rather than rewording them.",
   "type": "object",
   "required": ["version", "candidate", "headline", "targets", "experience"],
   "additionalProperties": false,
@@ -28,6 +28,10 @@
     "headline": {
       "type": "string",
       "description": "One-line professional headline. Used as-is in resume rendering and as cheap context for the AI Gate."
+    },
+    "tagline": {
+      "type": "string",
+      "description": "One-line resume tagline rendered centered under the contact line (e.g. 'Product Management | AI Products | B2B SaaS'). Kept generic/transferable by construction — the resume generator must never insert a target employer's name here. Used as-is; not tailored per-JD."
     },
     "targets": {
       "type": "array",

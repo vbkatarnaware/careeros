@@ -11,21 +11,24 @@ per-company or per-job subfolders. An optional per-run date subfolder is
 available via `drive.date_subfolder: true` (default false — flat). Files are
 named `Company - Role - <Artifact>.<ext>`, so every job's files sit directly
 in the same folder, sorted naturally by company. **Only Resume and Cover
-Letter** are ever uploaded as PDF (rendered by careeros/pdf.py) — the `[pdf]`
-extra (`fpdf2`) is folded into the `[drive]` extra (v1.3.2), so a fresh OSS
-clone that installs `[drive]` gets PDF rendering for these two by default; if
-it's still somehow missing (or a render fails for some edge-case markdown),
-this falls back to uploading the `.md` source instead and returns a warning
-string, but never raises for that reason alone. If a job's Resume/Cover was
-previously uploaded as `.md` (before PDF rendering was available) and is now
-re-uploaded as `.pdf`, the stale `.md` is deleted — Drive matches files by
-exact filename including extension, so the new `.pdf` upload wouldn't
-otherwise replace it, just sit alongside it as an orphan. Application
-Answers, Evaluation, and Deep Report are **always** Markdown — PDF is never
-attempted for them. Deep Report is uploaded only if
-`artifacts_dir/deep_report.md` exists locally (it's `prep`-only — `daily`
-never forces its generation); Application Answers only if
-`artifacts_dir/answers.md` exists (written by the `apply` stage — see
+Letter** are ever uploaded as PDF. As of v1.4.0, both are rendered LOCALLY at
+`careeros artifacts --finalize` time (careeros/typst_render.py, a Typst-based
+renderer bundled via the `[resume]` extra, folded into `[drive]`) — this
+module just uploads whatever `resume.pdf`/`cover.pdf` already sits next to
+`resume.json`/`cover.md` in the run's artifacts dir. If that local PDF is
+missing (a not-yet-backfilled pre-v1.4.0 run, or a `typst` install that never
+rendered one), this falls back to rendering at upload time via the legacy
+`careeros/pdf.py` (fpdf2) from the Markdown source, and if even that fails,
+uploads the `.md` source instead with a warning — never raises for that
+reason alone. If a job's Resume/Cover was previously uploaded as `.md`
+(before PDF rendering was available) and is now re-uploaded as `.pdf`, the
+stale `.md` is deleted — Drive matches files by exact filename including
+extension, so the new `.pdf` upload wouldn't otherwise replace it, just sit
+alongside it as an orphan. Application Answers, Evaluation, and Deep Report
+are **always** Markdown — PDF is never attempted for them. Deep Report is
+uploaded only if `artifacts_dir/deep_report.md` exists locally (it's
+`prep`-only — `daily` never forces its generation); Application Answers only
+if `artifacts_dir/answers.md` exists (written by the `apply` stage — see
 `careeros/apply/` — for Apply-tier jobs whose question-form was readable, or
 by an on-demand `careeros apply <job-id>`).
 
@@ -289,12 +292,24 @@ def _upload_job_artifacts(
     cover_link = cover_file_id = ""
     answers_link = answers_file_id = ""
 
-    for label, md_filename in (("Resume", "resume.md"), ("Cover Letter", "cover.md")):
-        src = artifacts_dir / md_filename
-        if not src.exists():
+    for label, base_name in (("Resume", "resume"), ("Cover Letter", "cover")):
+        pdf_src = artifacts_dir / f"{base_name}.pdf"
+        md_src = artifacts_dir / f"{base_name}.md"
+        if pdf_src.exists():
+            # v1.4.0+: `careeros artifacts --finalize` already rendered this
+            # locally (careeros/typst_render.py) — upload the bytes as-is,
+            # no re-render at upload time.
+            pdf_bytes: bytes | None = pdf_src.read_bytes()
+            md_text = md_src.read_text() if md_src.exists() else None
+        elif md_src.exists():
+            # Legacy artifact (pre-v1.4.0, or a resume.json that somehow
+            # never got rendered) — fall back to the old render-at-upload-
+            # time path so nothing is silently skipped.
+            md_text = md_src.read_text()
+            pdf_bytes = render_markdown_to_pdf(md_text)
+        else:
             continue
-        md_text = src.read_text()
-        pdf_bytes = render_markdown_to_pdf(md_text)
+
         if pdf_bytes is not None:
             file_id, link = _upload_bytes(service, media_upload_cls, f"{prefix} - {label}.pdf",
                                           pdf_bytes, "application/pdf", parent_id, job.id)

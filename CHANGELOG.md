@@ -4,6 +4,160 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-07-14
+
+### Added
+
+- **Resume design overhaul.** `careeros/templates/resume.typ` is a full
+  rewrite, adapted from the community `guided-resume-starter-cgc` Typst
+  package (Unlicense): small-caps section headers with full-width rules,
+  a single one-line contact row (real handle text, not generic "LinkedIn"/
+  "GitHub" link labels — some ATS/recruiter tools pattern-match a structured
+  profile URL directly out of the visible text, which a generic label
+  defeats), `role | company` and `date | location` pairs each on one grid
+  row so a long title can never collide with the date column, and
+  paragraph-style Selected Product Initiatives. Font switched to
+  **New Computer Modern** — the same Computer Modern lineage as LaTeX's
+  Latin Modern, bundled inside Typst's own compiler binary, so no font file
+  ships with this package at all (see Removed).
+- **Company selection**, a new tailoring zone parallel to the existing
+  project selection: `resume.json` gained an optional `companies` field (see
+  `schemas/resume.schema.json`, `prompts/resume_v2.md`'s new "Select
+  companies" step) so a JD can show only the companies relevant to it —
+  e.g. dropping an internship when a role wants post-college-only
+  experience — instead of every `profile.yaml` company always appearing.
+  Omitting the field fails-soft to every company, matching prior behavior.
+- **Project taglines.** Each `profile.yaml` project gained a `tagline`
+  field (a short, punchy one-liner grounded in the project's own README —
+  e.g. Rizent AI: "Your AI co-founder for fundraising.") that now renders
+  automatically under the project name on every resume. Canonical fact, not
+  AI-authored: `resume.json` still only selects *which* projects appear.
+- **Page-density auto-fit, rebuilt.** `_FIT_TIERS` (`careeros/typst_render.py`)
+  now scales font size and line leading together across a much finer
+  ladder (11.0pt down to 7.8pt), so the renderer settles on the largest
+  size that still fits one page — filling it edge-to-edge with even,
+  comfortable spacing — instead of jumping straight from "overflows" to
+  "leaves visible blank space."
+
+### Changed
+
+- Cover letter (`careeros/templates/cover.typ`) font switched to New
+  Computer Modern too, matching the resume, per its own long-standing
+  "matches the resume's font/header design" contract.
+
+### Fixed
+
+- **`verify_resume_facts` (`careeros/lint.py`) now catches a typo'd
+  `companies`/`projects[].name` entry.** Neither is checked against
+  `profile.yaml` at schema-validation time (both are just strings), so a
+  misspelled name previously passed every check and then silently vanished
+  from the rendered resume — `build_render_data` filters unmatched names out
+  rather than erroring. Now flagged as a truthfulness violation at
+  `artifacts --finalize` time, same as an invented number or a company-name
+  leak.
+- **Voice-dna lint and fact-verification now run on every `artifacts
+  --finalize`, not just on a cache miss.** Both checks are pure regex
+  (zero-token, microseconds) but were previously gated behind the artifact
+  cache — hand-editing an already-finalized `resume.json`/`cover.md` in place
+  (same job_hash/score/prompt_version, so the same cache key) skipped
+  re-verification while the PDF still re-rendered, so an edit-introduced
+  em-dash or invented metric could ship unchecked. The cache now only tracks
+  "already proven clean once," never gates whether the check runs.
+
+### Removed
+
+- **Bundled font files.** `careeros/assets/fonts/` (Source Sans 3, Source
+  Serif 4, ~3MB) is deleted along with the `font_paths` wiring in
+  `typst_render.py` — both templates now use Typst's own built-in New
+  Computer Modern, so nothing needs to ship in the package at all.
+
+## [1.4.1] - 2026-07-13
+
+### Added
+
+- **Tailored Selected Projects.** `resume.json` (`prompts/resume_v2.md`) now
+  selects 2-3 of `profile.yaml`'s projects per job by JD relevance, the same
+  selector-not-writer rule as v1 (project bullets are never reworded, only
+  which ones appear is tailored). Previously every profile project rendered
+  unconditionally on every resume. `schemas/resume.schema.json` gained an
+  optional `projects` field; omitting it fails-soft to every profile project,
+  matching the old behavior.
+- **A third project, MoatDaily**, added to `profile.yaml` — an autonomous
+  Instagram content pipeline with a two-stage AI review gate and a real
+  production reliability fix, now selectable alongside Rizent AI and
+  CareerOS.
+- **Page-density auto-fit.** `render_resume_pdf` (`careeros/typst_render.py`)
+  now tries an ordered set of font-size/leading/margin presets, largest-first
+  (`_FIT_TIERS`), and keeps the first that renders to exactly one page — a
+  resume with lighter tailored content now renders bigger and fuller instead
+  of leaving visible blank space at the bottom of the page, while heavier
+  content shrinks a notch before ever hitting the existing `>1 page` finalize
+  error. `resume.typ` reads the chosen tier via a new `fit` sys.inputs value.
+
+### Changed
+
+- Default `prompts.resume` config bumped from `v2` to `v3` — a deliberate
+  full cache-bust, since the `resume.json` shape changed (new `projects`
+  field) and the render default changed (auto-fit).
+
+## [1.4.0] - 2026-07-13
+
+### Added
+
+- **Redesigned resume PDF rendering, via Typst.** Replaces the plain
+  `fpdf2` markdown walker with a real typeset design (`careeros/typst_render.py`
+  + `careeros/templates/resume.typ`/`cover.typ`): a bundled OFL Source Sans 3
+  font, a modern-sans layout with a slate section-rule accent, right-aligned
+  dates, a tab-aligned skills table, one page densely filled — while staying
+  fully ATS-safe (single column, ligatures disabled, real selectable text in
+  reading order, no tables-as-visual-layout). `typst` bundles its own
+  compiler binary (Apache-2.0), so this stays a pure `pip install`, no
+  LaTeX/pango/browser system dependency. Rendering now happens **locally**
+  at `careeros artifacts --finalize` time (a new `[resume]` extra, folded
+  into `[drive]`), so `artifacts/<job-id>/resume.pdf` exists on disk whether
+  or not Drive is even enabled — previously the PDF only ever existed
+  in-memory at Drive-upload time.
+- **Resume content model v2 (`prompts/resume_v2.md`): reword to fit the JD,
+  never invent a fact.** v1's rule required every resume line to be an exact
+  copy of a `profile.yaml` bullet. v2 loosens that one constraint: the AI may
+  now *reword* a selected bullet's language to mirror a target JD's own
+  keywords — maximizing ATS keyword match — but every hard fact in it (every
+  number, percentage, dollar amount, headcount, and named technology) must
+  survive the reword unchanged. A new deterministic guardrail,
+  `verify_resume_facts` (`careeros/lint.py`), enforces this mechanically: it
+  rejects any reworded bullet introducing a number that isn't anywhere in
+  that company's canonical `profile.yaml` bullets, and separately enforces a
+  transferable-language rule — the resume must never name the specific
+  target company, so the exact same tailored resume reads true for whichever
+  employer receives it. `resume.md` is replaced by `resume.json`
+  (`schemas/resume.schema.json`): a tailoring-zones-only payload (tagline,
+  summary, reworded bullets, skill selection); canonical facts (name,
+  contact, company, dates, education) come from `profile.yaml` and are
+  merged in at render time, never present in the AI's own output at all.
+- **ATS one-page gate.** `careeros artifacts --finalize` now renders every
+  resume and checks its page count with `pypdf` (pure-Python, no poppler) —
+  a resume that overflows one page is rejected with the exact page count,
+  and the agent must trim bullets/skills in `resume.json` and re-run,
+  mirroring a lint failure.
+- **`careeros doctor`** gained a primary "Resume PDF rendering (Typst)"
+  check (FAILs if `typst`/`pypdf` are missing while Drive is enabled) and
+  downgraded the old fpdf2 check to "PDF rendering fallback (fpdf2)" — a
+  WARN, not a FAIL, since Typst is now the primary renderer and fpdf2 is
+  only the last-resort fallback.
+- `profile.yaml`'s `Profile` model gained a `tagline` field (a one-line,
+  generic/transferable resume tagline rendered under the contact line).
+
+### Changed
+
+- Default `prompts.resume` config bumped from `v1` to `v2`.
+- `careeros verify-resume` now validates `resume.json` (fact-preservation +
+  company-name-leak) by default; a bare `.md` file is still accepted for any
+  not-yet-migrated historical resume, verbatim-matched the old (v1) way.
+- `careeros/drive.py` now uploads whichever `resume.pdf`/`cover.pdf`
+  `--finalize` already rendered locally, rather than re-rendering from
+  Markdown at upload time; the legacy render-at-upload-time path remains as
+  a fallback for any artifact that predates this version.
+
 ## [1.3.2] - 2026-07-12
 
 ### Fixed

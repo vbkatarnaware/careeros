@@ -1,6 +1,6 @@
 [project]
 name = "careeros"
-version = "1.3.2"
+version = "1.5.0"
 description = "An AI-powered, deterministic job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,14 +19,25 @@ dependencies = [
 dev = ["pytest>=8.0"]
 # Optional Google Drive artifact backup (P2.6, drive.enabled: true). Not a
 # core dependency — a fresh OSS clone never needs these to run `daily`.
-# Includes `fpdf2` (v1.3.2) so Resume/Cover Letter PDF rendering — the
+# Includes `resume` (below) so Resume/Cover Letter PDF rendering — the
 # ONLY two artifacts Drive ever attempts PDF for — works by default with
-# just this one extra; no separate `[pdf]` install step to forget.
-drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0", "fpdf2>=2.7"]
+# just this one extra; no separate install step to forget.
+drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.0", "typst>=0.13", "pypdf>=4.0", "fpdf2>=2.7"]
+# Resume/cover PDF rendering. `typst` bundles the Typst compiler
+# binary itself (Apache-2.0, github.com/messense/typst-py) — pip-installable,
+# no LaTeX/pango/browser system dependency, and the only Typst-adjacent
+# option that stays that way. `pypdf` (pure-Python, no poppler) backs the
+# ATS one-page gate in `careeros artifacts --finalize`. `fpdf2` stays as the
+# last-resort fallback renderer (careeros/pdf.py) for the rare case `typst`
+# itself is unavailable or a render genuinely fails — never left with no PDF
+# at all. `[drive]` already includes this; most users never need `[resume]`
+# separately unless they want local PDF rendering without the Drive/Sheets
+# Google API deps.
+resume = ["typst>=0.13", "pypdf>=4.0", "fpdf2>=2.7"]
 # Standalone alias for `fpdf2` alone (pure-Python, no system binaries) —
-# for anyone who wants careeros/pdf.py's PDF rendering without the rest of
-# the [drive] extra's Google API deps. `[drive]` already includes this;
-# most users never need to install `[pdf]` separately.
+# for anyone who wants ONLY careeros/pdf.py's legacy fallback renderer
+# without Typst or the rest of `[resume]`/`[drive]`'s deps. Most users never
+# need to install `[pdf]` separately.
 pdf = ["fpdf2>=2.7"]
 # Optional background form-reading for the `apply` stage's automatic
 # Application Answers (P2.10, careeros/apply/browser.py). Only reached as a
@@ -56,3 +67,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["careeros*"]
+
+[tool.setuptools.package-data]
+# The Typst templates (resume/cover PDF rendering, careeros/typst_render.py)
+# must ship inside the installed package — they're read at runtime by path,
+# not imported as Python. No font files: both templates use "New Computer
+# Modern", which Typst bundles inside its own compiler binary.
+careeros = ["templates/*.typ"]

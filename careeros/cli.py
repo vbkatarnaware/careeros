@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import jsonschema
 import typer
 import yaml
 
@@ -45,8 +46,23 @@ from careeros.cache import Cache, artifact_cache_key, eval_cache_key
 from careeros.config import (
     Config, LEGACY_PROVIDER_DEPRECATION_NOTICE, enabled_providers, load_config, provider_config_block,
 )
-from careeros.lint import format_issues, lint_file, verify_resume_bullets
+from careeros.lint import (
+    format_issues,
+    lint_file,
+    lint_resume_json_text,
+    lint_text,
+    verify_resume_bullets,
+    verify_resume_facts,
+)
 from careeros.models import Eval, Job, Profile, dumps
+from careeros.pdf import render_markdown_to_pdf
+from careeros.typst_render import (
+    build_render_data,
+    pdf_page_count,
+    render_cover_pdf,
+    render_data_to_markdown,
+    render_resume_pdf,
+)
 from careeros.pipeline.dedupe import (
     append_seen_ids, dedupe_against_history, dedupe_against_sheet_ids,
     dedupe_cross_location, dedupe_in_run,
@@ -482,19 +498,37 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                                              'credentials configured but [drive] extra not installed — '
                                              'run: pip install -e ".[drive]"'))
         # PDF rendering for Resume/Cover (the only two artifacts Drive ever
-        # attempts PDF for). `fpdf2` ships as part of the [drive] extra
-        # (v1.3.2), so this should always be present once [drive] is —
-        # checked separately (not folded into the Google Drive check above)
-        # so a missing fpdf2 is its own clear, actionable line rather than
-        # being silently swallowed as a per-file warning during `daily`.
+        # attempts PDF for). v1.4.0's primary renderer is Typst
+        # (careeros/typst_render.py) + pypdf (the ATS one-page gate in
+        # `careeros artifacts --finalize`); both ship as part of the
+        # [drive]/[resume] extra, so this should always be present once
+        # [drive] is — checked separately (not folded into the Google Drive
+        # check above) so a missing dependency is its own clear, actionable
+        # line rather than being silently swallowed as a per-file warning
+        # during `daily`.
+        try:
+            import typst  # noqa: F401
+            import pypdf  # noqa: F401
+            results.append(_check_result(_CheckStatus.PASS, "Resume PDF rendering (Typst)",
+                                         "typst + pypdf installed"))
+        except ImportError:
+            results.append(_check_result(_CheckStatus.FAIL, "Resume PDF rendering (Typst)",
+                                         'typst and/or pypdf not installed — resume.pdf would fail to '
+                                         'render locally (finalize would fall back to a plainer legacy '
+                                         'PDF, or Markdown if that fails too). Run: pip install -e ".[drive]"'))
+        # fpdf2: the legacy, last-resort renderer (careeros/pdf.py), used
+        # only if Typst itself is unavailable or a render genuinely fails.
+        # WARN (not FAIL) — Typst is the primary path now; fpdf2 missing on
+        # its own doesn't block a normal `daily` run.
         try:
             import fpdf  # noqa: F401
-            results.append(_check_result(_CheckStatus.PASS, "PDF rendering (Resume/Cover)",
+            results.append(_check_result(_CheckStatus.PASS, "PDF rendering fallback (fpdf2)",
                                          "fpdf2 installed"))
         except ImportError:
-            results.append(_check_result(_CheckStatus.FAIL, "PDF rendering (Resume/Cover)",
-                                         'fpdf2 not installed — Resume/Cover would silently upload as '
-                                         'Markdown instead of PDF. Run: pip install -e ".[drive]"'))
+            results.append(_check_result(_CheckStatus.WARN, "PDF rendering fallback (fpdf2)",
+                                         'fpdf2 not installed — the last-resort PDF fallback (used only '
+                                         'if Typst itself is unavailable) would degrade to Markdown. '
+                                         'Run: pip install -e ".[drive]"'))
     else:
         results.append(_check_result(_CheckStatus.WARN, "Google Drive", "disabled (drive.enabled: false) — optional"))
 
@@ -1512,7 +1546,7 @@ def _artifacts_prepare(cfg: Config, date: str) -> None:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
     profile = _load_profile(cfg)
-    resume_prompt_version = cfg.prompts.get("resume", "v1")
+    resume_prompt_version = cfg.prompts.get("resume", "v2")
     cover_prompt_version = cfg.prompts.get("cover", "v1")
     cache = Cache(cfg.cache_dir)
 
@@ -1529,7 +1563,7 @@ def _artifacts_prepare(cfg: Config, date: str) -> None:
         resume_key = artifact_cache_key(job_hash, profile.version, e.score, resume_prompt_version)
         cached_resume = cache.get("resume", resume_key)
         if cached_resume:
-            with open(artifacts_path / "resume.md", "w") as f:
+            with open(artifacts_path / "resume.json", "w") as f:
                 f.write(cached_resume["content"])
             needs_resume = False
             cache_hits += 1
@@ -1550,7 +1584,7 @@ def _artifacts_prepare(cfg: Config, date: str) -> None:
             })
 
     # Each resume/cover generation independently reads the full profile.yaml
-    # (per prompts/resume_v1.md, prompts/cover_v1.md) plus the job's own
+    # (per prompts/resume_v2.md, prompts/cover_v1.md) plus the job's own
     # description — so the estimate multiplies profile size by the number of
     # generation tasks, not just by job count.
     profile_bytes = cfg.profile_path.stat().st_size if cfg.profile_path.exists() else 0
@@ -1577,8 +1611,11 @@ def _artifacts_prepare(cfg: Config, date: str) -> None:
         typer.echo(
             "AGENT INSTRUCTIONS:\n"
             f"Read {cfg.prompt_path('resume')} and {cfg.prompt_path('cover')} plus .careeros/profile.yaml.\n"
-            "For each job below needing resume/cover, write the file(s) to its artifacts_path,\n"
-            "following the selector-not-writer rule. Run `careeros verify-resume` + `careeros lint`\n"
+            "For each job below needing resume/cover, write the file(s) to its artifacts_path:\n"
+            "  - resume.json (tailoring zones only — see resume_v2.md; canonical facts are\n"
+            "    merged in from profile.yaml at render time, never write them here)\n"
+            "  - cover.md (unchanged from v1 — freely written, grounded prose)\n"
+            "Run `careeros verify-resume <path>/resume.json --company \"<company>\"` + `careeros lint`\n"
             "on each resume, and `careeros lint` on each cover, before moving to the next job.\n"
             "Then run:\n"
             f"  careeros artifacts --finalize --date {date}\n\n"
@@ -1598,9 +1635,10 @@ def _artifacts_finalize(cfg: Config, date: str) -> None:
         jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
     profile = _load_profile(cfg)
-    resume_prompt_version = cfg.prompts.get("resume", "v1")
+    resume_prompt_version = cfg.prompts.get("resume", "v2")
     cover_prompt_version = cfg.prompts.get("cover", "v1")
     cache = Cache(cfg.cache_dir)
+    resume_schema = json.loads((runmeta.SCHEMAS_DIR / "resume.schema.json").read_text())
 
     errors: list[str] = []
     newly_cached = 0
@@ -1610,42 +1648,106 @@ def _artifacts_finalize(cfg: Config, date: str) -> None:
         job = jobs_by_id[e.id]
         job_hash = job.content_hash()
         artifacts_path = runmeta.artifacts_dir(cfg.runs_dir, date, e.id)
-        resume_path = artifacts_path / "resume.md"
+        resume_path = artifacts_path / "resume.json"
         cover_path = artifacts_path / "cover.md"
 
         resume_key = artifact_cache_key(job_hash, profile.version, e.score, resume_prompt_version)
         cover_key = artifact_cache_key(job_hash, profile.version, e.score, cover_prompt_version)
 
+        # ── Resume: schema -> (cache-checked) voice/fact verify -> render ──
+        resume_json: dict | None = None
         if not resume_path.exists():
-            errors.append(f"{e.id}: missing resume.md")
+            errors.append(f"{e.id}: missing resume.json")
         else:
             artifact_count += 1
-            if cache.get("resume", resume_key) is None:
-                resume_text = resume_path.read_text(encoding="utf-8")
-                voice_issues = lint_file(str(resume_path))
-                truth_issues = verify_resume_bullets(resume_text, profile)
-                if voice_issues or truth_issues:
-                    for issue in voice_issues:
-                        errors.append(f"{e.id}: resume.md voice-dna: {issue.kind} at line {issue.line}")
-                    for issue in truth_issues:
-                        errors.append(f"{e.id}: resume.md truthfulness: {issue}")
-                else:
-                    cache.put("resume", resume_key, {"content": resume_text})
-                    newly_cached += 1
+            try:
+                resume_json = json.loads(resume_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as ex:
+                errors.append(f"{e.id}: resume.json is not valid JSON: {ex}")
 
+            if resume_json is not None:
+                schema_errors = [
+                    f"{'/'.join(str(p) for p in err.path) or '(root)'}: {err.message}"
+                    for err in jsonschema.Draft7Validator(resume_schema).iter_errors(resume_json)
+                ]
+                if schema_errors:
+                    errors.extend(f"{e.id}: resume.json schema: {msg}" for msg in schema_errors)
+                    resume_json = None
+
+        if resume_json is not None:
+            # Always re-checked, cache or not: voice-dna/verify-resume are
+            # pure regex (zero-token, microseconds) — gating them on the
+            # cache would let a hand-edited resume.json (same job_hash/score/
+            # prompt_version, so same cache key) skip re-verification while
+            # the PDF still re-renders below, shipping an unchecked edit.
+            # `cache.put` here is just the "already proven clean once" marker
+            # for `newly_cached`'s reporting, not a gate on running the check.
+            voice_issues = lint_resume_json_text(resume_json)
+            truth_issues = verify_resume_facts(resume_json, profile, target_company=job.company)
+            if voice_issues or truth_issues:
+                for issue in voice_issues:
+                    errors.append(f"{e.id}: resume.json voice-dna: {issue.kind} at line {issue.line}")
+                for issue in truth_issues:
+                    errors.append(f"{e.id}: resume.json truthfulness: {issue}")
+                resume_json = None
+            elif cache.get("resume", resume_key) is None:
+                cache.put("resume", resume_key, {"content": dumps(resume_json)})
+                newly_cached += 1
+
+        if resume_json is not None:
+            # Rendered unconditionally (cache hit or not) — the PDF itself
+            # isn't cached, it's a cheap deterministic derive from a
+            # validated resume.json + profile.yaml, and every run should
+            # leave a real resume.pdf on disk, not just on a cache miss.
+            pdf_bytes = render_resume_pdf(profile, resume_json)
+            if pdf_bytes is None:
+                # typst missing or a genuine render bug (doctor FAILs on the
+                # former) — fall back to the legacy fpdf2 renderer so a
+                # resume is never left with literally no PDF.
+                data = build_render_data(profile, resume_json)
+                pdf_bytes = render_markdown_to_pdf(render_data_to_markdown(data))
+            if pdf_bytes is None:
+                errors.append(
+                    f"{e.id}: resume.pdf failed to render — install the [resume] extra: "
+                    'pip install -e ".[resume]"'
+                )
+            else:
+                pages = pdf_page_count(pdf_bytes)
+                if pages > 1:
+                    errors.append(
+                        f"{e.id}: resume.pdf renders to {pages} pages (must be exactly 1) — "
+                        "trim bullets/skills in resume.json and re-run finalize."
+                    )
+                else:
+                    (artifacts_path / "resume.pdf").write_bytes(pdf_bytes)
+
+        # ── Cover: unchanged content model (freely written, grounded prose) ─
         if not cover_path.exists():
             errors.append(f"{e.id}: missing cover.md")
         else:
             artifact_count += 1
-            if cache.get("cover", cover_key) is None:
-                cover_text = cover_path.read_text(encoding="utf-8")
-                voice_issues = lint_file(str(cover_path))
-                if voice_issues:
-                    for issue in voice_issues:
-                        errors.append(f"{e.id}: cover.md voice-dna: {issue.kind} at line {issue.line}")
-                else:
+            cover_text = cover_path.read_text(encoding="utf-8")
+            # Same rationale as the resume block above: always re-lint, cache
+            # or not, so a hand-edited cover.md can't skip verification.
+            voice_issues = lint_file(str(cover_path))
+            if voice_issues:
+                for issue in voice_issues:
+                    errors.append(f"{e.id}: cover.md voice-dna: {issue.kind} at line {issue.line}")
+                cover_ok = False
+            else:
+                cover_ok = True
+                if cache.get("cover", cover_key) is None:
                     cache.put("cover", cover_key, {"content": cover_text})
                     newly_cached += 1
+
+            if cover_ok:
+                cover_pdf_bytes = render_cover_pdf(profile, cover_text)
+                if cover_pdf_bytes is not None:
+                    (artifacts_path / "cover.pdf").write_bytes(cover_pdf_bytes)
+                # No hard failure if the cover PDF specifically can't render
+                # (e.g. typst missing) — drive.py's own fpdf2 fallback covers
+                # cover.md same as always; the resume.pdf check above is the
+                # one that's a hard block.
 
     if errors:
         typer.echo("[artifacts:finalize] Issues found (uncached until fixed):\n" + "\n".join(errors), err=True)
@@ -1926,7 +2028,7 @@ def render_report(job_id: str, date: str = typer.Option(None)):
     job = Job.from_dict(job_dict)
 
     artifacts = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
-    resume_path = str(artifacts / "resume.md")
+    resume_path = str(artifacts / "resume.pdf")
     cover_path = str(artifacts / "cover.md")
 
     report_md = render_daily_report(job, evaluation, resume_path, cover_path)
@@ -2332,8 +2434,8 @@ def backfill_drive(
     Letter (Drive), Evaluation (Drive)) to Apply-tier rows that predate Drive
     automation. Safe to re-run: rows that already have all three links are
     skipped (idempotent). Never fabricates — a row missing any of those
-    links whose corresponding local file (resume.md/cover.md/daily_report.md)
-    no longer exists on disk is listed as needing regeneration, not silently
+    links whose corresponding local file (resume.json/resume.md, cover.md,
+    daily_report.md) no longer exists on disk is listed as needing regeneration, not silently
     invented. Defaults to --dry-run so the very first run against your real
     Sheet only shows you what WOULD happen."""
     cfg = _config()
@@ -2369,8 +2471,12 @@ def backfill_drive(
             continue  # malformed row (predates Job ID being tracked) — nothing we can key on
         artifacts_dir = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
         missing_locally = []
-        if resume_missing and not (artifacts_dir / "resume.md").exists():
-            missing_locally.append("resume.md")
+        # resume.json (v1.4.0+) or the legacy resume.md — either is a valid
+        # local source to backfill from.
+        if resume_missing and not (
+            (artifacts_dir / "resume.json").exists() or (artifacts_dir / "resume.md").exists()
+        ):
+            missing_locally.append("resume.json/resume.md")
         if cover_missing and not (artifacts_dir / "cover.md").exists():
             missing_locally.append("cover.md")
         if eval_missing and not (artifacts_dir / "daily_report.md").exists():
@@ -2530,19 +2636,43 @@ def lint(file: str):
 
 
 @app.command("verify-resume")
-def verify_resume(file: str):
-    """[dev] Deterministic truthfulness check: every bullet/summary in a
-    generated resume must verbatim-match a profile.yaml fact. CareerOS's
-    analog of Career Ops' plan-lint.mjs verbatim check — enforces "selector,
-    not writer" mechanically, not just via prompt instruction."""
+def verify_resume(
+    file: str,
+    company: str = typer.Option(
+        None, "--company",
+        help="The target job's company name, to check the transferable-language "
+             "(never-name-the-target-company) rule. Omit to skip that check.",
+    ),
+):
+    """[dev] Deterministic truthfulness check for resume.json (v2): every
+    reworded experience bullet must preserve every number/metric from its
+    source profile.yaml bullet (no invented or dropped fact), and no field
+    may name the target company. CareerOS's analog of Career Ops'
+    plan-lint.mjs verbatim check — enforces resume_v2.md's rules
+    mechanically, not just via prompt instruction.
+
+    A bare .md file (v1 legacy) is also accepted for backward compatibility
+    with any not-yet-backfilled historical resume — verbatim-matched against
+    profile.yaml the old way."""
     cfg = _config()
     profile = _load_profile(cfg)
-    with open(file, encoding="utf-8") as f:
-        resume_md = f.read()
-    issues = verify_resume_bullets(resume_md, profile)
-    if not issues:
-        typer.echo("OK — every bullet/summary verbatim-matches profile.yaml.")
-        return
+    if file.endswith(".md"):
+        with open(file, encoding="utf-8") as f:
+            resume_md = f.read()
+        issues = verify_resume_bullets(resume_md, profile)
+        if not issues:
+            typer.echo("OK — every bullet/summary verbatim-matches profile.yaml.")
+            return
+    else:
+        with open(file, encoding="utf-8") as f:
+            resume_json = json.load(f)
+        issues = verify_resume_facts(resume_json, profile, target_company=company)
+        if not issues:
+            typer.echo(
+                "OK — every reworded bullet preserves its source facts"
+                + (" and no company-name leak." if company else " (pass --company to also check for a name leak).")
+            )
+            return
     typer.echo(f"{len(issues)} truthfulness issue(s) found:")
     for issue in issues:
         typer.echo(f"  - {issue}")

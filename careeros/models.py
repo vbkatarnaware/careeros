@@ -167,6 +167,7 @@ class Profile:
     headline: str
     targets: list[str]
     experience: list[ProfileExperience]
+    tagline: str = ""
     deal_breakers: dict = field(default_factory=dict)
     location: dict = field(default_factory=dict)
     comp: dict = field(default_factory=dict)

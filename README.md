@@ -44,10 +44,21 @@ Every later artifact is a *derivation*, never a re-derivation:
 | Application Answers | profile facts + eval + the form's real questions | fabricate experience |
 
 This is "selector, not writer," applied everywhere: facts and judgments are
-generated once and reused. The one place this bends on purpose is the Deep
-Report, which legitimately needs external research the cheap daily eval
-was never meant to gather — that research is additive and clearly
-separated from the inherited, non-recomputed fit judgment.
+generated once and reused. The Resume goes one step further: it may *reword*
+a selected bullet's language to mirror a JD's keywords, and it also *selects*
+— per job, by JD relevance — which companies, which of each company's
+bullets, which skills, and which 2-3 side projects appear, so a resume for a
+data-heavy role and a resume for a growth role pull genuinely different
+material from the same profile.yaml. But every number/entity in a reworded
+bullet must survive unchanged, and every selected company/project name must
+be a real profile.yaml entry — deterministic checks enforce both, so
+"selector" never quietly becomes "inventor" and a typo never silently drops
+real content. It renders through a real Typst layout (single column, real
+selectable text, no ligature corruption) that auto-fits to exactly one page.
+The one place this bends further on purpose is the Deep Report, which
+legitimately needs external research the cheap daily eval was never meant to
+gather — that research is additive and clearly separated from the inherited,
+non-recomputed fit judgment.
 
 ## Architecture
 
@@ -416,12 +427,18 @@ pip install -e ".[drive]"
 ```
 
 This installs the Google API client + OAuth deps (required for any upload
-at all) **and** `fpdf2` (pure-Python, no system binaries) for Resume/Cover
-PDF rendering — one extra, both by default, nothing else to install
-separately. If PDF rendering is ever unavailable anyway (a corrupted
-install, or an edge-case render failure), Resume/Cover falls back to
-Markdown instead and a warning is printed — Drive backup still works, just
-not with PDFs; `careeros doctor` also flags this proactively when Drive is
+at all) **and** `typst` + `pypdf` for Resume/Cover PDF rendering — one
+extra, everything by default, nothing else to install separately. `typst`
+(the primary renderer, `careeros/typst_render.py`) bundles its own compiler
+binary — pure pip install, no LaTeX/pango/browser system dependency — and
+renders a densely-filled, one-page, ATS-clean design (single column,
+ligatures disabled, real selectable text). Rendering happens **locally**,
+at `careeros artifacts --finalize` time, so `artifacts/<job-id>/resume.pdf`
+exists on disk whether or not Drive is even enabled. If PDF rendering is
+ever unavailable anyway (a corrupted install, or an edge-case render
+failure), it falls back to a plainer legacy renderer, then to Markdown, with
+a warning printed at each step down — Drive backup still works either way;
+`careeros doctor` also flags a missing `typst` proactively when Drive is
 enabled.
 
 You'll also need an OAuth **Desktop app** client secret (Google Cloud Console
@@ -445,9 +462,9 @@ careeros backfill-drive --no-dry-run   # actually uploads + updates the Sheet
 ```
 
 It's safe to re-run — rows that already have both Drive links are skipped.
-If a row's local `resume.md`/`cover.md` no longer exist on disk (an old run
-directory was cleaned up), that row is listed as **needing regeneration**
-instead of inventing content — nothing is ever fabricated.
+If a row's local `resume.json`/`cover.md` no longer exist on disk (an old
+run directory was cleaned up), that row is listed as **needing
+regeneration** instead of inventing content — nothing is ever fabricated.
 
 ## Application Answers
 
@@ -609,8 +626,8 @@ The Final Evaluation rubric and matching methodology are adapted from
 it on architecture (host-CLI-driven, not a standalone bot), output format
 (structured JSON, not long markdown reports for every job), and cost model
 (gate before evaluate, cache everything, resume/cover selection built on a
-separate philosophy — see `prompts/voice-dna.md` and the truthfulness rule
-embedded in `prompts/resume_v1.md`).
+separate philosophy — see `prompts/voice-dna.md` and the fact-preservation
+rule embedded in `prompts/resume_v2.md`).
 
 ## License
 

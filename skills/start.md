@@ -42,9 +42,10 @@ by answering questions instead.)"**
 convenience input for onboarding ONLY — a versioned record you can re-paste
 from when facts change, and the raw source Step 2 extracts confirmed
 `profile.yaml` bullets from. It is never read directly by any later stage.
-Resume generation (`resume_v1.md`) selects verbatim only from the
-CONFIRMED `profile.yaml` bullets, never from raw CV text — that's what the
-truthfulness rule and `careeros verify-resume` enforce. Evaluation scores
+Resume generation (`resume_v2.md`) selects and reworks language only from
+the CONFIRMED `profile.yaml` bullets, never from raw CV text or invented
+facts — that's what the fact-preservation rule and `careeros verify-resume`
+enforce. Evaluation scores
 against `profile.yaml` only, too. Once Step 2's facts are confirmed,
 `profile.yaml` is the sole source of truth everywhere downstream; the CV
 file is historical reference, not a live input.
@@ -238,7 +239,8 @@ Repeat for `projects` (same bullet/tags/visibility shape).
 Draft 1-2 short professional-summary paragraphs together — a generic
 default (`jd_tags: []`) and, if their background spans a distinct secondary
 domain (e.g. fintech), one more tagged for that domain. Get explicit
-sign-off on the exact wording; this is what `resume_v1.md` copies verbatim.
+sign-off on the exact wording; this is what `resume_v2.md` selects from and
+may reword (never invents facts beyond) when tailoring to a job.
 
 ## Step 9 — Skills and education
 

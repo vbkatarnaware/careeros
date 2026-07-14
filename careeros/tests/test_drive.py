@@ -454,6 +454,73 @@ def test_upload_run_pdf_now_available_cleans_up_suffixed_stale_markdown(tmp_path
     assert by_name["Tata Consultancy Services - Product Manager - Resume (2).pdf"]["appProperties"]["careeros_job_id"] == "job-b"
 
 
+def test_upload_run_prefers_local_prerendered_pdf_over_rendering_markdown(tmp_path):
+    """v1.4.0: `careeros artifacts --finalize` now renders resume.pdf/
+    cover.pdf locally (careeros/typst_render.py) before Drive upload ever
+    runs. When that local .pdf already exists, upload_run must ship those
+    bytes as-is and must NOT call the legacy render_markdown_to_pdf at all —
+    patching it to raise proves the upload path never touches it."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path, resume=False, cover=False)
+    (artifacts_dir / "resume.json").write_text('{"tagline": "x"}')
+    (artifacts_dir / "resume.pdf").write_bytes(b"%PDF-prerendered-resume")
+    (artifacts_dir / "cover.md").write_text("Cover letter body.")
+    (artifacts_dir / "cover.pdf").write_bytes(b"%PDF-prerendered-cover")
+    job = make_job(id="job-1", company="Bjak", title="Product Manager")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    def _boom(*a, **kw):
+        raise AssertionError("render_markdown_to_pdf must not be called when a local .pdf already exists")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", side_effect=_boom):
+        results = upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    r = results["job-1"]
+    assert r.warnings == []
+    names = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - Product Manager - Resume.pdf" in names
+    assert "Bjak - Product Manager - Cover Letter.pdf" in names
+
+
+def test_upload_run_local_pdf_cleans_up_stale_markdown_from_before_v2_migration(tmp_path):
+    """A job re-run through the v1.4.0 pipeline after previously being
+    uploaded as .md under the old resume.md content model must still clean
+    up the stale .md, exactly like the fpdf2-just-became-available case."""
+    run_json = tmp_path / "run.json"; run_json.write_text("{}")
+    summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
+    artifacts_dir = _make_artifacts(tmp_path)  # writes legacy resume.md/cover.md
+    job = make_job(id="job-1", company="Bjak", title="PM")
+    cfg = _cfg(client_secret_path=str(tmp_path / "x.json"), root_folder_id="root-1")
+
+    service = _FakeDriveService()
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", return_value=None):  # pre-migration, no PDF yet
+        upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    assert "Bjak - PM - Resume.md" in {rec["name"] for rec in service.store.values()}
+
+    # Now the job has been re-run through the v1.4.0 pipeline: resume.pdf
+    # exists locally (finalize rendered it), resume.md is gone (replaced by
+    # resume.json), cover.pdf exists too.
+    (artifacts_dir / "resume.md").unlink()
+    (artifacts_dir / "resume.pdf").write_bytes(b"%PDF-new")
+    (artifacts_dir / "cover.pdf").write_bytes(b"%PDF-new-cover")
+
+    with patch("careeros.drive._lazy_imports", return_value=(MagicMock(),) * 5), \
+         patch("careeros.drive._drive_service", return_value=service), \
+         patch("careeros.drive.render_markdown_to_pdf", side_effect=AssertionError("must not re-render")):
+        upload_run(cfg, "2026-07-08", run_json, summary_md, [(job, artifacts_dir)])
+
+    names_after = {rec["name"] for rec in service.store.values()}
+    assert "Bjak - PM - Resume.pdf" in names_after
+    assert "Bjak - PM - Resume.md" not in names_after
+
+
 def test_upload_run_skips_missing_artifact_files_without_failing(tmp_path):
     """A selected job whose resume/cover somehow isn't on disk yet must not
     crash the whole upload — it's simply absent from the results dict."""

@@ -187,14 +187,20 @@ careeros artifacts --prepare --date {today}
 
 Cache hits (same job content + profile version + eval score + prompt
 version as a prior run) are written directly to
-`artifacts/<job-id>/{resume,cover}.md` with zero reasoning spent. For
-whatever's left, this prints an instruction block naming exactly which
-job(s) need a resume and/or cover letter. For each one:
+`artifacts/<job-id>/resume.json` + `artifacts/<job-id>/cover.md` with zero
+reasoning spent. For whatever's left, this prints an instruction block
+naming exactly which job(s) need a resume and/or cover letter. For each one:
 
-1. **Resume** — read `prompts/resume_v1.md`. Write
-   `artifacts/<job-id>/resume.md` following the selector-not-writer rule.
+1. **Resume** — read `prompts/resume_v2.md`. Write
+   `artifacts/<job-id>/resume.json` (tailoring zones only — canonical facts
+   like company/dates/education are merged in from `profile.yaml` at render
+   time, never written here). v2's rule: reword bullet language to mirror
+   the JD's keywords, but every number/entity from the source `profile.yaml`
+   bullet must survive the reword unchanged (no invented or dropped fact),
+   and no field may name the target company.
 2. **Cover letter** — read `prompts/cover_v1.md`. Write
-   `artifacts/<job-id>/cover.md`.
+   `artifacts/<job-id>/cover.md` (unchanged from v1 — freely written,
+   grounded prose).
 
 Then:
 
@@ -202,14 +208,21 @@ Then:
 careeros artifacts --finalize --date {today}
 ```
 
-This runs the voice-dna lint on both files and the deterministic verbatim
-truthfulness check (`careeros verify-resume`) on the resume, and only caches
-artifacts that pass. If it reports lint/validation issues, fix only the
-listed files (using actual profile text, not a paraphrase) and re-run
-`--finalize` — do not regenerate artifacts that already passed. If resume
-or cover generation fails outright for a job (not a fixable lint issue —
-e.g. a missing prompt file or an unexpected error), apply the Failure
-Handling Principle before continuing to the next job.
+This validates `resume.json` against `schemas/resume.schema.json`, runs the
+voice-dna lint on both artifacts, and the deterministic fact-preservation +
+company-name-leak check (`careeros verify-resume`) on the resume; only
+passing content gets cached. It then renders `resume.pdf` (and `cover.pdf`)
+**locally** via Typst (`careeros/typst_render.py`) — this happens on every
+run, cache hit or not, since the PDF itself isn't cached — gated on an ATS
+one-page check (`pypdf`-based): a resume that overflows one page is reported
+as an error naming the page count, and the agent must trim bullets/skills in
+`resume.json` and re-run `--finalize`, the same discipline as a lint failure.
+If it reports schema/lint/validation issues, fix only the listed files
+(using actual profile facts, not invented ones) and re-run `--finalize` — do
+not regenerate artifacts that already passed. If resume or cover generation
+fails outright for a job (not a fixable lint issue — e.g. a missing prompt
+file or an unexpected error), apply the Failure Handling Principle before
+continuing to the next job.
 
 Finally, for each selected job, render its Level-1 report (deterministic,
 zero AI):
@@ -308,10 +321,12 @@ careeros drive --date {today}
 
 Only runs if `drive.enabled: true` in `.careeros/config.yaml` (otherwise
 prints one line and exits — nothing to do). Uploads every Apply-tier job's
-Resume + Cover Letter + Application Answers (all as PDF via the optional
-`[pdf]` extra — falls back to Markdown + a warning if it isn't installed;
-Answers only if Step 9 actually generated one for that job), Evaluation, and
-Deep Report (if `prep` has been run on it) into ONE flat Drive folder (no
+Resume + Cover Letter (already rendered locally as PDF by Step 8's
+`--finalize`, via Typst — the optional `[drive]`/`[resume]` extra; falls
+back to a legacy render, then to Markdown, with a warning, if that's
+unavailable) + Application Answers (always Markdown, never PDF; only if
+Step 9 actually generated one for that job), Evaluation, and Deep Report (if
+`prep` has been run on it) into ONE flat Drive folder (no
 per-company/per-job subfolders — see `drive.root_folder_id`/
 `drive.date_subfolder`), plus `run.json`/`summary.md`, as an ADDITIVE
 backup; local Markdown is never moved or replaced. Re-uploading the same

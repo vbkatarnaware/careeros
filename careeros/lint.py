@@ -82,6 +82,17 @@ def lint_file(path: str) -> list[LintIssue]:
         return lint_text(f.read())
 
 
+def lint_resume_json_text(resume_json: dict) -> list[LintIssue]:
+    """voice-dna lint over a v2 resume.json's actual prose fields (tagline,
+    summary, every experience bullet) — one per line, so line numbers in the
+    report are meaningful. Skipping `skills` (short keyword phrases, not
+    prose the voice-dna rules meaningfully apply to)."""
+    lines = [resume_json.get("tagline", ""), resume_json.get("summary", "")]
+    for exp in resume_json.get("experience", []):
+        lines.extend(exp.get("bullets", []))
+    return lint_text("\n".join(lines))
+
+
 def format_issues(issues: list[LintIssue]) -> str:
     if not issues:
         return "OK — no voice-dna violations found."
@@ -179,5 +190,132 @@ def verify_resume_bullets(resume_md: str, profile) -> list[str]:
     for bullet in _extract_bullet_lines(resume_md):
         if not _matches_allowed(bullet, allowed):
             issues.append(f"Bullet not found verbatim in profile.yaml: \"{bullet[:100]}\"")
+
+    return issues
+
+
+# ── Resume truthfulness v2: fact-preserving reword enforcement ────────────
+#
+# v2 (resume_v2.md, prompts/typst_render.py) loosens "verbatim copy" to
+# "reword the language, preserve every fact" — the LLM may mirror a JD's
+# keywords in its own phrasing, but every hard NUMBER (a metric, percentage,
+# dollar amount, headcount) in a profile bullet must survive into its
+# reworded form, and the reword must never introduce a number that isn't
+# anywhere in that company's canonical bullets. This is the deterministic
+# backstop for that contract — it does not (and structurally cannot) verify
+# that non-numeric entities/technologies are preserved with equal rigor;
+# that remains the prompt's + a human spot-check's job. It also enforces
+# job-agent's company-name-leak rule: the resume must never name the
+# specific employer being applied to.
+
+_NUMBER_RE = re.compile(
+    r"[$₹€£¥]?\s?\d[\d,]*\.?\d*\s?(?:%|\+|k|K|L|Cr|crore|lakh)?"
+)
+
+
+def _extract_numbers(text: str) -> set[str]:
+    """Numeric-fact tokens (metrics, percentages, currency amounts, counts),
+    normalized by stripping whitespace so '55' and '55 ' compare equal."""
+    return {re.sub(r"\s+", "", m.group()) for m in _NUMBER_RE.finditer(text)}
+
+
+def _company_name_tokens(company: str) -> list[str]:
+    company = (company or "").strip()
+    if not company:
+        return []
+    tokens = [company]
+    first = company.split()[0] if company.split() else ""
+    if len(first) >= 4 and first.lower() != company.lower():
+        tokens.append(first)
+    return tokens
+
+
+def _contains_company_name(text: str, company: str) -> bool:
+    return any(
+        re.search(rf"\b{re.escape(tok)}\b", text, re.IGNORECASE)
+        for tok in _company_name_tokens(company)
+    )
+
+
+def verify_resume_facts(
+    resume_json: dict, profile, target_company: str | None = None
+) -> list[str]:
+    """Returns a list of truthfulness-violation descriptions (empty = clean)
+    for the v2 (reword-preserving-facts) content model. `resume_json` is the
+    tailoring payload (see schemas/resume.schema.json): {tagline, summary,
+    companies: [...], experience: [{company, bullets}], skills: [...],
+    projects: [{name}]}.
+
+    Checks, per experience entry:
+    - every number in a reworded bullet must appear somewhere in that
+      company's canonical profile.yaml bullets (no invented metric);
+    - no reworded bullet, the tagline, or the summary may contain the
+      target company's name (job-agent's transferable-language rule).
+
+    Also checks that every name in `companies` and `projects` is a real
+    profile.yaml entry — a typo here doesn't fail schema validation (it's
+    still valid JSON matching the shape), but silently drops content: a
+    misspelled `companies` entry means the matching profile.yaml company
+    never gets included (careeros/typst_render.py's `build_render_data`
+    filters profile.experience down to exact-string matches in `companies`),
+    and a misspelled `projects[].name` means that project is filtered out of
+    `selected_projects` the same way. Both fail-soft to "content vanishes",
+    not to an error — so this check is the only thing that catches it.
+    """
+    issues: list[str] = []
+    profile_bullets_by_company = {
+        exp.company: [b.text for b in exp.bullets]
+        for exp in getattr(profile, "experience", []) or []
+    }
+    known_companies = set(profile_bullets_by_company)
+    known_projects = {p.get("name") for p in getattr(profile, "projects", []) or []}
+
+    for name in resume_json.get("companies", []):
+        if name not in known_companies:
+            issues.append(
+                f"companies: \"{name}\" does not match any profile.yaml experience[].company "
+                f"— this company will be silently dropped from the resume, not included"
+            )
+
+    for proj in resume_json.get("projects", []):
+        name = proj.get("name", "")
+        if name not in known_projects:
+            issues.append(
+                f"projects: \"{name}\" does not match any profile.yaml projects[].name "
+                f"— this project will be silently dropped from the resume, not included"
+            )
+
+    for entry in resume_json.get("experience", []):
+        company = entry.get("company", "")
+        canonical_bullets = profile_bullets_by_company.get(company)
+        if canonical_bullets is None:
+            issues.append(f"Unknown company in resume.json (not in profile.yaml): \"{company}\"")
+            continue
+        canonical_numbers: set[str] = set()
+        for b in canonical_bullets:
+            canonical_numbers |= _extract_numbers(b)
+
+        for bullet in entry.get("bullets", []):
+            invented = _extract_numbers(bullet) - canonical_numbers
+            if invented:
+                issues.append(
+                    f"{company}: reworded bullet introduces number(s) not present in any "
+                    f"profile.yaml bullet for this company {sorted(invented)}: \"{bullet[:100]}\""
+                )
+            if target_company and _contains_company_name(bullet, target_company):
+                issues.append(
+                    f"{company}: reworded bullet names the target company "
+                    f"(\"{target_company}\"), violating the transferable-language rule: "
+                    f"\"{bullet[:100]}\""
+                )
+
+    if target_company:
+        for field in ("tagline", "summary"):
+            value = resume_json.get(field, "")
+            if value and _contains_company_name(value, target_company):
+                issues.append(
+                    f"{field} names the target company (\"{target_company}\"), "
+                    f"violating the transferable-language rule: \"{value[:100]}\""
+                )
 
     return issues
