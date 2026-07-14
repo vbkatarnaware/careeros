@@ -4,6 +4,69 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-07-14
+
+A senior-UX pass for the open-source launch: a zero-Google local-first mode,
+a per-job command for full on-demand treatment of any single job, and a
+cleaner CLI surface — no behavior change to the existing Sheets/Drive path.
+
+### Added
+
+- **Local-first mode.** Google Sheets is now optional (`sheets.enabled`,
+  default `false`), mirroring Drive's existing optional pattern. A fresh
+  clone with only a Fantastic Jobs key (no Google account at all) now runs
+  `careeros doctor` fully green and gets full value from `daily`: every run
+  writes a stable, human-readable digest to
+  `.careeros/results/<date>/summary.md` (+ a `.careeros/results/latest/`
+  pointer), with relative links straight to each Apply job's rendered
+  resume/cover PDF (`careeros/report.py`'s `render_summary` gained an
+  `artifact_links` param for this). `sheets append` and `publish` are both
+  graceful no-ops (not errors) when their target is disabled — `publish`
+  now also handles the Drive-enabled-but-Sheets-disabled combination
+  correctly instead of always assuming both are configured together.
+  `skills/start.md` gained a "Google Sheets/Drive, or local-only?" step; the
+  onboarding "Next steps" printed by `careeros init` no longer implies
+  Sheets is required.
+- **`careeros job <job-id>`** (new `skills/job.md`) — give ONE job the full
+  Apply-tier treatment (resume, cover, Level-1 report, application answers,
+  auto-published to Drive/Sheet if configured, local digest refreshed
+  either way) regardless of its actual score, without waiting for a
+  re-run. Its enabler: `careeros artifacts --prepare/--finalize` gained a
+  `--job-id` filter that reads a single job straight from
+  `06_evaluate/<job-id>.json` (any tier, not just the date's Apply-tier
+  `selected.json` batch).
+- `careeros --help` now groups commands into **Setup**, **Daily**,
+  **Per-job**, and **Advanced** panels (Typer `rich_help_panel`) and hides
+  ~15 internal pipeline-stage/dev commands (`discover`, `gate`, `evaluate`,
+  `artifacts`, `threshold`, `sheets *`, and similar) from the top-level
+  listing — still fully runnable standalone for debugging one stage, just
+  no longer clutter for a first-time user. A one-line banner ("CareerOS's
+  AI steps run inside your coding CLI...") now appears on `--help` and
+  every host-CLI-skill stub's message, with consistent WHY → HOW → Playbook
+  wording across `daily`/`start`/`prep`/`apply <job-id>`/`job <job-id>`.
+
+### Changed
+
+- `careeros/cli.py` (2833 lines) split into the `careeros/cli/` package,
+  one module per concern (`setup`, `doctor`, `discover`, `pipeline`,
+  `gate_evaluate`, `artifacts`, `apply_stage`, `perjob`, `reports`,
+  `drive`, `sheets_cmds`, `lint_verify`, `stubs`) sharing one Typer `app` —
+  a pure mechanical move, no behavior change; every existing entry point
+  (`careeros.cli.<name>`) still resolves the same way.
+- README restructured quickstart-first: a 60-second, zero-Google quickstart
+  now opens the file, ahead of the architecture/philosophy sections that
+  used to lead; local-first mode and `job <job-id>` are reflected
+  throughout.
+- `docs/google-setup.md` and `templates/config.example.yaml` updated to
+  reflect Sheets being optional (`sheets.enabled: true` now required to
+  activate it, same as `drive.enabled`).
+
+### Fixed
+
+- CI now installs the `[resume]` extra (not `[dev]` alone), so the Typst
+  PDF-rendering test path actually exercises Typst in CI instead of
+  silently falling back.
+
 ## [1.5.0] - 2026-07-14
 
 ### Added

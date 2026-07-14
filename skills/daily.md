@@ -344,11 +344,18 @@ Evaluation (Drive) / Deep Report (Drive) / Application Answers (Drive)
 columns (no Drive Folder column — P2.10 dropped it as redundant once every
 job has its own direct file links).
 
-## Step 12 — Sheets (deterministic)
+## Step 12 — Sheets (deterministic, optional — off by default)
 
 ```
 careeros sheets append --date {today}
 ```
+
+Only runs if `sheets.enabled: true` in `.careeros/config.yaml` (otherwise
+prints one line and exits — nothing to do; same optional/config-gated
+pattern as Step 11's Drive backup). In local mode (both `sheets.enabled` and
+`drive.enabled` false), Step 10's `summary.md` — elevated to
+`.careeros/results/{today}/` — is the candidate's full record of the run;
+there is no separate "local digest" step to run.
 
 Inserts one row per Apply job (with per-file Drive links if Step 11 ran
 successfully — Application Answers shows a specific status label, e.g.

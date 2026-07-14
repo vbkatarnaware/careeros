@@ -199,7 +199,35 @@ regardless of search term.)
   `careeros doctor` always shows current budget-vs-spend for whatever's
   enabled.
 
-## Step 6 — Deal-breakers and logistics
+## Step 6 — Results: Google Sheets/Drive, or local-only
+
+Ask: **"Where do you want to see your results — a Google Sheet + Drive
+folder, or kept entirely local on this machine? Google Sheets/Drive needs a
+one-time Google Cloud setup (`docs/google-setup.md`); local mode needs
+nothing extra and works immediately."**
+
+- **Local-only (recommended for a first run / trying CareerOS out):** leave
+  `sheets.enabled` and `drive.enabled` both `false` in
+  `.careeros/config.yaml` (the shipped default — nothing to write). Tell
+  the candidate every `daily` run writes a human-readable digest to
+  `.careeros/results/latest/summary.md` (also `.careeros/results/<date>/`),
+  with the Apply-tier list linking straight to each job's rendered
+  resume/cover PDF under `.careeros/runs/<date>/artifacts/<job-id>/`. They
+  can switch to Sheets/Drive later by re-running this step.
+- **Google Sheets/Drive:** point them at `docs/google-setup.md` for the
+  one-time Google Cloud project + OAuth setup, then set
+  `sheets.enabled: true` (plus `sheets.spreadsheet_id`/
+  `sheets.credentials_path`) and, if they also want Drive file backup,
+  `drive.enabled: true` (plus `drive.client_secret_path`/
+  `drive.root_folder_id`) in `.careeros/config.yaml`. Mention `careeros
+  doctor` will confirm both are configured correctly before the first
+  `daily` run.
+
+Either way, this is never a hard requirement to get started — `careeros
+doctor` only FAILs on a genuinely broken config (e.g. `sheets.enabled: true`
+but no `spreadsheet_id` set), never on Sheets/Drive being off.
+
+## Step 7 — Deal-breakers and logistics
 
 - Any location a hybrid/on-site role would be a hard no outside of? →
   `deal_breakers.onsite_outside`, `location.onsite_ok`.
@@ -211,7 +239,7 @@ regardless of search term.)
 - Is there a years-of-experience floor below which a JD is still a fair
   target, not a downlevel? → `deal_breakers.min_years_ok`.
 
-## Step 7 — Experience — the facts graph
+## Step 8 — Experience — the facts graph
 
 This is the section that matters most, because of CareerOS's core rule:
 **every resume bullet is a verbatim copy of something written here.** The
@@ -234,7 +262,7 @@ For each past role:
 
 Repeat for `projects` (same bullet/tags/visibility shape).
 
-## Step 8 — Summary variants
+## Step 9 — Summary variants
 
 Draft 1-2 short professional-summary paragraphs together — a generic
 default (`jd_tags: []`) and, if their background spans a distinct secondary
@@ -242,13 +270,13 @@ domain (e.g. fintech), one more tagged for that domain. Get explicit
 sign-off on the exact wording; this is what `resume_v2.md` selects from and
 may reword (never invents facts beyond) when tailoring to a job.
 
-## Step 9 — Skills and education
+## Step 10 — Skills and education
 
 Skills: name, category, level (hands-on / ai-assisted / familiar), tags,
 visibility — only add a skill the candidate can defend in an interview.
 Education: degree, institution, score if they want it shown, dates.
 
-## Step 10 — Confirm and save
+## Step 11 — Confirm and save
 
 1. Set `version: 1` (or increment if this is a re-run on an existing file).
 2. Write the completed YAML to `.careeros/profile.yaml`.

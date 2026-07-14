@@ -7,9 +7,74 @@
 An AI-powered, deterministic job discovery and recommendation engine. Not an
 application bot.
 
-CareerOS finds jobs, scores them against your real experience, and writes
-the results into a Google Sheet you open every morning. The KPI is simple:
-**more interviews, for the least amount of AI and compute cost.**
+CareerOS finds jobs, scores them against your real experience, and writes a
+readable digest of the results — resume and cover letter included for every
+strong match. The KPI is simple: **more interviews, for the least amount of
+AI and compute cost.** Runs entirely on your own machine, with **no signup
+and no Google account required** to try it.
+
+## Quickstart (60 seconds, no Google account needed)
+
+Requires Python 3.11+ and a host coding CLI (Claude Code, Codex, Gemini CLI,
+OpenCode, …) — CareerOS's AI reasoning steps (scoring, resume tailoring) run
+*inside* your coding CLI, not as a separate service. The `careeros` Python
+package is the deterministic half; see [Architecture](#architecture).
+
+```
+git clone https://github.com/<you>/careeros.git
+cd careeros
+pip install -e .
+careeros init
+```
+
+Set your discovery credentials — three sources are on by default: the
+official **Fantastic Jobs** REST API (needs a free key), plus **RemoteOK**
+and **We Work Remotely** (free, no signup, nothing to configure):
+
+```
+export FANTASTIC_API_KEY=...   # developer.fantastic.jobs — or RAPIDAPI_KEY, see Installation below
+```
+
+Then, inside your host coding CLI:
+
+```
+/careeros start     # guided onboarding — paste your CV (or `skip`), set your goal
+/careeros daily      # discover, score, and generate resumes/covers for today's matches
+```
+
+That's it — no Google Sheet, no OAuth, no Drive setup. Every run writes a
+plain-Markdown digest to `.careeros/results/latest/summary.md`, linking
+straight to each match's rendered resume/cover PDF. Want one specific job
+(any score, not just today's Apply-tier matches) fully generated and
+published right now? `/careeros job <job-id>`.
+
+Want a shared, clickable Google Sheet + Drive backup instead of (or in
+addition to) the local digest? It's fully optional — `/careeros start` asks,
+or see **[docs/google-setup.md](docs/google-setup.md)** any time later.
+
+## Example run
+
+```
+$ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
+  [discover] query 1/4 (global_remote): 22 items
+  [discover] query 2/4 (india_remote): 9 items
+  [discover] query 3/4 (navi_mumbai_onsite): 11 items
+  [discover] query 4/4 (mumbai_onsite): 42 items
+[discover] fantastic-jobs: 84 raw items across 4 queries (11.4s)
+[normalize] 84 raw -> 81 jobs (0.1s)
+[dedupe] 81 in -> 47 unique, 34 dropped (in-run: 2, history: 30, sheet: 2)
+[constraints] 47 in -> 41 eligible, 6 hard-rejected (0.0s)
+[gate:finalize] 41 in -> 19 kept, 22 dropped.
+[evaluate:finalize] 19 evaluations valid and cached.
+[threshold] 19 evaluated -> 4 APPLY (>= 4.0), 6 CONSIDER ([3.5, 4.0))
+[artifacts:finalize] 4 job(s), 8 artifact(s) verified, 8 newly cached.
+[summary] wrote .careeros/results/2026-07-14/summary.md (also: .careeros/results/latest/)
+
+4 jobs scored above threshold. Top match: Senior PM at Acme (4.6) — strong
+role fit, remote, comp in range. See .careeros/results/latest/summary.md for
+all 4 with resumes and cover letters generated, plus 6 near-misses under
+Consider for visibility.
+```
 
 ## Why this exists
 
@@ -86,12 +151,13 @@ non-recomputed fit judgment.
    │  cache/         ← fingerprinted reuse          │
    │  runs/<date>/   ← the message bus              │
    │    06_evaluate/<job-id>.json ← source #2       │
+   │  results/latest/ ← the stable local digest     │
    └─────────────────────────────────────────────┘
            │
-   ┌───────┴───────┬──────────────────┐
-   ▼               ▼                  ▼
- Fantastic Jobs   Google Sheets    Drive (optional)
- [deterministic]  [deterministic]  [deterministic]
+   ┌───────┴───────┬──────────────────┬─────────────┐
+   ▼               ▼                  ▼             ▼
+ Fantastic Jobs   Local digest     Sheets (opt.)  Drive (opt.)
+ [deterministic]  [deterministic]  [deterministic] [deterministic]
 ```
 
 CareerOS has no server and no database. The filesystem is the message bus:
@@ -122,7 +188,7 @@ auto-load a per-tool file.
    Deterministic.
 2. **Normalize** — map to the universal `Job` schema. Deterministic.
 3. **Dedupe** — drop jobs already seen this run, in a prior run, or already
-   in the Sheet. Deterministic.
+   recorded (Sheet, if enabled). Deterministic.
 4. **Constraints** — hard-reject on the two objective deal-breakers, location
    and salary, before any AI is spent. Deterministic (`pipeline/constraints.py`).
 5. **AI Gate** — cheap, batched keep/drop triage against your profile's
@@ -132,12 +198,14 @@ auto-load a per-tool file.
    file is the source of truth for everything downstream.
 7. **Threshold** — two tiers, both configurable. **Apply** (score ≥ 4.0 AND
    recommended "apply" AND passing the constraints re-check) gets the full
-   pipeline: resume, cover letter, report, Drive, and a Sheet row. **Consider**
-   (3.5 ≤ score < 4.0) gets a Sheet row only — score plus a one-line reason it
-   fell short — with **no** AI artifacts and no Drive, so near-misses stay
-   visible at zero extra AI cost. Below 3.5 is omitted from the Sheet. A hard
-   constraint failure (location/salary deal-breaker) is always omitted, never
-   shown as Consider. The score and recommendation can never disagree: `score`
+   pipeline: resume, cover letter, report, and (if configured) Drive + a
+   Sheet row. **Consider** (3.5 ≤ score < 4.0) gets a digest/Sheet entry
+   only — score plus a one-line reason it fell short — with **no** AI
+   artifacts by default, so near-misses stay visible at zero extra AI cost
+   (run `/careeros job <job-id>` on one you want to pursue anyway — see
+   below). Below 3.5 is omitted. A hard constraint failure
+   (location/salary deal-breaker) is always omitted, never shown as
+   Consider. The score and recommendation can never disagree: `score`
    means applyability, not just fit quality, so a job blocked by a
    deal-breaker or a stated preference (e.g. onsite outside your accepted
    cities) never shows as a green Apply-tier score — `evaluate --finalize`
@@ -146,9 +214,13 @@ auto-load a per-tool file.
 8. **Artifacts** — resume + cover letter (selected from `profile.yaml`,
    never invented, cache-checked) + a daily report (rendered from the eval
    JSON, zero AI).
-9. **Summary** — a deterministic `summary.md` (funnel, the Apply list, the
-   Consider/near-miss list, cost-per-selected-job). Zero AI. The KPI is cost
-   per interview-worthy job, supply-aware — a day with 0 selected is a
+9. **Summary** — a deterministic digest (funnel, the Apply list, the
+   Consider/near-miss list, cost-per-selected-job), written to BOTH
+   `.careeros/runs/<date>/summary.md` (the internal pipeline trail) and the
+   stable `.careeros/results/<date>/summary.md` + `.careeros/results/latest/`
+   (what you're actually meant to read — with relative links straight to
+   each Apply job's rendered resume/cover PDF). Zero AI. The KPI is cost per
+   interview-worthy job, supply-aware — a day with 0 selected is a
    legitimate outcome, not a failure, and CareerOS never lowers the quality
    bar just to hit a job count. It also includes a **Discovery KPI** block:
    Apply conversion (Apply ÷ Discovered — the discovery-quality
@@ -172,70 +244,70 @@ auto-load a per-tool file.
     folder via your own OAuth desktop grant. Idempotent (re-uploads update
     in place). Any failure here only warns; it never blocks the rest of the
     pipeline.
-11. **Sheets** — append one row per Apply job (with per-file Drive links if
-    step 10 ran — Resume/Cover/Evaluation/Deep Report/Application Answers,
-    no shared-folder link) and one row per Consider job (score + reason
-    only). You open the Sheet and start applying.
+11. **Sheets** *(optional, off by default)* — append one row per Apply job
+    (with per-file Drive links if step 10 ran — Resume/Cover/Evaluation/Deep
+    Report/Application Answers, no shared-folder link) and one row per
+    Consider job (score + reason only). Off by default; the local digest
+    (step 9) is the record when it's off.
 
 Two more commands exist outside the daily loop, deliberately:
 
+- **`careeros job <job-id>`** — give ONE job the full Apply-tier treatment
+  (resume, cover, report, application answers, auto-published) regardless
+  of its actual score — the fastest path from "I found a Consider-tier
+  near-miss I actually want" to a finished application, without waiting for
+  a re-run. See `skills/job.md`.
 - **`careeros prep <job-id>`** — a full interview-prep report, generated
   only when you ask for it, expanding (never re-deriving) the eval.
-- **`careeros apply <job-id>`** — application-answer drafting for one job,
-  any score, using your own real logged-in browser (or pasted questions) —
-  the manual counterpart to step 9a's automatic Apply-tier batch. Use it for
-  a below-threshold job you still want to pursue, or one step 9a marked with
-  any of its non-"✅ Generated" statuses.
 
-Both skills (see `skills/prep.md`/`skills/apply.md`) end by ALWAYS running
-**`careeros publish <job-id>`** automatically, without you having to ask —
-neither writes a Drive link the next `sheets append` would retroactively
-pick up on its own, so publishing is a required last step of each skill,
-not a separate command you need to remember (see Commands below).
+`careeros apply <job-id>` (application-answer drafting for one job, any
+score, using your own real logged-in browser or pasted questions — the
+manual counterpart to step 9a's automatic Apply-tier batch) and
+`careeros publish <job-id>` (push one job's current artifacts to Drive/Sheet
+right now, without waiting for the next `daily`) are the lower-level pieces
+`job <job-id>` composes for you automatically — call them directly only if
+you want just one piece of the full treatment.
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
-| `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, Sheets, Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything. Add `--live` to actually verify Fantastic Jobs + every configured Apify token against their real APIs right now, instead of trusting local/stored state alone |
+| `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan + Sheets/Drive-or-local choice. Opens by asking for your CV (optional — `skip` to answer questions instead) |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, and (if enabled) Sheets/Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything, never fails just because Sheets/Drive are off. Add `--live` to actually verify Fantastic Jobs + every configured Apify token against their real APIs right now, instead of trusting local/stored state alone |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
+| `careeros job <job-id>` | Full Apply-tier treatment for ONE job, any score — resume, cover, report, application answers, auto-published |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
 | `careeros apply <job-id>` | Detect ATS, draft application answers for one job (any score) using your own real browser or pasted questions |
-| `careeros publish <job-id>` | Upload one job's current artifacts to Drive and patch just that Sheet row — use after `prep`/`apply <job-id>` so the link shows up without a full `daily` run |
+| `careeros publish <job-id>` | Upload one job's current artifacts to Drive/Sheet (if configured) and refresh the local digest — use after `prep`/`apply <job-id>` so the result shows up without a full `daily` run |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
-| `careeros migrate-config` | One-time, idempotent rewrite of a config still using the deprecated single `provider:` key to the current `providers:` model |
-| `careeros backfill-drive` | Add Drive artifacts + clickable Sheet links to Apply-tier rows from before Drive was enabled. Defaults to `--dry-run` |
-| `careeros sheets migrate` | Clean up an existing Sheet right now: remove deprecated columns, add new ones, apply formatting — the same pass `sheets append` already runs automatically on every write |
-| `careeros sheets sync-status` | Patch the Application Answers status of EXISTING Sheet rows from a re-run of `apply --prepare/--finalize`, without appending new rows — use after reclassifying old jobs into the newer status taxonomy |
 | `careeros --version` | Print the installed version and exit |
 
-Developer/debug commands — each stage runnable standalone against a run
-directory, without re-running the whole pipeline:
-
-`discover` · `normalize` · `dedupe` · `constraints` · `gate` · `evaluate` ·
-`threshold` · `artifacts` · `apply --prepare/--finalize` · `summary` ·
-`drive` · `sheets append` · `render-report` · `lint <file>` ·
-`verify-resume <file>`
+`careeros --help` groups these by purpose (Setup, Daily, Per-job, Advanced)
+and hides the internal pipeline-stage commands (`discover`, `gate`,
+`evaluate`, `artifacts`, `threshold`, `sheets *`, and similar) from the
+top-level listing — they're still fully runnable standalone (e.g.
+`careeros discover --help`) for debugging one stage against a run directory
+without re-running the whole pipeline, they're just not clutter for a
+first-time user. See `AGENT_GUIDE.md` for the full stage list.
 
 ## Folder structure
 
 ```
 careeros/
 ├── careeros/            # the deterministic Python toolkit
-│   ├── cli.py
+│   ├── cli/               # Typer commands, one module per concern
 │   ├── config.py  models.py  cache.py  runmeta.py  lint.py  report.py
-│   ├── sheets.py  drive.py  pdf.py  budget.py
+│   ├── sheets.py  drive.py  pdf.py  budget.py  typst_render.py
 │   ├── apply/            # Application Answers: HTTP/Playwright form-reading (browser.py)
 │   ├── providers/        # one file per discovery source
 │   └── pipeline/         # queryplan, normalize, dedupe, constraints, threshold
 ├── prompts/              # AI step templates, versioned (gate_v1.md, ...)
-├── skills/               # host-CLI playbooks (daily, start, prep, apply)
+├── skills/               # host-CLI playbooks (daily, start, prep, apply, job)
 ├── schemas/              # JSON Schema — the actual source-of-truth contracts
 ├── templates/            # example profile/config, safe to commit
-└── .careeros/            # your local state (gitignored): profile, cache, runs
+└── .careeros/            # your local state (gitignored): profile, cache, runs, results
 ```
 
 ## Installation
@@ -255,22 +327,9 @@ That installs the `careeros` CLI plus the default REST provider's dependency
   is what actually runs `/careeros daily` and performs the AI Gate/Evaluate
   reasoning steps. CareerOS's own Python package is the deterministic half;
   see [Architecture](#architecture).
-- **A Fantastic Jobs API key** (default provider) — see Quickstart below.
+- **A Fantastic Jobs API key** (default provider) — see Quickstart above.
 
-## Quickstart
-
-```
-$ careeros init
-Wrote .careeros/config.yaml
-Wrote .careeros/profile.yaml (seeded template — edit with your own facts,
-  or run `careeros start` for the guided interview)
-
-Next: in .careeros/config.yaml, set api.transport to "direct" or "rapidapi"
-and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY), set up
-Sheets credentials, then run `careeros daily`.
-```
-
-Then:
+## Setting up your profile and discovery providers
 
 1. **Set your discovery providers' credentials.** `careeros` runs three
    **Core** sources by default (`.careeros/config.yaml`'s `providers:`
@@ -281,10 +340,10 @@ Then:
    - `api.transport: direct` → `export FANTASTIC_API_KEY=...` ([developer.fantastic.jobs](https://developer.fantastic.jobs))
    - `api.transport: rapidapi` → `export RAPIDAPI_KEY=...` (RapidAPI's "Active Jobs DB")
 
-   *(Want more sources? `/careeros start` (below) offers a handful of
-   **Optional** paid job boards by name — Naukri, Glassdoor, ZipRecruiter —
-   each with a one-line evidence-based pitch; opt in, set a monthly budget,
-   and they run on a single shared Apify credential behind the scenes (`export
+   *(Want more sources? `/careeros start` offers a handful of **Optional**
+   paid job boards by name — Naukri, Glassdoor, ZipRecruiter — each with a
+   one-line evidence-based pitch; opt in, set a monthly budget, and they run
+   on a single shared Apify credential behind the scenes (`export
    APIFY_TOKEN=...`, or `APIFY_TOKENS=tok1,tok2,...` for multi-account
    rotation). See `careeros/providers/README.md`'s "Shipped providers" for
    the full relevance/cost/reliability evidence behind every source,
@@ -292,72 +351,57 @@ Then:
    (`fantastic-jobs-actor`) kept as an advanced reference option.)*
 2. **Set up your profile**: `/careeros start` inside your host coding CLI —
    opens by asking you to paste your CV (optional; `skip` to answer
-   questions instead), then extracts your facts into `.careeros/profile.yaml`
-   and asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
+   questions instead), then extracts your facts into `.careeros/profile.yaml`,
+   asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
    Custom quota) to recommend a daily discovery limit, explained in plain
    English against your own search preferences (e.g. *"CareerOS will run 3
    discovery searches every day. On the Free plan, the recommended limit is
-   23 records per search."*) — accept it or enter your own value. **If you
-   skip this or never set `api.plan`, CareerOS assumes the Free plan by
+   23 records per search."*) — accept it or enter your own value, and asks
+   whether you want a Google Sheet + Drive or to stay local-only (see
+   Quickstart above; nothing extra to set up either way). **If you skip the
+   plan question or never set `api.plan`, CareerOS assumes the Free plan by
    default** (500 records/week) rather than silently over-fetching — you'll
    see a one-time note about the assumption on `discover`/`careeros config`,
    and `careeros doctor` always shows current-vs-recommended. Or hand-edit
    `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
    **Change the limit anytime later** by editing `api.limit`/`api.plan` in
    `.careeros/config.yaml`.
-3. **Set up Google Sheets** (the daily results destination): a spreadsheet id
-   + service-account credentials path in `config.yaml`'s `sheets:` block.
-   First time with Google Cloud? Follow the click-by-click walkthrough in
-   **[docs/google-setup.md](docs/google-setup.md)** — it covers creating the
-   service account, downloading the key, and the easily-missed step of
-   *sharing your Sheet with the service account's email*. (Optional Google
-   Drive backup is covered there too.)
-4. **Check your setup**: `careeros doctor` — a green/red checklist for
-   Python version, profile, discovery credentials, Sheets, and Drive. Fixes
-   nothing itself; just tells you exactly what's missing. If `discover` ever
-   fails, it now classifies *why* — an invalid/expired API key, a network or
-   Fantastic Jobs outage, transient rate-limiting, or your request/record
-   quota being exhausted are each reported with a distinct, plain-English
-   next action instead of a generic error; `doctor` also shows the last
-   failure from local state, with no extra API call. Want to catch a bad or
-   exhausted key *before* your first `daily` run instead of finding out
-   mid-`discover`? Run `careeros doctor --live` — it actually pings
-   Fantastic Jobs and every configured Apify token right now (a small,
-   bounded amount of real quota: one 1-record fetch, plus a free
-   account-usage check per Apify token, no actor run) and reports their real
-   status instead of only local state.
-5. **Run it**: `/careeros daily` inside your host coding CLI.
+3. **Check your setup**: `careeros doctor` — a green/red checklist for
+   Python version, profile, discovery credentials, and (if enabled)
+   Sheets/Drive. Fixes nothing itself; just tells you exactly what's
+   missing — and never fails just because Sheets/Drive are off. If
+   `discover` ever fails, it now classifies *why* — an invalid/expired API
+   key, a network or Fantastic Jobs outage, transient rate-limiting, or
+   your request/record quota being exhausted are each reported with a
+   distinct, plain-English next action instead of a generic error;
+   `doctor` also shows the last failure from local state, with no extra
+   API call. Want to catch a bad or exhausted key *before* your first
+   `daily` run instead of finding out mid-`discover`? Run `careeros doctor
+   --live` — it actually pings Fantastic Jobs and every configured Apify
+   token right now (a small, bounded amount of real quota: one 1-record
+   fetch, plus a free account-usage check per Apify token, no actor run)
+   and reports their real status instead of only local state.
+4. **Run it**: `/careeros daily` inside your host coding CLI.
 
-## Example run
+## Local-first results digest
 
-```
-$ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
-  [discover] query 1/4 (global_remote): 22 items
-  [discover] query 2/4 (india_remote): 9 items
-  [discover] query 3/4 (navi_mumbai_onsite): 11 items
-  [discover] query 4/4 (mumbai_onsite): 42 items
-[discover] fantastic-jobs: 84 raw items across 4 queries (11.4s)
-[normalize] 84 raw -> 81 jobs (0.1s)
-[dedupe] 81 in -> 47 unique, 34 dropped (in-run: 2, history: 30, sheet: 2)
-[constraints] 47 in -> 41 eligible, 6 hard-rejected (0.0s)
-[gate:finalize] 41 in -> 19 kept, 22 dropped.
-[evaluate:finalize] 19 evaluations valid and cached.
-[threshold] 19 evaluated -> 4 APPLY (>= 4.0), 6 CONSIDER ([3.5, 4.0))
-[artifacts:finalize] 4 job(s), 8 artifact(s) verified, 8 newly cached.
-[sheets:append] wrote 10 row(s) (4 Apply, 6 Consider).
+Every `daily` run writes a plain-Markdown digest to
+`.careeros/results/<date>/summary.md`, with `.careeros/results/latest/`
+always pointing at the newest one — funnel counts, the Apply list (with
+relative links straight to each job's `resume.pdf`/`cover.pdf`), the
+Consider/near-miss list, and cost-per-selected-job. This is the full record
+of a run with zero Google setup; enabling Sheets/Drive below is an upgrade
+to a shareable, clickable tracker, not a requirement to get value out of
+CareerOS.
 
-4 jobs scored above threshold. Top match: Senior PM at Acme (4.6) — strong
-role fit, remote, comp in range. See your Sheet for all 4 with resumes and
-cover letters generated, plus 6 near-misses under Consider for visibility.
-```
+## Google Sheets schema (optional)
 
-## Google Sheets schema
-
-One `Jobs` worksheet. New rows are inserted directly below the header, not
-appended at the bottom — each day's newest run reads at the TOP, so you
-never have to scroll past a growing history to find today's jobs. Within a
-single run's batch, rows keep their normal Apply-then-Consider order;
-across runs, later `daily` runs stack above earlier ones.
+Set `sheets.enabled: true` (see [docs/google-setup.md](docs/google-setup.md))
+to also get one `Jobs` worksheet. New rows are inserted directly below the
+header, not appended at the bottom — each day's newest run reads at the TOP,
+so you never have to scroll past a growing history to find today's jobs.
+Within a single run's batch, rows keep their normal Apply-then-Consider
+order; across runs, later `daily` runs stack above earlier ones.
 
 `Date · Company · Role · Score · Tier · Recommendation · Confidence ·
 Apply URL · Status · Resume (Drive) · Cover Letter (Drive) ·
@@ -416,7 +460,8 @@ pipeline stage. Files are named `Company - Role - Resume.pdf`,
 `Company - Role - Deep Report.md` — no per-company or per-job subfolders
 (set `drive.date_subfolder: true` if you'd rather group each day's uploads
 under a `YYYY-MM-DD/` subfolder instead). Consider-tier jobs never generate
-artifacts, so they never upload anything.
+artifacts by default, so they never upload anything (unless you ran
+`careeros job <job-id>` on one — then its artifacts upload like any other).
 
 Re-running `daily` (or `backfill-drive`/`publish`) for the same job updates
 its existing files in place rather than duplicating them — uploads are
@@ -504,8 +549,8 @@ identifies the real questions and drafts grounded answers from it, the same
 "selector, not writer" rule as the resume (see `prompts/apply_v1.md`).
 
 A form that isn't automatically readable is never guessed at — that job's
-Sheet row shows one of these specific statuses instead of one generic
-"couldn't read it":
+digest/Sheet entry shows one of these specific statuses instead of one
+generic "couldn't read it":
 
 | Status | Meaning |
 |---|---|
@@ -522,10 +567,12 @@ Finish any of these yourself with `careeros apply <job-id>` — the on-demand
 skill, which can use your own real, already-logged-in browser (or accept
 pasted questions) since you're present and chose to run it. It always
 finishes by running `careeros publish <job-id>` automatically to upload the
-result and patch that row — no separate command to remember.
+result and refresh the local digest — no separate command to remember.
 
 The same on-demand `apply` skill also works for any job **below** threshold
-that you want to pursue anyway — the automatic batch only covers Apply-tier.
+that you want to pursue anyway — the automatic batch only covers Apply-tier
+(or use `careeros job <job-id>` for the full treatment in one shot — see
+Pipeline above).
 
 ### Personal/logistics questions — asked once, reused forever
 
@@ -551,7 +598,7 @@ prompt version). Because the prompt version is *inside* the cache key,
 `prompts/eval_v2.md` + a one-line config change busts only that stage's
 cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 
-## What's built today (v1 vertical slice)
+## What's built today
 
 The full pipeline runs end to end: profile-driven segmented discovery merged
 across multiple providers (Fantastic Jobs REST plus free RemoteOK/We Work
@@ -563,10 +610,13 @@ the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, automatic Application
 Answers for Apply-tier jobs (background HTTP/Playwright form-reading, with
 a specific status — Login Required, Closed, Playwright Missing, and so on —
-in place of a generic failure), a zero-cost daily report render, automatic
-Google Drive backup (PDF resume/cover/answers, flat layout, idempotent) for
-Apply-tier jobs, and Google Sheets append with clickable per-job Drive
-links, a hand-editable Status tracking column, and header/Score formatting.
+in place of a generic failure), a zero-cost daily report render, a stable
+local results digest (`.careeros/results/latest/`, zero Google setup
+needed), a per-job `job <job-id>` command for full on-demand treatment of
+any single job at any score, optional Google Drive backup (PDF
+resume/cover/answers, flat layout, idempotent) and optional Google Sheets
+append with clickable per-job Drive links, a hand-editable Status tracking
+column, and header/Score formatting.
 `careeros init` seeds an example `profile.yaml` (a Product Manager persona
 in `templates/`); replace it with your own facts — via `/careeros start`
 (CV-first) or by editing directly — before your first real run.
@@ -592,7 +642,7 @@ in `templates/`); replace it with your own facts — via `/careeros start`
 
 Adding a provider is one file — see `careeros/providers/README.md`. The
 pipeline never imports a provider directly, so new sources never touch
-`pipeline/`, `cli.py`, or any stage.
+`pipeline/`, `careeros/cli/`, or any stage.
 
 Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) before touching pipeline code or AI
 prompts — it's the canonical source for the rules that actually govern this
@@ -613,11 +663,12 @@ stability, dedupe, the resume-truthfulness verbatim check, both Fantastic
 Jobs providers' source-side-filter/transport/token-rotation wiring, a parity
 test asserting the REST and legacy-actor providers map identical raw
 records to an identical `Job` dict, the Sheets name-keyed read/write and
-additive header migration, the daily-summary render, Drive artifact
-upload/backfill/idempotency, and PDF rendering — the pure functions most
-likely to silently regress. They do not (yet) cover `normalize.py`;
-contributions there are welcome. CI (`.github/workflows/ci.yml`) runs the
-suite on Python 3.11 and 3.12 for every push and PR.
+additive header migration, the daily-summary render (incl. the local-first
+results digest), Drive artifact upload/backfill/idempotency, and PDF
+rendering — the pure functions most likely to silently regress. They do not
+(yet) cover `normalize.py`; contributions there are welcome. CI
+(`.github/workflows/ci.yml`) runs the suite on Python 3.11 and 3.12 for
+every push and PR.
 
 ## Attribution
 

@@ -1,4 +1,4 @@
-"""Tests for careeros/cli.py's `doctor` pre-flight checklist. Pure logic —
+"""Tests for careeros/cli/'s `doctor` pre-flight checklist. Pure logic —
 reads env vars/config/filesystem but makes no network calls and mutates
 nothing. `Config.careeros_dir`/`profile_path` are hardcoded relative to cwd,
 so each test chdirs into a fresh tmp_path (matches this module's need, no
@@ -140,12 +140,25 @@ def test_legacy_actor_provider_checks_apify_token(tmp_path, monkeypatch):
     assert status == _CheckStatus.PASS
 
 
+def test_sheets_disabled_is_a_warning_not_a_failure(tmp_path, monkeypatch):
+    """Sheets is optional (v1.6.0, mirroring Drive) — a fresh local-mode
+    clone with sheets.enabled: false must never FAIL doctor."""
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
+               sheets={"enabled": False})
+    results = _run_doctor_checks(cfg)
+    status, _ = _status_for(results, "Google Sheets")
+    assert status == _CheckStatus.WARN
+
+
 def test_sheets_not_configured_fails(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     monkeypatch.setenv("X", "k")
     cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
-               sheets={"spreadsheet_id": None, "credentials_path": None})
+               sheets={"enabled": True, "spreadsheet_id": None, "credentials_path": None})
     results = _run_doctor_checks(cfg)
     status, detail = _status_for(results, "Google Sheets")
     assert status == _CheckStatus.FAIL
@@ -158,7 +171,7 @@ def test_sheets_creds_path_missing_file_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("X", "k")
     missing = tmp_path / "does-not-exist.json"
     cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
-               sheets={"spreadsheet_id": "sid", "credentials_path": str(missing)})
+               sheets={"enabled": True, "spreadsheet_id": "sid", "credentials_path": str(missing)})
     results = _run_doctor_checks(cfg)
     status, detail = _status_for(results, "Google Sheets")
     assert status == _CheckStatus.FAIL
@@ -172,7 +185,7 @@ def test_sheets_fully_configured_passes(tmp_path, monkeypatch):
     creds = tmp_path / "creds.json"
     creds.write_text("{}")
     cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
-               sheets={"spreadsheet_id": "sid", "credentials_path": str(creds)})
+               sheets={"enabled": True, "spreadsheet_id": "sid", "credentials_path": str(creds)})
     results = _run_doctor_checks(cfg)
     status, _ = _status_for(results, "Google Sheets")
     assert status == _CheckStatus.PASS
@@ -185,7 +198,7 @@ def test_drive_disabled_is_a_warning_not_a_failure(tmp_path, monkeypatch):
     creds = tmp_path / "c.json"
     creds.write_text("{}")
     cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"},
-               sheets={"spreadsheet_id": "sid", "credentials_path": str(creds)},
+               sheets={"enabled": True, "spreadsheet_id": "sid", "credentials_path": str(creds)},
                drive={"enabled": False})
     results = _run_doctor_checks(cfg)
     status, _ = _status_for(results, "Google Drive")

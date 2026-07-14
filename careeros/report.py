@@ -145,6 +145,7 @@ def render_summary(
     jobs_by_id: dict[str, Job],
     threshold: float = 4.0, consider_threshold: float = 3.5,
     discovery_stats: Optional[dict] = None,
+    artifact_links: Optional[dict[str, dict[str, str]]] = None,
 ) -> str:
     """Day-level executive summary (P2.6). Same zero-AI philosophy as
     render_daily_report — a pure render of run.json + the day's ALREADY-
@@ -163,6 +164,12 @@ def render_summary(
     and because the P2.6 KPI (cost per interview-worthy job, supply-aware —
     never a fixed daily quota) needs to be visible somewhere every run, not
     computed by hand from run.json.
+
+    `artifact_links` (v1.6.0, local-first mode): optional {job_id: {"resume":
+    path, "cover": path}} of paths RELATIVE TO wherever this summary itself
+    gets written — see `.careeros/results/<date>/` in cli/reports.py's
+    `summary` command — so a local-only candidate (no Sheets/Drive) can click
+    straight from the digest to each job's rendered PDF.
     """
     totals = manifest.get("totals", {})
 
@@ -181,8 +188,15 @@ def render_summary(
         job = jobs_by_id.get(e.id)
         return f"{job.company} — {job.title}" if job else e.id
 
+    def _artifact_links(e: Eval) -> str:
+        links = (artifact_links or {}).get(e.id, {})
+        parts = [f"[{name}]({path})" for name, path in (("resume", links.get("resume")),
+                                                          ("cover", links.get("cover"))) if path]
+        return f" ({', '.join(parts)})" if parts else ""
+
     apply_section = "\n".join(
-        f"- **{e.score:.1f}** {_label(e)}: {e.strengths[0] if e.strengths else ''}" for e in selected
+        f"- **{e.score:.1f}** {_label(e)}: {e.strengths[0] if e.strengths else ''}{_artifact_links(e)}"
+        for e in selected
     ) or "_None today — the market simply didn't have one; see Cost below, this doesn't mean the run failed._"
 
     near_miss_section = "\n".join(f"- {e.score:.1f} {_label(e)}" for e in near_miss) or "_None._"

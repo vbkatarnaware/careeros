@@ -1,4 +1,4 @@
-"""Tests for the v1.4.0 artifacts pipeline wiring in careeros/cli.py:
+"""Tests for the v1.4.0 artifacts pipeline wiring in careeros/cli/:
 `_artifacts_finalize` now validates resume.json against schemas/resume.schema.json,
 runs verify_resume_facts (fact-preservation + company-name-leak), and renders
 resume.pdf locally via careeros/typst_render.py, gated on the ATS one-page
@@ -15,7 +15,7 @@ import typer
 pytest.importorskip("typst", reason="requires the optional [resume] extra (typst)")
 
 from careeros import runmeta
-from careeros.cli import _artifacts_finalize
+from careeros.cli import _artifacts_finalize, _artifacts_prepare
 from careeros.config import Config
 
 _PROFILE_YAML = """\
@@ -256,3 +256,78 @@ def test_finalize_also_renders_cover_pdf(tmp_path, monkeypatch):
     cover_pdf = artifacts_dir / "cover.pdf"
     assert cover_pdf.exists()
     assert cover_pdf.read_bytes()[:5] == b"%PDF-"
+
+
+# ── v1.6.0: --job-id (the `job <job-id>` skill's enabler) ────────────────
+
+def _setup_below_threshold_job(tmp_path, monkeypatch, date="2026-07-14", job_id="job-below"):
+    """A Consider-tier job — evaluated (06_evaluate/<job-id>.json exists) but
+    NEVER selected (absent from select/selected.json) — the exact case
+    `--job-id` exists to unblock: full artifact treatment for a job below
+    `threshold` that the candidate wants to pursue anyway."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".careeros").mkdir()
+    (tmp_path / ".careeros" / "profile.yaml").write_text(_PROFILE_YAML)
+    cfg = _cfg()
+
+    eval_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
+    with open(eval_dir / f"{job_id}.json", "w") as f:
+        json.dump({
+            "id": job_id, "score": 3.6, "confidence": 0.7, "recommendation": "consider",
+            "strengths": ["a", "b", "c"], "weaknesses": ["x", "y"], "ats_keywords": [],
+            "company_summary": "s", "fit_paragraph": "f",
+            "rubric": {"role_fit": 3.5, "seniority_fit": 3.5, "skills_match": 3.5, "domain": 3.5, "logistics": 4.0},
+            "prompt_version": "v2", "profile_version": 1, "job_hash": "hash-below",
+        }, f)
+
+    # Deliberately empty/absent selected.json — job-below is NOT Apply-tier.
+    select_dir = runmeta.stage_dir(cfg.runs_dir, date, "select")
+    with open(select_dir / "selected.json", "w") as f:
+        json.dump([], f)
+
+    normalize_dir = runmeta.stage_dir(cfg.runs_dir, date, "normalize")
+    with open(normalize_dir / "jobs.json", "w") as f:
+        json.dump([{
+            "id": job_id, "source": "test", "title": "Product Manager", "company": "Acme Corp",
+            "location": "Remote", "remote": True, "description": "A great JD.",
+            "apply_url": "https://example.com/apply",
+        }], f)
+
+    artifacts_dir = runmeta.artifacts_dir(cfg.runs_dir, date, job_id)
+    (artifacts_dir / "cover.md").write_text("Dear Hiring Team,\n\nI am excited to apply.\n\nBest,\nTest Candidate")
+    return cfg, date, artifacts_dir
+
+
+def test_job_id_generates_artifacts_for_a_job_not_in_selected_json(tmp_path, monkeypatch):
+    cfg, date, artifacts_dir = _setup_below_threshold_job(tmp_path, monkeypatch)
+    _write_resume_json(artifacts_dir)
+
+    _artifacts_finalize(cfg, date, job_id="job-below")
+
+    assert (artifacts_dir / "resume.pdf").exists()
+
+
+def test_batch_finalize_ignores_a_job_not_in_selected_json(tmp_path, monkeypatch):
+    """Sanity check for the test above: WITHOUT --job-id, the same
+    below-threshold job is correctly invisible to the normal batch path
+    (selected.json is empty) — proving --job-id is what unlocks it, not a
+    latent behavior change to the batch path."""
+    cfg, date, artifacts_dir = _setup_below_threshold_job(tmp_path, monkeypatch)
+    _write_resume_json(artifacts_dir)
+
+    _artifacts_finalize(cfg, date)  # no job_id
+
+    assert not (artifacts_dir / "resume.pdf").exists()
+
+
+def test_job_id_prepare_reports_missing_eval_clearly(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".careeros").mkdir()
+    cfg = _cfg()
+    date = "2026-07-14"
+
+    with pytest.raises(typer.Exit):
+        _artifacts_prepare(cfg, date, job_id="never-evaluated")
+
+    err = capsys.readouterr().err
+    assert "No evaluation on record" in err

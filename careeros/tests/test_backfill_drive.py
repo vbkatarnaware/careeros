@@ -1,4 +1,4 @@
-"""Tests for careeros/cli.py's `backfill-drive` command (Phase 3, v1.1).
+"""Tests for careeros/cli/'s `backfill-drive` command (Phase 3, v1.1).
 Everything Drive/Sheets-related is mocked; what's under test is CareerOS's
 own logic: legacy-row (missing Tier) inclusion, Consider-tier exclusion,
 idempotent skip, missing-local-artifacts detection (never fabricate), the
@@ -37,7 +37,7 @@ def _cfg_with_drive():
 def test_exits_when_drive_not_configured():
     cfg = MagicMock()
     cfg.drive = {"enabled": False}
-    with patch("careeros.cli._config", return_value=cfg):
+    with patch("careeros.cli.drive._config", return_value=cfg):
         with pytest.raises(typer.Exit):
             backfill_drive(dry_run=True)
 
@@ -49,7 +49,7 @@ def test_legacy_rows_with_no_tier_column_are_treated_as_apply(tmp_path, monkeypa
     cfg = _cfg_with_drive()
     rows = [_row("job-legacy", tier=None)]  # no "Tier" key at all
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=tmp_path):  # empty dir -> needs regen
         backfill_drive(dry_run=True)
@@ -63,7 +63,7 @@ def test_explicit_consider_tier_rows_are_excluded(tmp_path, monkeypatch):
     cfg = _cfg_with_drive()
     rows = [_row("job-consider", tier="Consider")]
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows) as mock_read, \
          patch("careeros.cli.runmeta.artifacts_dir") as mock_artifacts_dir:
         backfill_drive(dry_run=True)
@@ -76,7 +76,7 @@ def test_already_backfilled_rows_are_skipped_idempotently(tmp_path, monkeypatch)
     rows = [_row("job-done", tier="Apply", resume_drive="https://x", cover_drive="https://y",
                  eval_drive="https://z")]
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir") as mock_artifacts_dir:
         backfill_drive(dry_run=True)
@@ -92,7 +92,7 @@ def test_dash_placeholder_is_treated_as_blank_not_already_done(tmp_path, monkeyp
     cfg = _cfg_with_drive()
     rows = [_row("job-dash", tier="Apply", resume_drive="-", cover_drive="-", eval_drive="-")]
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir") as mock_artifacts_dir:
         backfill_drive(dry_run=True)
@@ -106,7 +106,7 @@ def test_missing_local_artifacts_are_listed_not_fabricated(tmp_path, monkeypatch
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=empty_dir), \
          patch("careeros.drive.upload_jobs") as mock_upload:
@@ -124,7 +124,7 @@ def test_dry_run_never_calls_upload_or_sheet_update(tmp_path, monkeypatch):
     (artifacts / "daily_report.md").write_text("# Eval")
     rows = [_row("job-a", tier="Apply")]
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=artifacts), \
          patch("careeros.drive.upload_jobs") as mock_upload, \
@@ -159,7 +159,7 @@ def test_no_dry_run_uploads_and_updates_matching_rows(tmp_path, monkeypatch):
                                   eval_link="https://drive/e.md")
     fake_verification = {"job-a": {"resume_ok": True, "cover_ok": True, "errors": []}}
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id",
                side_effect=[rows_before, rows_after]), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=artifacts), \
@@ -201,7 +201,7 @@ def test_no_dry_run_only_updates_the_link_this_run_actually_produced(tmp_path, m
     fake_result = JobUploadResult(folder_link="https://drive/folder", eval_link="https://drive/e.md")
     fake_verification = {"job-a": {"resume_ok": True, "cover_ok": True, "errors": []}}
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id",
                side_effect=[rows_before, rows_after]), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=artifacts), \
@@ -223,7 +223,7 @@ def test_upload_failure_is_fail_soft_exits_nonzero_without_crashing(tmp_path, mo
     (artifacts / "daily_report.md").write_text("# Eval")
     rows = [_row("job-a", tier="Apply")]
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.drive._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.read_all_rows_with_job_id", return_value=rows), \
          patch("careeros.cli.runmeta.artifacts_dir", return_value=artifacts), \
          patch("careeros.drive.upload_jobs", side_effect=RuntimeError("boom")):

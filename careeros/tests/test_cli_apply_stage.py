@@ -1,4 +1,4 @@
-"""Tests for careeros/cli.py's `apply --prepare/--finalize` batch stage
+"""Tests for careeros/cli/'s `apply --prepare/--finalize` batch stage
 (P2.10): for every Apply-tier job, classify its application form's fetch
 outcome into one of the specific STATUS_* codes (generated / login_required
 / playwright_missing / closed / no_essay_questions / network_error /

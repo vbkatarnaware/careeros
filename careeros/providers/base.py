@@ -18,7 +18,7 @@ Glassdoor, ZipRecruiter) implements all three identically:
     pre-normalization shape. Return None to skip a record missing a
     required field, rather than raising.
 
-`discover` (careeros/cli.py) loops over every enabled provider generically —
+`discover` (careeros/cli/) loops over every enabled provider generically —
 it never branches on a provider's name. Budget/quota enforcement is
 CAPABILITY-driven (see `budget.guard_for`): a provider's own resolved config
 block declares what it needs guarding (a weekly record quota, a monthly USD

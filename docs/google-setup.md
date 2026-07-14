@@ -1,15 +1,19 @@
 # Google setup — step by step
 
-CareerOS writes your daily results into a **Google Sheet** (required) and can
-optionally back artifacts up to **Google Drive** (off by default). This is the
-one part of setup that isn't a single command, so here is the whole thing,
-click by click. No prior Google Cloud experience needed — just follow along.
+CareerOS can optionally write your daily results into a **Google Sheet** and
+back artifacts up to **Google Drive** — both off by default. Skip this file
+entirely if you'd rather stay local: every `daily` run already writes a
+readable digest to `.careeros/results/latest/summary.md`, linking straight to
+each job's rendered resume/cover PDF, no Google account needed. Come back to
+this whenever you want a shareable tracker instead. This is the one part of
+setup that isn't a single command, so here is the whole thing, click by
+click. No prior Google Cloud experience needed — just follow along.
 
 You do this **once**. After that, `careeros daily` runs on its own.
 
 ---
 
-## Part 1 — Google Sheets (required)
+## Part 1 — Google Sheets (optional)
 
 CareerOS talks to your Sheet through a **service account** — a robot Google
 account that belongs to a project you own. You create it, download its key
@@ -44,6 +48,7 @@ In `.careeros/config.yaml`, under `sheets:`, set the path to where you saved
 the JSON:
 ```yaml
 sheets:
+  enabled: true
   credentials_path: "/full/path/to/careeros-writer-key.json"
   spreadsheet_id: null   # filled in the next step
   worksheet: "Jobs"
@@ -139,7 +144,8 @@ to actually upload and add the clickable links to those existing rows).
 | Symptom | Cause | Fix |
 |---|---|---|
 | `PermissionError` / 403 writing the Sheet | Sheet not shared with the service account | Part 1, step 5 — share with the `client_email`, Editor |
-| `Sheets not configured` | `spreadsheet_id` or `credentials_path` missing | Part 1, steps 4–5 |
+| `sheets append` says "disabled" and does nothing | `sheets.enabled: false` (the default) | Set `sheets.enabled: true`, Part 1, steps 4–5 |
+| `Sheets not configured` | `sheets.enabled: true` but `spreadsheet_id` or `credentials_path` missing | Part 1, steps 4–5 |
 | `SpreadsheetNotFound` | wrong `spreadsheet_id` | Re-copy the id from the Sheet URL (between `/d/` and `/edit`) |
 | Drive: `needs the optional [drive] extra` | extra not installed | `pip install -e ".[drive]"` |
 | Drive: browser consent every run | token not being saved | check `drive.token_path` is writable and gitignored |

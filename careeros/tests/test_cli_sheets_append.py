@@ -1,4 +1,4 @@
-"""Tests for careeros/cli.py's `sheets append` command (P2.10 wiring): joins
+"""Tests for careeros/cli/'s `sheets append` command (P2.10 wiring): joins
 drive_links.json + apply_status.json into the new Drive-link Sheet columns,
 including each of the specific status labels (see cli.py's `_STATUS_LABELS`)
 for an Apply-tier job whose application form wasn't automatically readable.
@@ -32,7 +32,7 @@ def _cfg(**overrides) -> Config:
         threshold=4.0, consider_threshold=3.5,
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={},
-        sheets={}, apify={}, api={}, fx_rates={}, drive={"enabled": False},
+        sheets={"enabled": True}, apify={}, api={}, fx_rates={}, drive={"enabled": False},
     )
     defaults.update(overrides)
     return Config(**defaults)
@@ -65,11 +65,23 @@ def _run_and_capture_rows(cfg, date):
     def fake_append_rows(cfg_arg, rows):
         captured["rows"] = rows
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.append_rows", side_effect=fake_append_rows), \
-         patch("careeros.cli.append_seen_ids"):
+         patch("careeros.cli.sheets_cmds.append_seen_ids"):
         sheets_append(date=date)
     return captured["rows"]
+
+
+def test_noop_when_sheets_disabled(tmp_path, monkeypatch, capsys):
+    """Sheets is optional (v1.6.0, mirroring Drive) — a local-mode config
+    with sheets.enabled: false must never try to reach the Sheets API."""
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(sheets={"enabled": False})
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
+         patch("careeros.cli.sheets_mod.append_rows") as mock_append:
+        sheets_append(date="2026-07-10")
+    mock_append.assert_not_called()
+    assert "disabled" in capsys.readouterr().out
 
 
 def test_apply_row_shows_manual_required_label_when_form_unreadable(tmp_path, monkeypatch):
@@ -191,7 +203,7 @@ def test_consider_row_has_blank_drive_cells_regardless_of_apply_status(tmp_path,
 def test_sheets_migrate_reports_removed_and_added(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     cfg = _cfg()
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.migrate",
                return_value={"removed": ["Drive Folder"], "added": ["Deep Report (Drive)"]}):
         sheets_migrate()
@@ -203,7 +215,7 @@ def test_sheets_migrate_reports_removed_and_added(tmp_path, monkeypatch, capsys)
 def test_sheets_migrate_reports_already_current(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     cfg = _cfg()
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.migrate", return_value={"removed": [], "added": []}):
         sheets_migrate()
     out = capsys.readouterr().out
@@ -223,7 +235,7 @@ def test_sync_status_patches_existing_row_with_specific_label(tmp_path, monkeypa
     with open(run_dir / "apply_status.json", "w") as f:
         f.write(dumps({"job-1": "login_required", "job-2": "closed"}))
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.update_row_by_job_id", return_value=True) as mock_update:
         sheets_sync_status(date="2026-07-10")
 
@@ -252,7 +264,7 @@ def test_sync_status_skips_generated_jobs(tmp_path, monkeypatch, capsys):
     with open(run_dir / "drive_links.json", "w") as f:
         f.write(dumps({"job-1": {"resume": "https://drive/r.pdf"}}))
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.update_row_by_job_id", return_value=True) as mock_update:
         sheets_sync_status(date="2026-07-10")
 
@@ -272,7 +284,7 @@ def test_sync_status_reports_jobs_not_found_in_sheet(tmp_path, monkeypatch, caps
     with open(run_dir / "apply_status.json", "w") as f:
         f.write(dumps({"job-1": "closed"}))
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.update_row_by_job_id", return_value=False):
         sheets_sync_status(date="2026-07-10")
 
@@ -286,7 +298,7 @@ def test_sync_status_noop_when_no_apply_status_file(tmp_path, monkeypatch, capsy
     cfg = _cfg()
     runmeta.run_dir(cfg.runs_dir, "2026-07-10").mkdir(parents=True, exist_ok=True)
 
-    with patch("careeros.cli._config", return_value=cfg), \
+    with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
          patch("careeros.cli.sheets_mod.update_row_by_job_id") as mock_update:
         sheets_sync_status(date="2026-07-10")
 

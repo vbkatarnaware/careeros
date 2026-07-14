@@ -96,7 +96,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "EUR": 90.0,
         "GBP": 105.0,
     },
+    # Optional Google Sheets tracker (P2.6). ADDITIVE only — local Markdown
+    # under .careeros/runs/ and .careeros/results/ stays the source of truth
+    # end to end; the Sheet is never read back by any pipeline stage. Default
+    # OFF so a fresh OSS clone never needs a Google Cloud project to work —
+    # `careeros init`/`start` offer Sheets+Drive or a local-only results
+    # folder, see skills/start.md.
     "sheets": {
+        "enabled": False,
         "spreadsheet_id": None,
         "credentials_path": None,
         "worksheet": "Jobs",

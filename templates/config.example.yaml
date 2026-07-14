@@ -59,7 +59,14 @@ prompts:
   resume: v3
   cover: v1
 
+# Optional Google Sheets tracker (P2.6). ADDITIVE only — local Markdown
+# under .careeros/runs/ and .careeros/results/ stays the source of truth;
+# the Sheet is never read back by any pipeline stage. Off by default so a
+# fresh clone works with zero Google Cloud setup — see docs/google-setup.md
+# when you're ready to turn this on, or leave it off and read
+# .careeros/results/latest/summary.md instead.
 sheets:
+  enabled: false
   spreadsheet_id: null          # your Google Sheet's id (from its URL)
   credentials_path: null        # path to a Google service-account JSON key
   worksheet: "Jobs"

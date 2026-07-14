@@ -48,6 +48,26 @@ def artifacts_dir(runs_root: Path, date: str, job_id: str) -> Path:
     return d
 
 
+def results_dir(careeros_dir: Path, date: str) -> Path:
+    """Stable, human-readable digest location (v1.6.0, local-first mode) —
+    unlike `run_dir` (buried under runs/<date>/07_select/... internals),
+    this is the ONE folder a local-only candidate (no Sheets/Drive) is
+    pointed at: `.careeros/results/<date>/summary.md`, plus a `latest`
+    symlink (see `write_results_latest_pointer`) so they never need to know
+    today's date to find it."""
+    d = careeros_dir / "results" / date
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def write_results_latest_pointer(careeros_dir: Path, date: str) -> None:
+    """(Re)point `.careeros/results/latest` at today's results dir."""
+    latest = careeros_dir / "results" / "latest"
+    if latest.is_symlink() or latest.exists():
+        latest.unlink()
+    latest.symlink_to(date, target_is_directory=True)
+
+
 def _meta_path(runs_root: Path, date: str, stage: str) -> Path:
     return run_dir(runs_root, date) / f"_meta_{stage}.json"
 

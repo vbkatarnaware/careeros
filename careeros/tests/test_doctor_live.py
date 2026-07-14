@@ -1,4 +1,4 @@
-"""Tests for `careeros doctor --live` (careeros/cli.py's
+"""Tests for `careeros doctor --live` (careeros/cli/'s
 `_run_doctor_live_checks`) — the 2026-07-12 fix for a real incident: quota
 was only ever a locally stored/calculated guess (a Monday-reset counter
 independent of which API key was configured), so replacing an exhausted

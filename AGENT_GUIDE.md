@@ -99,8 +99,8 @@ this pipeline — not just discovery. It supersedes and replaces any
 narrower "stop if provider X fails" wording you might see referenced
 elsewhere; those are historical special cases now folded into this one
 rule. Every skill checkpoint (`skills/daily.md`, `skills/apply.md`,
-`skills/prep.md`, `skills/start.md`) should point back to this section
-rather than restate it.
+`skills/prep.md`, `skills/start.md`, `skills/job.md`) should point back to
+this section rather than restate it.
 
 > If any non-trivial step in the pipeline cannot complete as intended
 > (provider failure, credential issue, quota exhaustion, network error,

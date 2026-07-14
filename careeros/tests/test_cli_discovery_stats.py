@@ -1,4 +1,4 @@
-"""Tests for careeros/cli.py's `_build_discovery_stats` (P2.9, extended
+"""Tests for careeros/cli/'s `_build_discovery_stats` (P2.9, extended
 v1.2) — the read-only join that feeds the Discovery KPI summary block. Reads
 only 01_discover/raw.json + .careeros/discovery_budget.json; fetches
 nothing. Each test chdirs into a fresh tmp_path since Config's paths are
