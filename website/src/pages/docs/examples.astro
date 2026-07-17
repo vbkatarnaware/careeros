@@ -1,0 +1,56 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<DocsLayout
+  title="Examples"
+  description="Common workflows, from a first run to going deep on a single job."
+>
+  <h2>A daily run, start to finish</h2>
+  <CommandBlock
+    client:visible
+    label="daily"
+    code={`$ careeros daily`}
+  />
+  <p>
+    The pipeline discovers across your enabled providers, deduplicates, applies
+    hard constraints, gates, evaluates the survivors, thresholds into Apply and
+    Consider tiers, writes resumes and cover letters for Apply-tier jobs, drafts
+    application answers, renders a zero-cost report, and appends rows to your
+    Sheet. Cached stages are reused silently.
+  </p>
+
+  <h2>Re-running the same day</h2>
+  <p>
+    If nothing changed, a re-run costs zero AI calls — every stage hits the
+    cache. This is safe to do anytime, for example after fixing a credential.
+  </p>
+  <CommandBlock client:visible label="re-run" code={`$ careeros daily   # unchanged inputs → all cache hits`} />
+
+  <h2>Preparing for an interview</h2>
+  <p>
+    When a job becomes real, generate a deep report. It expands the existing
+    evaluation with fresh company and role research — it never re-scores the job.
+    It always publishes its output to Drive and your Sheet at the end.
+  </p>
+  <CommandBlock client:visible label="prep" code={`$ careeros prep 3f2a9c1b`} />
+
+  <h2>Applying to a below-threshold job</h2>
+  <p>
+    Want to apply to a Consider-tier job, or one the batch couldn't read
+    automatically? Draft its answers on demand, using your own logged-in browser
+    or by pasting the questions.
+  </p>
+  <CommandBlock client:visible label="apply" code={`$ careeros apply 3f2a9c1b`} />
+
+  <h2>Enabling an optional paid source</h2>
+  <p>
+    Paid providers are off by default. Turn one on deliberately, and verify its
+    relevance and cost before relying on it.
+  </p>
+  <CommandBlock
+    client:visible
+    label="verify a provider"
+    code={`$ careeros discover --provider glassdoor --dry-run --limit 3   # shape check\n$ careeros discover --provider glassdoor --limit 30            # real cost check`}
+  />
+</DocsLayout>

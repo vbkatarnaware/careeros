@@ -1,0 +1,40 @@
+---
+import Button from "@/components/ui/Button.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<section class="relative overflow-hidden border-b border-border">
+  <div class="pointer-events-none absolute inset-0 grid-backdrop opacity-70"></div>
+  <div class="container-page relative pt-20 pb-20 sm:pt-28 sm:pb-24">
+    <div class="mx-auto max-w-3xl text-center">
+      <a
+        href="/architecture/"
+        class="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted transition-colors hover:text-ink"
+      >
+        <span class="h-1.5 w-1.5 rounded-full bg-accent"></span>
+        Deterministic where possible. AI only where it reasons.
+      </a>
+      <h1 class="text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-ink sm:text-5xl md:text-[3.5rem]">
+        An AI-powered, deterministic job
+        <span class="text-accent"> discovery engine</span>.
+      </h1>
+      <p class="mx-auto mt-6 max-w-xl text-balance text-lg leading-relaxed text-muted">
+        CareerOS finds jobs, scores them against your real experience, and writes
+        the results into a Google Sheet you open every morning. Not an
+        application bot.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button href="/docs/quick-start/" size="lg">Get started</Button>
+        <Button href="/architecture/" variant="secondary" size="lg">
+          See the architecture
+        </Button>
+      </div>
+    </div>
+    <div class="mx-auto mt-14 max-w-xl" data-reveal>
+      <CommandBlock
+        client:visible
+        label="terminal"
+        code={`$ git clone https://github.com/vbkatarnaware/careeros\n$ pip install -e .\n$ careeros start   # build your profile, once\n$ careeros daily   # discover, score, and fill your Sheet`}
+      />
+    </div>
+  </div>
+</section>

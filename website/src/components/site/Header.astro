@@ -1,0 +1,43 @@
+---
+import { primaryNav, site } from "@/lib/site";
+import Logo from "./Logo.astro";
+import ThemeToggle from "@/components/ui/ThemeToggle.tsx";
+import GitHubLink from "@/components/ui/GitHubLink.astro";
+import MobileNav from "./MobileNav.tsx";
+
+const path = Astro.url.pathname;
+const isActive = (href: string) =>
+  href === "/" ? path === "/" : path.startsWith(href);
+---
+<header class="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-md">
+  <div class="container-wide flex h-16 items-center justify-between gap-4">
+    <div class="flex items-center gap-8">
+      <Logo />
+      <nav class="hidden md:flex items-center gap-1" aria-label="Primary">
+        {
+          primaryNav.map((item) => (
+            <a
+              href={item.href}
+              aria-current={isActive(item.href) ? "page" : undefined}
+              class:list={[
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                isActive(item.href)
+                  ? "text-ink"
+                  : "text-muted hover:text-ink",
+              ]}
+            >
+              {item.label}
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+    <div class="flex items-center gap-2">
+      <ThemeToggle client:load />
+      <div class="hidden md:block">
+        <GitHubLink label />
+      </div>
+      <MobileNav client:load items={primaryNav} github={site.github} />
+    </div>
+  </div>
+</header>

@@ -1,0 +1,63 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<DocsLayout
+  title="Quick start"
+  description="Build your profile once, then run your first daily pipeline."
+>
+  <h2>1. Build your profile</h2>
+  <p>
+    <code>careeros start</code> is a guided onboarding that produces your
+    <code>profile.yaml</code> — your facts, targets, and constraints. It opens by
+    asking for your CV (optional; type <code>skip</code> to answer questions
+    instead).
+  </p>
+  <CommandBlock client:visible label="onboard" code={`$ careeros start`} />
+  <p>
+    Your profile is a source of truth. Every resume bullet CareerOS ever selects
+    is a verbatim copy of something written here, so it's worth getting right.
+    You generate it once and edit it rarely.
+  </p>
+
+  <h2>2. Add your discovery credentials</h2>
+  <p>
+    Real credentials live in <code>.careeros/secrets.env</code>, which is
+    gitignored. Config files hold the <em>name</em> of an environment variable,
+    never the key itself.
+  </p>
+  <CommandBlock
+    client:visible
+    label=".careeros/secrets.env"
+    code={`FANTASTIC_API_KEY=your-developer-fantastic-jobs-key`}
+  />
+  <p>
+    The two free providers need nothing. If you skip the plan setting, CareerOS
+    assumes the free tier (500 records per week) rather than over-fetching.
+  </p>
+
+  <h2>3. Run the daily pipeline</h2>
+  <CommandBlock client:visible label="run" code={`$ careeros daily`} />
+  <p>
+    This runs the full pipeline: discover, normalize, dedupe, constraints, gate,
+    evaluate, threshold, artifacts, application answers, and finally the report
+    and Sheet. Deterministic stages cost nothing; the two reasoning stages spend
+    tokens only on jobs that earned them.
+  </p>
+
+  <h2>4. Open your Sheet</h2>
+  <p>
+    Apply-tier jobs (score of 4.0 or higher) get a full row with a tailored
+    resume, cover letter, and drafted application answers. Consider-tier jobs
+    (3.5 to 4.0) get a row with the score and a one-line reason. You read the
+    Sheet, top down, and apply to what's worth it.
+  </p>
+
+  <h2>Going deeper on one job</h2>
+  <p>These run on demand, never as part of the daily loop:</p>
+  <CommandBlock
+    client:visible
+    label="per-job"
+    code={`$ careeros prep <job-id>    # a deep interview-prep report\n$ careeros apply <job-id>   # draft answers for one job's form`}
+  />
+</DocsLayout>

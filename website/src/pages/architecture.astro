@@ -1,0 +1,88 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import ArchitectureDiagram from "@/components/ArchitectureDiagram.tsx";
+import Badge from "@/components/ui/Badge.astro";
+import { stages } from "@/lib/pipeline";
+
+const layout = [
+  { path: ".careeros/profile.yaml", note: "Source of truth #1 — your facts" },
+  { path: ".careeros/config.yaml", note: "Providers, thresholds, prompt versions" },
+  { path: ".careeros/cache/", note: "Fingerprinted AI outputs, reused across runs" },
+  { path: ".careeros/runs/<date>/01_discover/…", note: "Every stage, numbered, on disk" },
+  { path: ".careeros/runs/<date>/06_evaluate/<job-id>.json", note: "Source of truth #2 — the fit judgment" },
+];
+---
+<BaseLayout
+  title="Architecture"
+  description="How CareerOS moves a job from a raw listing to an application package — one deterministic or reasoning stage at a time."
+>
+  <!-- Hero -->
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-20">
+      <div class="max-w-2xl">
+        <p class="eyebrow mb-3">Architecture</p>
+        <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          A job earns each stage before it reaches the next.
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-muted">
+          The pipeline is a fixed sequence of stages, each reading one file and
+          writing another. Deterministic code does everything it can for free;
+          the model is spent only where judgment is genuinely required.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-2">
+          <Badge variant="deterministic">Deterministic — plain Python, zero tokens</Badge>
+          <Badge variant="reasoning">AI reasoning — read prompt, write file</Badge>
+          <Badge variant="output">Output — what you open and act on</Badge>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive diagram -->
+  <section class="py-16 sm:py-20">
+    <div class="container-page">
+      <p class="mb-8 text-sm text-faint">
+        Hover or focus a stage to see its purpose, inputs, outputs, and why it exists.
+      </p>
+      <ArchitectureDiagram client:visible stages={stages} />
+    </div>
+  </section>
+
+  <!-- Filesystem as message bus -->
+  <section class="border-t border-border py-16 sm:py-20">
+    <div class="container-page">
+      <div class="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
+        <div>
+          <p class="eyebrow mb-3">No server. No database.</p>
+          <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+            The filesystem is the message bus.
+          </h2>
+          <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+            Every pipeline stage reads one JSON file and writes another, under a
+            dated run directory. That makes every run inspectable, resumable, and
+            cheap to re-run — unchanged inputs hit the cache, not the model.
+          </p>
+          <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
+            There is nothing to deploy and nothing to keep running. The state of
+            your search is a folder you can read, diff, and delete.
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-xl border border-border bg-surface">
+          <div class="border-b border-border px-5 py-3">
+            <span class="font-mono text-xs text-faint">.careeros/</span>
+          </div>
+          <ul class="divide-y divide-border">
+            {
+              layout.map((row) => (
+                <li class="flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                  <code class="font-mono text-[13px] text-ink">{row.path}</code>
+                  <span class="text-xs text-muted">{row.note}</span>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

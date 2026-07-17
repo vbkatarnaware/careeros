@@ -1,0 +1,89 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Button from "@/components/ui/Button.astro";
+
+const tenets = [
+  {
+    n: "01",
+    title: "AI should reason, not orchestrate.",
+    body: "The model is spent on judgment — is this job a fit, which of your real facts belong on this resume. The orchestration around it (what to fetch, what to dedupe, what to reject, what to render) is deterministic code. Blurring the two means paying a model to do a job a function does better and for free.",
+  },
+  {
+    n: "02",
+    title: "Deterministic systems should own deterministic work.",
+    body: "Discovery, deduplication, hard constraints, thresholding, and reporting have exact right answers. They belong in plain Python that is byte-for-byte reproducible given the same inputs — not in a probabilistic system that might dilute a hard 'no' into a passing score.",
+  },
+  {
+    n: "03",
+    title: "Workflow design matters more than a larger model.",
+    body: "Gate before evaluate. Cache everything. Write a judgment once and reuse it. These are workflow decisions, and they determine cost and quality far more than swapping in a bigger model would. The architecture is the product.",
+  },
+  {
+    n: "04",
+    title: "Validation beats assumptions.",
+    body: "A resume is checked, mechanically, against your real facts before it's accepted. Stage outputs are validated against schemas. Voice is linted. The system verifies what the model produced rather than trusting that it followed instructions.",
+  },
+  {
+    n: "05",
+    title: "Architecture determines long-term maintainability.",
+    body: "No server, no database — the filesystem is the message bus, so every run is inspectable and resumable. A universal job schema means providers are interchangeable. Versioned prompts and profiles make change safe. These choices are what let the project stay small and legible as it grows.",
+  },
+];
+---
+<BaseLayout
+  title="Philosophy"
+  description="The principles behind CareerOS: AI should reason not orchestrate, deterministic systems own deterministic work, and workflow design matters more than a larger model."
+>
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-24">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="eyebrow mb-4">Philosophy</p>
+        <h1 class="text-balance text-3xl font-semibold leading-tight tracking-tight text-ink sm:text-[2.75rem]">
+          The model is the most expensive tool in the box. Reach for it last.
+        </h1>
+        <p class="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted">
+          CareerOS is an argument about where AI belongs in a system — and,
+          more importantly, where it doesn't. These principles shaped every
+          decision in the codebase.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-8 sm:py-12">
+    <div class="container-page">
+      <div class="mx-auto max-w-3xl">
+        {
+          tenets.map((t) => (
+            <div class="border-b border-border py-12 last:border-0" data-reveal>
+              <div class="flex flex-col gap-5 sm:flex-row sm:gap-10">
+                <span class="font-mono text-sm text-accent">{t.n}</span>
+                <div>
+                  <h2 class="text-balance text-xl font-semibold tracking-tight text-ink sm:text-2xl">
+                    {t.title}
+                  </h2>
+                  <p class="mt-4 text-[15px] leading-relaxed text-ink-2">{t.body}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border py-16">
+    <div class="container-page">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-[15px] leading-relaxed text-muted">
+          These aren't abstract. Each one shows up as a concrete choice in the
+          code.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Button href="/product-decisions/">See the decisions</Button>
+          <Button href="/architecture/" variant="secondary">See the architecture</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

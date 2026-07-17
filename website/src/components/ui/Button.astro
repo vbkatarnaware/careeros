@@ -1,0 +1,40 @@
+---
+interface Props {
+  href: string;
+  variant?: "primary" | "secondary" | "ghost";
+  size?: "md" | "lg";
+  external?: boolean;
+  class?: string;
+}
+const {
+  href,
+  variant = "primary",
+  size = "md",
+  external = false,
+  class: className = "",
+} = Astro.props;
+
+const base =
+  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all duration-150 focus-visible:outline-2";
+const variants: Record<string, string> = {
+  primary:
+    "bg-accent text-white hover:bg-accent-hover shadow-[0_1px_2px_rgba(0,0,0,0.12)]",
+  secondary:
+    "border border-border-strong text-ink hover:bg-surface-2",
+  ghost: "text-ink hover:bg-surface-2",
+};
+const sizes: Record<string, string> = {
+  md: "h-9 px-4 text-sm",
+  lg: "h-11 px-5 text-[15px]",
+};
+const rel = external ? "noopener noreferrer" : undefined;
+const target = external ? "_blank" : undefined;
+---
+<a
+  href={href}
+  target={target}
+  rel={rel}
+  class:list={[base, variants[variant], sizes[size], className]}
+>
+  <slot />
+</a>

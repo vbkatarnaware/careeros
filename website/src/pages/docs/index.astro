@@ -1,0 +1,55 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+
+const cards = [
+  { title: "Installation", href: "/docs/installation/", body: "Clone, install, and check your setup with careeros doctor." },
+  { title: "Quick start", href: "/docs/quick-start/", body: "Build your profile once, then run your first daily pipeline." },
+  { title: "Configuration", href: "/docs/configuration/", body: "Providers, thresholds, prompt versions, and credentials." },
+  { title: "Commands", href: "/docs/commands/", body: "Every command, from careeros daily to the per-stage developer tools." },
+  { title: "Architecture", href: "/docs/architecture/", body: "The pipeline, the schemas, and the deterministic/reasoning split." },
+  { title: "Contributing", href: "/docs/contributing/", body: "Add a provider, improve a prompt, and respect the core boundary." },
+];
+---
+<DocsLayout
+  title="Overview"
+  description="CareerOS finds jobs, scores them against your real experience, and writes the results into a Google Sheet you open every morning."
+>
+  <p>
+    CareerOS is an AI-powered, deterministic job discovery and recommendation
+    engine. It is <strong>not an application bot</strong>. It sources roles,
+    filters and scores them, and drafts the artifacts you need — but you stay in
+    the loop and do the applying.
+  </p>
+  <p>
+    The whole system is built around one rule: <strong>use deterministic code
+    wherever possible, and AI only where reasoning genuinely adds value.</strong>
+    Discovery, deduplication, thresholding, and the daily report are plain code
+    that costs zero tokens. AI is spent on exactly two things that need judgment:
+    a cheap triage gate, and one real evaluation per job that survives it.
+  </p>
+
+  <h2>The shape of a day</h2>
+  <CommandBlock
+    client:visible
+    label="a typical run"
+    code={`$ careeros daily   # discover, score, draft, and fill your Sheet\n\n#  → discovered 84 jobs across 3 providers\n#  → 61 unique after dedupe\n#  → 47 passed hard constraints\n#  → 12 kept by the gate\n#  → 12 evaluated (7 from cache)\n#  → 3 Apply, 4 Consider, written to your Sheet`}
+  />
+  <p>
+    The numbers above illustrate the funnel; your run's counts will differ. You
+    open the Sheet, read the score and one-line reason for each job, and start
+    applying to the ones worth your time.
+  </p>
+
+  <h2>Where to go next</h2>
+  <div class="mt-6 grid gap-3 sm:grid-cols-2 not-prose">
+    {
+      cards.map((c) => (
+        <a href={c.href} class="group flex flex-col rounded-xl border border-border bg-surface p-5 transition-colors hover:border-border-strong">
+          <span class="text-[15px] font-semibold text-ink">{c.title}</span>
+          <span class="mt-1.5 text-sm leading-relaxed text-muted">{c.body}</span>
+        </a>
+      ))
+    }
+  </div>
+</DocsLayout>

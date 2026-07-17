@@ -1,0 +1,109 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Button from "@/components/ui/Button.astro";
+import { site } from "@/lib/site";
+
+const contribute = [
+  { title: "Read the developer guide", body: "The deterministic/reasoning boundary, secrets handling, and the failure-handling principle are documented before you write a line.", href: "/docs/developer-guide/" },
+  { title: "Add a provider", body: "Every source implements the same small contract — validate, fetch, to_job_dict. The pipeline never knows which provider a job came from.", href: "/docs/architecture/" },
+  { title: "Improve a prompt", body: "Prompts are versioned files. A new version is a one-line config change that regenerates only the affected stage.", href: "/docs/architecture/" },
+];
+
+const future = [
+  "Product videos and walkthroughs",
+  "Architecture deep-dives",
+  "Screenshots of a real run",
+  "Interactive demos",
+  "A blog",
+  "Release notes",
+];
+---
+<BaseLayout
+  title="Open Source"
+  description="CareerOS is open source under the MIT license. Read the code, run it locally, and contribute."
+>
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-20">
+      <div class="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <div>
+          <p class="eyebrow mb-3">Open source</p>
+          <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+            Read the code. Run it locally. Change it.
+          </h1>
+          <p class="mt-5 text-lg leading-relaxed text-muted">
+            CareerOS is MIT-licensed and built to be legible. There is no hosted
+            backend to trust — the whole system runs on your machine, against
+            files you can read.
+          </p>
+          <div class="mt-8 flex flex-wrap gap-3">
+            <Button href={site.github} external size="lg">View on GitHub</Button>
+            <Button href="/docs/contributing/" variant="secondary" size="lg">Contributing guide</Button>
+          </div>
+        </div>
+        <div class="flex flex-col gap-3">
+          <div class="rounded-xl border border-border bg-surface p-5">
+            <p class="eyebrow mb-1.5">License</p>
+            <p class="text-[15px] text-ink">MIT License</p>
+            <p class="mt-1 text-sm text-muted">© {site.year} {site.author}. Use it, fork it, ship it.</p>
+          </div>
+          <div class="rounded-xl border border-border bg-surface p-5">
+            <p class="eyebrow mb-1.5">Runs under any coding CLI</p>
+            <p class="text-sm leading-relaxed text-muted">
+              Claude Code, Codex, Gemini CLI, or OpenCode — the same skill files
+              run on all of them. The host agent is both runtime and model.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-20">
+    <div class="container-page">
+      <div class="mb-10 max-w-2xl" data-reveal>
+        <p class="eyebrow mb-3">Where to start</p>
+        <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+          The architecture makes contributions small.
+        </h2>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-3" data-reveal>
+        {
+          contribute.map((c) => (
+            <a href={c.href} class="group flex flex-col rounded-xl border border-border bg-surface p-6 transition-colors hover:border-border-strong">
+              <h3 class="text-[15px] font-semibold text-ink">{c.title}</h3>
+              <p class="mt-2 flex-1 text-sm leading-relaxed text-muted">{c.body}</p>
+              <span class="mt-4 text-sm text-accent">Learn more →</span>
+            </a>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Future placeholders, honestly marked -->
+  <section class="border-t border-border py-16 sm:py-20">
+    <div class="container-page">
+      <div class="mb-8 max-w-2xl" data-reveal>
+        <p class="eyebrow mb-3">Coming later</p>
+        <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+          Not built yet — placeholders, kept honest.
+        </h2>
+        <p class="mt-4 text-[15px] leading-relaxed text-muted">
+          These are planned additions to this site and the project. They're
+          listed here so the roadmap for the docs themselves is visible, not to
+          imply they exist today.
+        </p>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-reveal>
+        {
+          future.map((f) => (
+            <div class="flex items-center gap-3 rounded-lg border border-dashed border-border-strong bg-surface-2 px-5 py-4">
+              <span class="h-1.5 w-1.5 rounded-full bg-faint" aria-hidden="true"></span>
+              <span class="text-sm text-muted">{f}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,74 @@
+---
+import { site } from "@/lib/site";
+
+const columns = [
+  {
+    title: "Product",
+    links: [
+      { label: "Architecture", href: "/architecture/" },
+      { label: "Product Decisions", href: "/product-decisions/" },
+      { label: "Philosophy", href: "/philosophy/" },
+      { label: "Comparison", href: "/comparison/" },
+    ],
+  },
+  {
+    title: "Documentation",
+    links: [
+      { label: "Installation", href: "/docs/installation/" },
+      { label: "Quick start", href: "/docs/quick-start/" },
+      { label: "Commands", href: "/docs/commands/" },
+      { label: "Configuration", href: "/docs/configuration/" },
+    ],
+  },
+  {
+    title: "Project",
+    links: [
+      { label: "Roadmap", href: "/roadmap/" },
+      { label: "Open source", href: "/open-source/" },
+      { label: "Contributing", href: "/docs/contributing/" },
+      { label: "GitHub ↗", href: site.github },
+    ],
+  },
+];
+---
+<footer class="mt-24 border-t border-border">
+  <div class="container-wide py-14">
+    <div class="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+      <div class="max-w-xs">
+        <p class="text-sm font-semibold text-ink">CareerOS</p>
+        <p class="mt-3 text-sm leading-relaxed text-muted">
+          A deterministic job discovery engine. Deterministic where possible,
+          AI only where reasoning genuinely adds value.
+        </p>
+      </div>
+      {
+        columns.map((col) => (
+          <div>
+            <p class="eyebrow mb-3">{col.title}</p>
+            <ul class="flex flex-col gap-2">
+              {col.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    class="text-sm text-muted transition-colors hover:text-ink"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+    <div class="mt-12 flex flex-col items-start justify-between gap-3 border-t border-border pt-6 text-sm text-faint sm:flex-row sm:items-center">
+      <p>
+        {site.license} License · © {site.year} {site.author}
+      </p>
+      <p>
+        The evaluation rubric is adapted from
+        <a href="https://career-ops.org" target="_blank" rel="noopener noreferrer" class="text-muted underline decoration-border-strong underline-offset-2 hover:text-ink">Career Ops</a>.
+      </p>
+    </div>
+  </div>
+</footer>

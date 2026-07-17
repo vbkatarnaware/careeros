@@ -1,0 +1,73 @@
+---
+import "@/styles/global.css";
+import Head from "@/components/site/Head.astro";
+import ThemeScript from "@/components/site/ThemeScript.astro";
+import Header from "@/components/site/Header.astro";
+import Footer from "@/components/site/Footer.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title, description } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <ThemeScript />
+    <Head title={title} description={description} />
+  </head>
+  <body class="min-h-screen antialiased">
+    <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-surface focus:px-4 focus:py-2 focus:text-sm">Skip to content</a>
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <script>
+      // Scroll-reveal for [data-reveal] elements. Progressive enhancement with
+      // a guaranteed failsafe — content is never left permanently hidden.
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-reveal]")
+      );
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      if (!els.length) {
+        // nothing to do
+      } else if (reduce || !("IntersectionObserver" in window)) {
+        els.forEach((el) => el.classList.add("is-visible"));
+      } else {
+        const reveal = (el: HTMLElement) => {
+          el.style.transitionDelay = el.dataset.revealDelay || "0ms";
+          el.classList.add("is-visible");
+        };
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting) {
+                reveal(e.target as HTMLElement);
+                io.unobserve(e.target);
+              }
+            }
+          },
+          { rootMargin: "0px 0px -8% 0px" }
+        );
+        els.forEach((el) => io.observe(el));
+
+        // Failsafe: whatever the observer hasn't revealed shortly after load
+        // (fast scroll, anchor jumps, background tabs) is revealed anyway.
+        const failsafe = () =>
+          els.forEach((el) => {
+            if (!el.classList.contains("is-visible")) {
+              el.style.transitionDelay = "0ms";
+              el.classList.add("is-visible");
+            }
+          });
+        window.addEventListener("load", () => setTimeout(failsafe, 1800));
+        setTimeout(failsafe, 4000);
+      }
+    </script>
+  </body>
+</html>

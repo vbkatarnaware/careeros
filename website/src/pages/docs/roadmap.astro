@@ -1,0 +1,33 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import Button from "@/components/ui/Button.astro";
+---
+<DocsLayout
+  title="Roadmap"
+  description="A short pointer to the full roadmap — what's shipped, what's planned, and what's still a question."
+>
+  <p>
+    CareerOS ships a complete daily pipeline today. Planned and research items
+    are tracked honestly and never presented as done.
+  </p>
+  <ul>
+    <li>
+      <strong>Current</strong> — the full pipeline: multi-provider discovery,
+      deterministic filtering and thresholding, the gate and evaluate reasoning
+      steps, resume and cover generation with verification, application answers,
+      the daily report, and the Google Sheet.
+    </li>
+    <li>
+      <strong>Planned</strong> — direct-API providers for Greenhouse, Ashby,
+      Lever, and Workday; incremental discovery; a scriptable config editor; and
+      richer profile sections.
+    </li>
+    <li>
+      <strong>Research</strong> — outcome tracking to calibrate scoring on real
+      conversion data, and a SQLite store if the Sheet ever hits scaling limits.
+    </li>
+  </ul>
+  <div class="not-prose mt-8">
+    <Button href="/roadmap/">See the full roadmap and version history →</Button>
+  </div>
+</DocsLayout>
