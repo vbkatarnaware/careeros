@@ -1,0 +1,73 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<DocsLayout
+  title="Configuration"
+  description="Providers, thresholds, prompt versions, and credentials — every key has a built-in default; you override only what you need."
+>
+  <p>
+    Configuration lives in <code>.careeros/config.yaml</code>. Every key has a
+    built-in default, so you only set what you want to change.
+    <code>careeros config</code> prints the fully resolved configuration.
+  </p>
+
+  <h2>Providers</h2>
+  <p>
+    The <code>providers</code> block controls which sources are enabled and the
+    order they run in. Deduplication keeps the first occurrence of a role, so
+    list your most-trusted source first. Three free-and-direct core sources are
+    on by default; the paid Apify-backed sources ship disabled.
+  </p>
+  <CommandBlock
+    client:visible
+    label=".careeros/config.yaml"
+    code={`providers:\n  fantastic-jobs: { enabled: true }     # core — your main source\n  remoteok: { enabled: true }           # core — free, no signup\n  we-work-remotely: { enabled: true }   # core — free, no signup\n  # paid, opt-in, off by default:\n  naukri: { enabled: false }\n  glassdoor: { enabled: false }\n  ziprecruiter: { enabled: false }\n  indeed: { enabled: false }\n  foundit: { enabled: false }`}
+  />
+
+  <h2>Thresholds</h2>
+  <p>
+    Two tiers decide what happens to an evaluated job. Apply-tier gets the full
+    pipeline; Consider-tier gets a Sheet row only. Below the consider threshold,
+    a job is omitted.
+  </p>
+  <CommandBlock
+    client:visible
+    label=".careeros/config.yaml"
+    code={`threshold: 4.0            # Apply: full artifacts + Sheet row\nconsider_threshold: 3.5  # Consider: Sheet row only (score + reason)\ngate_batch_size: 50      # jobs per gate call — the main cost lever`}
+  />
+
+  <h2>Prompt versions</h2>
+  <p>
+    Each reasoning stage points at a versioned prompt file. Because the version
+    is part of every cache fingerprint, changing one line here regenerates only
+    that stage.
+  </p>
+  <CommandBlock
+    client:visible
+    label=".careeros/config.yaml"
+    code={`prompts:\n  gate: v1\n  eval: v2\n  resume: v1\n  cover: v1`}
+  />
+
+  <h2>Credentials</h2>
+  <p>
+    Secrets never go in config. They live in <code>.careeros/secrets.env</code>
+    (gitignored), and config fields reference the environment variable
+    <em>name</em>. This is why the Sheets service account and the Drive OAuth
+    client are set by pointing at env vars, not by pasting keys.
+  </p>
+  <CommandBlock
+    client:visible
+    label=".careeros/secrets.env"
+    code={`FANTASTIC_API_KEY=...\nAPIFY_TOKEN=...        # only if you enable a paid provider`}
+  />
+
+  <h2>Google Sheets and Drive</h2>
+  <p>
+    Sheets uses a <strong>service account</strong> — you must share your Sheet
+    with the service account's email, which is the step people miss. Drive uses a
+    <strong>different</strong> credential (an OAuth desktop client), because
+    files land in your own Drive. Both are one-time setups, and Drive is
+    entirely optional and off by default.
+  </p>
+</DocsLayout>

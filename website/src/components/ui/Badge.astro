@@ -1,0 +1,24 @@
+---
+interface Props {
+  variant?: "default" | "deterministic" | "reasoning" | "output" | "accent";
+  class?: string;
+}
+const { variant = "default", class: className = "" } = Astro.props;
+
+const styles: Record<string, string> = {
+  default: "border-border text-muted",
+  deterministic: "border-border-strong text-ink-2 bg-surface-2",
+  reasoning: "border-[color:var(--accent-ring)] text-accent bg-accent-soft",
+  output: "border-[color:var(--good)] text-[color:var(--good)]",
+  accent: "border-[color:var(--accent-ring)] text-accent bg-accent-soft",
+};
+---
+<span
+  class:list={[
+    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+    styles[variant],
+    className,
+  ]}
+>
+  <slot />
+</span>

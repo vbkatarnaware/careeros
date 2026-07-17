@@ -1,0 +1,78 @@
+---
+import "@/styles/global.css";
+import Head from "@/components/site/Head.astro";
+import ThemeScript from "@/components/site/ThemeScript.astro";
+import Header from "@/components/site/Header.astro";
+import DocsSidebar from "@/components/site/DocsSidebar.astro";
+import { docsNav } from "@/lib/site";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+const { title, description } = Astro.props;
+
+// Prev/next from the flattened docs order.
+const flat = docsNav.flatMap((s) => s.items);
+const idx = flat.findIndex((i) => i.href === Astro.url.pathname);
+const prev = idx > 0 ? flat[idx - 1] : null;
+const next = idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : null;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <ThemeScript />
+    <Head title={title} description={description} />
+  </head>
+  <body class="min-h-screen antialiased">
+    <a href="#doc" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-surface focus:px-4 focus:py-2 focus:text-sm">Skip to content</a>
+    <Header />
+    <div class="container-wide grid gap-12 py-10 lg:grid-cols-[220px_minmax(0,1fr)] lg:py-14">
+      <aside class="hidden lg:block">
+        <div class="sticky top-24">
+          <DocsSidebar />
+        </div>
+      </aside>
+
+      <div class="min-w-0">
+        <!-- Mobile docs picker -->
+        <details class="mb-8 rounded-lg border border-border lg:hidden">
+          <summary class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-ink">
+            Documentation menu
+          </summary>
+          <div class="border-t border-border px-4 py-4">
+            <DocsSidebar />
+          </div>
+        </details>
+
+        <article id="doc" class="prose-content">
+          <p class="eyebrow mb-3">Documentation</p>
+          <h1 class="text-3xl font-semibold tracking-tight text-ink">{title}</h1>
+          {description && <p class="mt-3 text-lg leading-relaxed text-muted">{description}</p>}
+          <div class="mt-8">
+            <slot />
+          </div>
+        </article>
+
+        <nav class="mt-16 flex items-stretch justify-between gap-4 border-t border-border pt-8" aria-label="Pagination">
+          {
+            prev ? (
+              <a href={prev.href} class="group flex flex-1 flex-col rounded-lg border border-border px-5 py-4 transition-colors hover:border-border-strong">
+                <span class="text-xs text-faint">Previous</span>
+                <span class="mt-1 text-sm font-medium text-ink-2 group-hover:text-ink">← {prev.label}</span>
+              </a>
+            ) : <span class="flex-1"></span>
+          }
+          {
+            next ? (
+              <a href={next.href} class="group flex flex-1 flex-col rounded-lg border border-border px-5 py-4 text-right transition-colors hover:border-border-strong">
+                <span class="text-xs text-faint">Next</span>
+                <span class="mt-1 text-sm font-medium text-ink-2 group-hover:text-ink">{next.label} →</span>
+              </a>
+            ) : <span class="flex-1"></span>
+          }
+        </nav>
+      </div>
+    </div>
+  </body>
+</html>

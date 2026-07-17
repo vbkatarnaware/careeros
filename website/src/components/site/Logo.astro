@@ -1,0 +1,20 @@
+---
+interface Props {
+  class?: string;
+}
+const { class: className = "" } = Astro.props;
+---
+<a href="/" class={`group inline-flex items-center gap-2.5 ${className}`} aria-label="CareerOS home">
+  <span class="relative inline-flex h-7 w-7 items-center justify-center">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="27" height="27" rx="7.5" fill="var(--surface)" stroke="var(--border-strong)"></rect>
+      <!-- three deterministic nodes flowing into one reasoning node -->
+      <circle cx="8" cy="8" r="1.6" fill="var(--muted)"></circle>
+      <circle cx="8" cy="14" r="1.6" fill="var(--muted)"></circle>
+      <circle cx="8" cy="20" r="1.6" fill="var(--muted)"></circle>
+      <path d="M10 8 Q15 8 17 14 M10 14 H17 M10 20 Q15 20 17 14" stroke="var(--border-strong)" stroke-width="1.2" fill="none"></path>
+      <circle cx="19.5" cy="14" r="2.6" fill="var(--accent)"></circle>
+    </svg>
+  </span>
+  <span class="text-[15px] font-semibold tracking-tight text-ink">CareerOS</span>
+</a>

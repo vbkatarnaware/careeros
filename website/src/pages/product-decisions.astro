@@ -1,0 +1,80 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { decisions } from "@/lib/decisions";
+---
+<BaseLayout
+  title="Product Decisions"
+  description="The reasoning behind every important decision in CareerOS — why the gate exists, why filtering is deterministic, why everything is cached, and more."
+>
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-20">
+      <div class="max-w-2xl">
+        <p class="eyebrow mb-3">Product decisions</p>
+        <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          Every decision here exists for a reason. Here they are.
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-muted">
+          This is not a feature list. It's the reasoning behind the
+          architecture — what each choice is, why it was made, and what it buys
+          you. If a claim on this site sounds like a feature, this is where it's
+          justified.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-20">
+    <div class="container-page">
+      <!-- Index -->
+      <nav aria-label="Decisions" class="mb-14 grid gap-2 sm:grid-cols-2" data-reveal>
+        {
+          decisions.map((d, i) => (
+            <a
+              href={`#${d.id}`}
+              class="group flex items-baseline gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong"
+            >
+              <span class="font-mono text-xs text-faint">{String(i + 1).padStart(2, "0")}</span>
+              <span class="text-sm font-medium text-ink-2 transition-colors group-hover:text-ink">
+                {d.title}
+              </span>
+            </a>
+          ))
+        }
+      </nav>
+
+      <!-- Entries -->
+      <div class="flex flex-col gap-16">
+        {
+          decisions.map((d, i) => (
+            <article id={d.id} class="scroll-mt-24" data-reveal>
+              <div class="grid gap-6 lg:grid-cols-[0.5fr_1.5fr] lg:gap-12">
+                <div class="lg:sticky lg:top-24 lg:self-start">
+                  <span class="font-mono text-xs text-faint">{String(i + 1).padStart(2, "0")}</span>
+                  <h2 class="mt-1 text-xl font-semibold tracking-tight text-ink">
+                    {d.title}
+                  </h2>
+                  <p class="mt-2 text-sm leading-relaxed text-muted">{d.question}</p>
+                </div>
+                <div class="flex flex-col gap-5">
+                  <div>
+                    <p class="eyebrow mb-2">The decision</p>
+                    <p class="text-[15px] leading-relaxed text-ink">{d.decision}</p>
+                  </div>
+                  <div class="rule-fade"></div>
+                  <div>
+                    <p class="eyebrow mb-2">Why</p>
+                    <p class="text-[15px] leading-relaxed text-ink-2">{d.why}</p>
+                  </div>
+                  <div class="rounded-xl border border-border bg-surface-2 px-5 py-4">
+                    <p class="eyebrow mb-2">What it buys you</p>
+                    <p class="text-[15px] leading-relaxed text-ink-2">{d.consequence}</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+</BaseLayout>

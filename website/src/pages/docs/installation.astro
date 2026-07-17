@@ -1,0 +1,51 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<DocsLayout
+  title="Installation"
+  description="Install CareerOS, then confirm your environment with careeros doctor."
+>
+  <h2>Requirements</h2>
+  <ul>
+    <li><strong>Python 3.11 or newer.</strong></li>
+    <li><strong>A host coding CLI</strong> — Claude Code, Codex, Gemini CLI, or OpenCode. The host agent runs the reasoning steps.</li>
+    <li><strong>A Fantastic Jobs API key</strong> for the default paid source. The two free sources (RemoteOK, We Work Remotely) need no signup.</li>
+  </ul>
+  <p>
+    The last two are not installed by pip — a host CLI and an API key are things
+    you bring.
+  </p>
+
+  <h2>Install</h2>
+  <CommandBlock
+    client:visible
+    label="install"
+    code={`$ git clone https://github.com/vbkatarnaware/careeros\n$ cd careeros\n$ pip install -e .`}
+  />
+
+  <h3>Optional extras</h3>
+  <p>Each extra is opt-in. A fresh clone runs the daily pipeline without any of them.</p>
+  <CommandBlock
+    client:visible
+    label="optional"
+    code={`# Google Drive backup + PDF rendering\n$ pip install -e ".[drive,pdf]"\n\n# Background form-reading for Application Answers (JS-only forms)\n$ pip install -e ".[apply]"\n$ playwright install chromium\n\n# The test suite\n$ pip install -e ".[dev]"`}
+  />
+
+  <h2>Confirm your setup</h2>
+  <p>
+    <code>careeros doctor</code> is a read-only first-run checklist. It checks
+    your Python version, profile, discovery credentials, Sheets, Drive, and
+    Playwright — and tells you exactly what's missing. It never modifies
+    anything.
+  </p>
+  <CommandBlock client:visible label="verify" code={`$ careeros doctor`} />
+
+  <h2>Scaffold your workspace</h2>
+  <p>
+    <code>careeros init</code> creates the local <code>.careeros/</code>
+    directory with a config file and an example profile. Everything CareerOS
+    writes lives under this folder, and it's gitignored.
+  </p>
+  <CommandBlock client:visible label="scaffold" code={`$ careeros init`} />
+</DocsLayout>

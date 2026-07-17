@@ -1,0 +1,134 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Badge from "@/components/ui/Badge.astro";
+
+// Honest buckets. "Current" = shipped in the v1.x slice. "Planned"/"Research"
+// are not presented as done.
+const current = [
+  "Profile-driven segmented discovery, merged across multiple providers",
+  "Free core sources on by default: Fantastic Jobs (REST), RemoteOK, We Work Remotely",
+  "Deterministic normalize, dedupe, constraints, and two-tier thresholding",
+  "AI Gate and structured Evaluate with a file-based prepare/finalize contract",
+  "Resume and cover-letter generation with verbatim verification and voice lint",
+  "Automatic Application Answers with per-form status reporting",
+  "Zero-cost daily report and a Google Sheet you open every morning",
+  "Optional Google Drive backup (PDF, flat, idempotent)",
+  "Parallel provider discovery and resilient multi-token rotation",
+  "LinkedIn, Wellfound, and YC listings via the active-jb source",
+];
+
+const planned = [
+  "Direct-API providers for Greenhouse, Ashby, Lever, and Workday — no actor needed",
+  "Incremental discovery that fetches only what's new since the last run",
+  "A validated, scriptable config editor (careeros config get / set / show)",
+  "Richer profile sections, such as adaptive framing and negotiation scripts",
+];
+
+const research = [
+  "Outcome tracking (applied, response, interview, offer) to calibrate scoring on real conversion data",
+  "A SQLite store, if the Sheet-as-database approach ever hits real scaling limits",
+];
+
+const versions = [
+  { v: "1.3.0", note: "Parallel provider discovery, multi-token rotation, provider health in doctor, one canonical onboarding doc." },
+  { v: "1.2.0", note: "Multi-provider discovery, a provider-result contract, and capability-driven budget and quota enforcement." },
+  { v: "1.1.0", note: "Automatic Application Answers, the publish command, per-form statuses, and newest-on-top Sheet ordering." },
+  { v: "1.0.0", note: "Initial public release — the full daily pipeline, end to end." },
+];
+---
+<BaseLayout
+  title="Roadmap"
+  description="What's shipped, what's planned, and what's still being researched in CareerOS. Planned work is never presented as done."
+>
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-20">
+      <div class="max-w-2xl">
+        <p class="eyebrow mb-3">Roadmap</p>
+        <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          What's shipped, what's planned, and what's still a question.
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-muted">
+          Kept honest on purpose. Nothing planned or under research is presented
+          as if it already works today.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-20">
+    <div class="container-page">
+      <div class="grid gap-10 lg:grid-cols-3 lg:gap-8">
+        <div data-reveal>
+          <div class="mb-5 flex items-center gap-2">
+            <Badge variant="output">Current</Badge>
+            <span class="text-xs text-faint">shipped in v1.x</span>
+          </div>
+          <ul class="flex flex-col gap-3">
+            {current.map((item) => (
+              <li class="flex gap-3 text-sm leading-relaxed text-ink-2">
+                <svg class="mt-1 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div data-reveal data-reveal-delay="80ms">
+          <div class="mb-5 flex items-center gap-2">
+            <Badge variant="accent">Planned</Badge>
+            <span class="text-xs text-faint">designed, not built</span>
+          </div>
+          <ul class="flex flex-col gap-3">
+            {planned.map((item) => (
+              <li class="flex gap-3 text-sm leading-relaxed text-ink-2">
+                <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full border border-accent" aria-hidden="true"></span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div data-reveal data-reveal-delay="160ms">
+          <div class="mb-5 flex items-center gap-2">
+            <Badge variant="default">Research</Badge>
+            <span class="text-xs text-faint">open questions</span>
+          </div>
+          <ul class="flex flex-col gap-3">
+            {research.map((item) => (
+              <li class="flex gap-3 text-sm leading-relaxed text-ink-2">
+                <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full border border-dashed border-faint" aria-hidden="true"></span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Version history -->
+  <section class="border-t border-border py-16 sm:py-20">
+    <div class="container-page">
+      <div class="mb-10 max-w-2xl">
+        <p class="eyebrow mb-3">Version history</p>
+        <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+          How it got here.
+        </h2>
+      </div>
+      <ol class="relative mx-auto flex max-w-3xl flex-col">
+        <span aria-hidden="true" class="absolute left-[5px] top-2 bottom-2 w-px bg-border"></span>
+        {
+          versions.map((rel) => (
+            <li class="relative flex gap-6 pb-8 last:pb-0">
+              <span class="relative z-10 mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent"></span>
+              <div>
+                <p class="font-mono text-sm text-ink">v{rel.v}</p>
+                <p class="mt-1 text-sm leading-relaxed text-muted">{rel.note}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+</BaseLayout>

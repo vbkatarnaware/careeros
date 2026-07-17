@@ -1,0 +1,120 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+
+// Factual, respectful comparison. CareerOps details reflect its own public
+// description (career-ops.org); CareerOS details are grounded in this repo.
+// The point is a difference in architecture bets, not a ranking.
+const rows = [
+  {
+    dimension: "Runtime model",
+    careerops:
+      "Mode files run inside your AI coding CLI, which drives the whole flow.",
+    careeros:
+      "A Python package (careeros) does the deterministic work; a host coding CLI performs only the reasoning steps.",
+  },
+  {
+    dimension: "Where AI is spent",
+    careerops:
+      "The evaluation and tailoring are model-driven, per its A–F scoring across weighted dimensions.",
+    careeros:
+      "AI is limited to a cheap gate and one structured evaluation per surviving job; discovery, filtering, and reporting spend no tokens.",
+  },
+  {
+    dimension: "Evaluation output",
+    careerops: "An A–F grade with tailored, ATS-oriented CV documents.",
+    careeros:
+      "A compact JSON judgment (score, recommendation, strengths, weaknesses, fit paragraph) that every artifact reuses.",
+  },
+  {
+    dimension: "Cost model",
+    careerops: "Processes offers, including in batch, to evaluate many in parallel.",
+    careeros:
+      "Gate before evaluate, plus fingerprinted caching keyed on job, profile version, and prompt version — an unchanged re-run costs zero calls.",
+  },
+  {
+    dimension: "Where results land",
+    careerops: "A tracked single source of truth with integrity checks.",
+    careeros:
+      "A Google Sheet (newest on top) with a hand-editable status column, plus local run files as the source of truth.",
+  },
+  {
+    dimension: "Truthfulness enforcement",
+    careerops: "Generates tailored CVs customized per job description.",
+    careeros:
+      "A deterministic verify step refuses to cache a resume whose lines don't verbatim-match your profile; a lint enforces voice.",
+  },
+];
+---
+<BaseLayout
+  title="Comparison"
+  description="How CareerOS relates to Career Ops — shared heritage, a different architecture bet. A respectful, factual comparison."
+>
+  <section class="border-b border-border">
+    <div class="container-page py-16 sm:py-20">
+      <div class="max-w-2xl">
+        <p class="eyebrow mb-3">Comparison</p>
+        <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          Shared heritage. A different architecture bet.
+        </h1>
+        <p class="mt-5 text-lg leading-relaxed text-muted">
+          CareerOS owes a real debt to
+          <a href="https://career-ops.org" target="_blank" rel="noopener noreferrer" class="text-ink underline decoration-border-strong underline-offset-2 hover:decoration-accent">Career Ops</a>.
+          The comparison below is about design choices, not a ranking — both are
+          open-source, MIT-licensed, and local-first.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Attribution callout -->
+  <section class="py-12">
+    <div class="container-page">
+      <div class="rounded-xl border border-[color:var(--accent-ring)] bg-accent-soft px-6 py-5" data-reveal>
+        <p class="eyebrow mb-2">Attribution</p>
+        <p class="text-[15px] leading-relaxed text-ink-2">
+          The Final Evaluation rubric and matching methodology in CareerOS are
+          <strong class="text-ink">adapted from Career Ops</strong>. CareerOS
+          deliberately diverges on architecture (host-CLI-driven, not a
+          standalone bot), output format (structured JSON, not a long report for
+          every job), and cost model (gate before evaluate, cache everything).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Table -->
+  <section class="pb-16 sm:pb-20">
+    <div class="container-page">
+      <div class="overflow-x-auto rounded-xl border border-border" data-reveal>
+        <table class="w-full border-collapse text-left">
+          <thead>
+            <tr class="border-b border-border bg-surface-2">
+              <th class="px-5 py-4 text-xs font-medium uppercase tracking-wide text-faint">Dimension</th>
+              <th class="px-5 py-4 text-sm font-semibold text-ink-2">Career Ops</th>
+              <th class="border-l border-border px-5 py-4 text-sm font-semibold text-accent">CareerOS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              rows.map((r) => (
+                <tr class="border-b border-border last:border-0 align-top">
+                  <td class="px-5 py-5 text-sm font-medium text-ink">{r.dimension}</td>
+                  <td class="px-5 py-5 text-sm leading-relaxed text-muted">{r.careerops}</td>
+                  <td class="border-l border-border bg-surface px-5 py-5 text-sm leading-relaxed text-ink-2">
+                    {r.careeros}
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 max-w-2xl text-sm leading-relaxed text-faint">
+        Career Ops descriptions reflect its own public documentation and may
+        change as that project evolves. If anything here is out of date, the
+        correction belongs upstream — please
+        <a href="https://github.com/vbkatarnaware/careeros" target="_blank" rel="noopener noreferrer" class="underline decoration-border-strong underline-offset-2 hover:text-muted">open an issue</a>.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

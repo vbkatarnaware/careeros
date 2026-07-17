@@ -1,0 +1,46 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+import Button from "@/components/ui/Button.astro";
+import { site } from "@/lib/site";
+---
+<DocsLayout
+  title="Contributing"
+  description="How to add a provider, improve a prompt, and keep changes aligned with the architecture."
+>
+  <p>
+    CareerOS is MIT-licensed and built to be legible. The architecture is
+    designed so that most contributions are small and self-contained.
+  </p>
+
+  <h2>Add a discovery provider</h2>
+  <p>
+    Every source implements the same small contract — <code>validate</code>,
+    <code>fetch</code>, and <code>to_job_dict</code>. Because the pipeline works
+    against the universal Job schema, it never needs to know which provider a
+    job came from. Adding a source is writing one file and registering it; the
+    rest of the pipeline is unchanged.
+  </p>
+
+  <h2>Improve a prompt</h2>
+  <p>
+    Prompts are versioned files. To change one, add a new version and point the
+    stage at it in config. Because the version is part of every cache
+    fingerprint, this regenerates only the affected stage and leaves the old
+    version reproducible for auditing.
+  </p>
+
+  <h2>Before you open a pull request</h2>
+  <ul>
+    <li>Keep deterministic stages deterministic — no model calls creeping in.</li>
+    <li>Validate any new stage output against a schema.</li>
+    <li>Run the test suite.</li>
+    <li>Never commit secrets; they belong in the gitignored env file.</li>
+  </ul>
+  <CommandBlock client:visible label="check" code={`$ pip install -e ".[dev]"\n$ pytest`} />
+
+  <div class="not-prose mt-8 flex flex-wrap gap-3">
+    <Button href={site.github} external>Open the repository</Button>
+    <Button href="/docs/developer-guide/" variant="secondary">Read the developer guide</Button>
+  </div>
+</DocsLayout>

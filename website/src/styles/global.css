@@ -1,0 +1,280 @@
+@import "tailwindcss";
+
+/* Self-hosted variable fonts — no external CDN, no font-flash. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* Dark mode driven by a class on <html> (set by the no-flash inline script). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Design tokens — CareerOS.
+  A cool, graphite-and-indigo system. Neutrals are deliberately biased a few
+  degrees toward the indigo accent so nothing reads as an unconsidered mid-grey.
+  Single accent (indigo), spent sparingly.
+*/
+:root {
+  --bg: #fcfcfd;
+  --bg-subtle: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f9fafb;
+  --ink: #16181d;
+  --ink-2: #363a44;
+  --muted: #60646c;
+  --faint: #8a8f99;
+  --border: #e7e8ec;
+  --border-strong: #d6d8de;
+  --accent: #5b5bd6;
+  --accent-hover: #5151cd;
+  --accent-soft: #eeeefb;
+  --accent-ring: rgba(91, 91, 214, 0.4);
+  --good: #1f9d63;
+  --warn: #b7791f;
+  --shadow-color: 220 24% 12%;
+}
+
+:root.dark {
+  --bg: #08090a;
+  --bg-subtle: #0c0d0f;
+  --surface: #101114;
+  --surface-2: #16181c;
+  --ink: #ededef;
+  --ink-2: #c4c7ce;
+  --muted: #9497a1;
+  --faint: #6a6e78;
+  --border: #1d1f25;
+  --border-strong: #2a2d35;
+  --accent: #7c79e8;
+  --accent-hover: #8a88ec;
+  --accent-soft: #17171f;
+  --accent-ring: rgba(124, 121, 232, 0.45);
+  --good: #3dd68c;
+  --warn: #e0b341;
+  --shadow-color: 220 40% 2%;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Monaco,
+    "Cascadia Code", monospace;
+
+  --radius-sm: 0.375rem;
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--accent-ring);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  /* A hairline that fades at both ends — used as a section divider. */
+  .rule-fade {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--border-strong) 20%,
+      var(--border-strong) 80%,
+      transparent
+    );
+  }
+
+  /* Fine dotted grid, extremely subtle, for hero/architecture backdrops. */
+  .grid-backdrop {
+    background-image: radial-gradient(
+      var(--border-strong) 0.75px,
+      transparent 0.75px
+    );
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 78%);
+    -webkit-mask-image: radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      #000 30%,
+      transparent 78%
+    );
+  }
+
+  .prose-content {
+    max-width: 42rem;
+  }
+  .prose-content h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-top: 2.75rem;
+    margin-bottom: 0.75rem;
+    scroll-margin-top: 5rem;
+  }
+  .prose-content h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+    scroll-margin-top: 5rem;
+  }
+  .prose-content p {
+    color: var(--ink-2);
+    line-height: 1.75;
+    margin-bottom: 1.1rem;
+  }
+  .prose-content ul {
+    list-style: none;
+    margin-bottom: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .prose-content ul li {
+    position: relative;
+    padding-left: 1.25rem;
+    color: var(--ink-2);
+    line-height: 1.7;
+  }
+  .prose-content ul li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.66em;
+    width: 5px;
+    height: 5px;
+    border-radius: 1px;
+    background: var(--accent);
+  }
+  .prose-content a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-ring);
+  }
+  .prose-content a:hover {
+    border-bottom-color: var(--accent);
+  }
+  .prose-content code:not(pre code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .prose-content strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .container-page {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+  .container-wide {
+    width: 100%;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  /* Scroll-reveal: opt-in via data-reveal; JS toggles .is-visible.
+     Only hidden when JS is present (html.js), so a no-JS load and crawlers
+     always see the content. */
+  html.js [data-reveal] {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  html.js [data-reveal].is-visible {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html.js [data-reveal] {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

@@ -1,0 +1,87 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+
+const endUser = [
+  { cmd: "careeros init", desc: "Scaffold the local .careeros/ directory with config and a profile template." },
+  { cmd: "careeros start", desc: "Guided onboarding that produces your profile.yaml and a discovery plan. Opens by asking for your CV (optional)." },
+  { cmd: "careeros doctor", desc: "Read-only first-run checklist: Python, profile, credentials, Sheets, Drive, Playwright. Never modifies anything." },
+  { cmd: "careeros daily", desc: "Run the full daily pipeline. Aliased as careeros scan." },
+  { cmd: "careeros prep <job-id>", desc: "Generate a deep interview-prep report for one job. Opt-in, never part of the daily run." },
+  { cmd: "careeros apply <job-id>", desc: "Draft application answers for one job of any score, using your own browser or pasted questions." },
+  { cmd: "careeros publish <job-id>", desc: "Upload one job's artifacts to Drive and patch just that Sheet row." },
+  { cmd: "careeros config", desc: "Print the fully resolved configuration, including the discovery quota recommendation." },
+  { cmd: "careeros providers", desc: "List every registered discovery provider." },
+  { cmd: "careeros migrate-config", desc: "One-time, idempotent rewrite of a deprecated single-provider key to the providers model." },
+  { cmd: "careeros --version", desc: "Print the installed version and exit." },
+];
+
+const sheets = [
+  { cmd: "careeros sheets migrate", desc: "Clean up an existing Sheet: remove deprecated columns, add new ones, apply formatting." },
+  { cmd: "careeros sheets sync-status", desc: "Patch the Application Answers status of existing rows without appending new ones." },
+  { cmd: "careeros backfill-drive", desc: "Add Drive artifacts and links to older Apply-tier rows. Defaults to a dry run." },
+];
+
+const dev = [
+  "discover", "normalize", "dedupe", "constraints", "gate", "evaluate",
+  "threshold", "artifacts", "summary", "drive", "render-report",
+  "lint <file>", "verify-resume <file>",
+];
+---
+<DocsLayout
+  title="Commands"
+  description="Every command, from the daily pipeline to the per-stage developer tools."
+>
+  <h2>Everyday commands</h2>
+  <div class="not-prose mt-6 overflow-hidden rounded-xl border border-border">
+    <table class="w-full border-collapse text-left align-top">
+      <tbody>
+        {
+          endUser.map((c) => (
+            <tr class="border-b border-border last:border-0">
+              <td class="w-[42%] px-5 py-4">
+                <code class="font-mono text-[13px] text-accent">{c.cmd}</code>
+              </td>
+              <td class="px-5 py-4 text-sm leading-relaxed text-muted">{c.desc}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Sheet maintenance</h2>
+  <div class="not-prose mt-6 overflow-hidden rounded-xl border border-border">
+    <table class="w-full border-collapse text-left align-top">
+      <tbody>
+        {
+          sheets.map((c) => (
+            <tr class="border-b border-border last:border-0">
+              <td class="w-[42%] px-5 py-4">
+                <code class="font-mono text-[13px] text-accent">{c.cmd}</code>
+              </td>
+              <td class="px-5 py-4 text-sm leading-relaxed text-muted">{c.desc}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Developer commands</h2>
+  <p>
+    Each pipeline stage is runnable standalone against a run directory, which is
+    what makes a run resumable and easy to debug. The AI stages use a
+    <code>--prepare</code> / <code>--finalize</code> boundary: Python writes the
+    input and instructions, the host agent writes the output, and Python
+    validates it.
+  </p>
+  <div class="not-prose mt-4 flex flex-wrap gap-2">
+    {
+      dev.map((d) => (
+        <code class="rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono text-[13px] text-ink-2">
+          careeros {d}
+        </code>
+      ))
+    }
+  </div>
+</DocsLayout>

@@ -1,0 +1,90 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import Button from "@/components/ui/Button.astro";
+import { stages } from "@/lib/pipeline";
+---
+<DocsLayout
+  title="Architecture"
+  description="The pipeline, the schemas, and the deterministic/reasoning split that defines CareerOS."
+>
+  <h2>The deterministic / reasoning boundary</h2>
+  <p>
+    This is the single most important thing to internalize. The system splits
+    cleanly in two:
+  </p>
+  <ul>
+    <li>
+      <strong>Deterministic</strong> — discover, normalize, dedupe, constraints,
+      threshold, sheets, drive, lint, cache. Pure Python, no model calls,
+      reproducible given the same inputs.
+    </li>
+    <li>
+      <strong>Reasoning</strong> — the AI gate, evaluation, resume, cover letter,
+      application answers, and the deep report. Each is a read-prompt-then-write-file
+      step, and every output is checked before it's accepted.
+    </li>
+  </ul>
+  <p>
+    Never blur the boundary: don't hand-write what a deterministic stage should
+    compute, and don't let a deterministic stage fabricate what a reasoning step
+    should decide.
+  </p>
+
+  <h2>The pipeline, in order</h2>
+  <div class="not-prose mt-6 overflow-hidden rounded-xl border border-border">
+    <table class="w-full border-collapse text-left align-top">
+      <tbody>
+        {
+          stages.map((s, i) => (
+            <tr class="border-b border-border last:border-0">
+              <td class="w-12 px-4 py-3.5 font-mono text-xs text-faint">{String(i + 1).padStart(2, "0")}</td>
+              <td class="px-2 py-3.5">
+                <span class="text-sm font-medium text-ink">{s.name}</span>
+              </td>
+              <td class="px-4 py-3.5 text-sm leading-relaxed text-muted">{s.purpose}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="not-prose mt-6">
+    <Button href="/architecture/" variant="secondary">Explore the interactive diagram →</Button>
+  </div>
+
+  <h2>The filesystem is the message bus</h2>
+  <p>
+    CareerOS has no server and no database. Every stage reads one JSON file and
+    writes another, under <code>.careeros/runs/&lt;date&gt;/</code>. That makes
+    every run inspectable, resumable, and cheap to re-run — unchanged inputs hit
+    the cache, not the model.
+  </p>
+
+  <h2>Three schemas hold it together</h2>
+  <ul>
+    <li>
+      <strong>Job</strong> — the universal contract every provider must output,
+      so the pipeline never knows which source a job came from. Its ID is a
+      deterministic hash, which is what makes deduplication possible.
+    </li>
+    <li>
+      <strong>Profile</strong> — your facts, the second source of truth. It
+      enforces verbatim bullets and carries a version that flows into every cache
+      key.
+    </li>
+    <li>
+      <strong>Eval</strong> — written once by the evaluate stage, and never
+      re-scored. It caps strengths and weaknesses so the daily report stays
+      scannable, and its fit paragraph doubles as the cover-letter spine.
+    </li>
+  </ul>
+
+  <h2>Caching</h2>
+  <p>
+    Every AI output is content-addressed on a fingerprint of the job's content
+    hash, your profile version, and the active prompt version (resumes and cover
+    letters also include the eval score). There's no database and no expiry — a
+    miss simply re-runs the stage. Enrichment that can't change a judgment, like
+    a later-discovered salary, is deliberately excluded from the hash.
+  </p>
+</DocsLayout>

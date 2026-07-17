@@ -1,0 +1,61 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import CommandBlock from "@/components/ui/CommandBlock.tsx";
+---
+<DocsLayout
+  title="Developer guide"
+  description="The boundary to respect, how secrets are handled, and the principle that governs failures."
+>
+  <h2>Respect the boundary</h2>
+  <p>
+    Before writing code, internalize the deterministic/reasoning split described
+    in the <a href="/docs/architecture/">architecture</a>. Deterministic stages
+    are pure Python and must stay reproducible. Reasoning stages read a versioned
+    prompt and write a validated file. Keeping the two apart is what keeps the
+    system cheap and legible.
+  </p>
+
+  <h2>Secrets handling</h2>
+  <p>
+    Real credentials live only in <code>.careeros/secrets.env</code>, which is
+    gitignored. Source it — never print, cat, or grep its contents. Config fields
+    that end in <code>_env</code> hold the <em>name</em> of an environment
+    variable, not the value. Tokens are never persisted raw; the token-exhaustion
+    cache stores only a hash fingerprint.
+  </p>
+
+  <h2>The failure-handling principle</h2>
+  <p>
+    When any non-trivial step can't complete, the agent doesn't guess or silently
+    skip. It:
+  </p>
+  <ul>
+    <li>Clearly explains what failed;</li>
+    <li>Explains why, if known;</li>
+    <li>States the impact on the current run;</li>
+    <li>Presents the options — fix and retry, continue with reduced functionality, or abort;</li>
+    <li>And waits for explicit confirmation before continuing.</li>
+  </ul>
+  <p>
+    This holds uniformly across every stage, even under a permissions-skipping
+    flag. The agent never makes assumptions about what you'd prefer.
+  </p>
+
+  <h2>Run the tests</h2>
+  <CommandBlock
+    client:visible
+    label="tests"
+    code={`$ pip install -e ".[dev]"\n$ pytest`}
+  />
+
+  <h2>Debug one stage at a time</h2>
+  <p>
+    Because every stage reads and writes files, you can run any single stage
+    against an existing run directory without re-running the whole pipeline.
+  </p>
+  <CommandBlock
+    client:visible
+    label="isolate a stage"
+    code={`$ careeros discover --provider remoteok --dry-run --limit 3\n$ careeros dedupe\n$ careeros constraints\n$ careeros lint path/to/resume.md\n$ careeros verify-resume path/to/resume.md`}
+  />
+</DocsLayout>

@@ -1,0 +1,28 @@
+---
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  intro?: string;
+  class?: string;
+  wide?: boolean;
+}
+const { eyebrow, title, intro, class: className = "", wide = false } = Astro.props;
+---
+<section class:list={["py-16 sm:py-20", className]}>
+  <div class={wide ? "container-wide" : "container-page"}>
+    {
+      (eyebrow || title || intro) && (
+        <div class="mb-10 max-w-2xl" data-reveal>
+          {eyebrow && <p class="eyebrow mb-3">{eyebrow}</p>}
+          {title && (
+            <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+              {title}
+            </h2>
+          )}
+          {intro && <p class="mt-4 text-[15px] leading-relaxed text-muted">{intro}</p>}
+        </div>
+      )
+    }
+    <slot />
+  </div>
+</section>
