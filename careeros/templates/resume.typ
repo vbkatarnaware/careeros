@@ -153,9 +153,9 @@
   )
 ]
 
-// -- Selected Product Initiatives ---------------------------------------
+// -- Selected Products ----------------------------------------------------
 #if "projects" in data and data.projects.len() > 0 [
-  = Selected Product Initiatives
+  = Selected Products
   #for p in data.projects [
     #let has-url = p.at("url", default: none) != none and p.url != ""
     #exp(

@@ -31,6 +31,28 @@ You still choose **which** bullets/skills to include and in **what order** —
 that part of the selector model is unchanged. What's different is that the
 chosen bullet's *sentence* can now be rewritten, not just copied.
 
+## Founder-experience rule (surface PM signal, never manufacture it)
+
+Founder and solo-operator roles hide real Product Management work behind
+company-building language. When a `profile.yaml` bullet contains factual
+evidence of PM responsibility, surface it in PM terms rather than leaving it
+implicit. This is a **wording and selection** rule, so it never escapes the
+truthfulness rule above: if the profile doesn't state it, it does not exist.
+
+- Prefer the bullet showing **judgment** (a trade-off, a sequencing call, a
+  deliberate deferral) over the one showing feature count or implementation
+  detail.
+- Prefer **roadmap ownership** (what got built, in what order, and what got
+  deliberately postponed) over a list of what shipped.
+- Prefer **customer discovery** over the technology used to act on it.
+- Surface **cross-functional and organization-wide influence** (product,
+  engineering, operations, onboarding, support, GTM, partnerships) **only when
+  a bullet actually states it.** Never infer a team, a headcount, or a
+  reporting line from a founder title alone.
+- Do **not** over-index on AI work just because AI projects exist in the
+  profile. AI is a capability; select it when the JD makes it relevant, not by
+  default.
+
 ## Truthfulness rule (the reframe rule, extended)
 
 Same rule as v1, now applied to full sentences rather than just summaries:
@@ -54,8 +76,11 @@ quoted back. `careeros verify-resume` checks this deterministically too.
 
 ## Steps
 
-1. **Read** `profile.yaml`, the Job, and `06_evaluate/<job-id>.json` (for
-   `ats_keywords`, `strengths`, `fit_paragraph`).
+1. **Read** `profile.yaml` (including `product_philosophy`, a selection lens —
+   see step 5 — and `projects_philosophy`, the equivalent lens for step 7 —
+   neither is ever a quotable fact), the Job, and
+   `06_evaluate/<job-id>.json` (for `ats_keywords`, `strengths`,
+   `fit_paragraph`).
 2. **Tagline.** Usually `profile.yaml`'s own `tagline` field, used as-is. You
    may lightly reword it toward this JD's domain if a clear match exists, but
    it must stay generic/transferable (see rule above) — never JD-specific
@@ -93,9 +118,16 @@ quoted back. `careeros verify-resume` checks this deterministically too.
    most recent first: rank the company's `profile.yaml` bullets by tag
    overlap with the JD + eval's `ats_keywords`, then by `visibility`
    (headline > supporting; skip `hidden` unless the JD makes a hidden fact
-   specifically relevant — rare). Cap at 3-4 bullets per company (Kaagjaat
-   should normally get 2-3, not 1, when included — it has three canonical
-   bullets available). Reword each selected bullet toward the JD's keywords,
+   specifically relevant — rare). When two or more bullets tie on tag overlap
+   and visibility, use `product_philosophy` as the tiebreak: prefer the
+   bullet that shows discovery, a real trade-off, a metric the candidate
+   personally defined or tracked, or a decision that changed because of
+   evidence, over one that only states an output. `product_philosophy` only
+   ever influences *which* bullet you pick or *how* you word it — never
+   quote it, and never let it introduce a number or claim that isn't already
+   in the bullet itself. Cap at 3-4 bullets per company (Kaagjaat should
+   normally get 2-3, not 1, when included — it has three canonical bullets
+   available). Reword each selected bullet toward the JD's keywords,
    preserving every number/entity/technology it names.
 6. **Select skills**: include only entries whose `tags` overlap the JD, or
    `visibility: headline` skills as a baseline. Group by `category`. Never
@@ -104,9 +136,19 @@ quoted back. `careeros verify-resume` checks this deterministically too.
 7. **Select 2-3 projects**: rank `profile.yaml`'s `projects` by tag overlap
    with the JD + eval's `ats_keywords`, then pick the 2 or 3 most relevant
    (3 if the page has room and more than 2 are genuinely relevant, 2
-   otherwise — this is a page-density call, not a fixed number). List only
-   each project's `name`, exactly as it appears in `profile.yaml`. **Never
-   reword a project's bullets** — this field is selection only, same
+   otherwise — this is a page-density call, not a fixed number). When two or
+   more projects tie on tag overlap, apply `projects_philosophy` as the
+   tiebreak: prefer the project that shows discovery, a trade-off,
+   validation, or a decision reversed by evidence, over one that only
+   demonstrates more technology or more AI usage — a product is never ranked
+   higher for being more technically complex or more AI-heavy. If bullets
+   still tie after that, prefer `profile.yaml`'s own array order, which
+   encodes the candidate's considered ranking of these products.
+   `projects_philosophy` is a lens for this choice only: never quote it, and
+   never let it introduce a number or claim not already in a project's
+   `bullets[].text`. List only each project's `name`, exactly as it appears
+   in `profile.yaml`. **Never reword a project's bullets** — this field is
+   selection only, same
    selector-not-writer rule as v1; there's no JD-tailoring benefit to
    rewording a side-project blurb, and the renderer looks up the canonical
    bullets/url by name.
@@ -177,5 +219,10 @@ always include it explicitly rather than relying on that fallback.
    hiring manager would. Does the Summary answer "what role, and why this
    one?" Does the first screen show 1-2 proof points mapping to the JD's
    highest-risk requirements? Does the rewording actually sound like this
-   candidate, or like a JD's keywords stapled onto their history? Fix before
+   candidate, or like a JD's keywords stapled onto their history? Would a
+   senior PM reading this conclude the candidate understands customers,
+   makes decisions from evidence, can build 0-to-1, and treats AI as a
+   capability rather than an identity, or does it read like a founder
+   listing achievements? Does the Products section read as evidence of
+   product thinking, or as a list of things built with AI? Fix before
    reporting the resume as done.

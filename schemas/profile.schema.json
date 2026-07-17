@@ -47,6 +47,14 @@
       "type": "string",
       "description": "Free-text nuance the eval prompt applies when scoring role_fit/seniority_fit against role_priorities — e.g. how to treat a step-down in seniority, what makes a 'growth' role vs a title match, when a lower-tier role should still rank highly because of company quality. Optimizes for the candidate's stated long-term goal, not raw job count."
     },
+    "product_philosophy": {
+      "type": "string",
+      "description": "Free-text nuance the resume prompt (resume_v2.md) applies when SELECTING and ORDERING bullets — the candidate's recurring product pattern and convictions, used as a tiebreak lens (e.g. prefer the bullet showing discovery, a trade-off, a defined metric, or a decision reversed by evidence). This is guidance for choosing between equally-true facts, never a fact itself: it must never be quoted verbatim into a resume and must never be a source of a number that isn't already in an experience/project bullet."
+    },
+    "projects_philosophy": {
+      "type": "string",
+      "description": "The `projects[]` counterpart to product_philosophy: free-text nuance the resume prompt (resume_v2.md) applies when SELECTING which products appear on a resume. Same hard limits — a selection lens, never a fact: never quoted verbatim, never a source of a number or claim that isn't already in a projects[].bullets[].text. Exists because products are chosen on different criteria than experience bullets (evidence of product thinking, validation, maturity, resume value — explicitly NOT technical complexity or AI usage), and because a product's real status (pre-launch, internal, validated experiment) must survive selection onto the page."
+    },
     "work_mode_priority": {
       "type": "array",
       "items": { "type": "string" },
@@ -196,6 +204,7 @@
         "properties": {
           "name": { "type": "string" },
           "url": { "type": ["string", "null"] },
+          "tagline": { "type": ["string", "null"] },
           "bullets": {
             "type": "array",
             "items": {

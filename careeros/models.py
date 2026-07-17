@@ -174,6 +174,8 @@ class Profile:
     logistics: dict = field(default_factory=dict)
     role_priorities: list[str] = field(default_factory=list)
     ranking_notes: str = ""
+    product_philosophy: str = ""
+    projects_philosophy: str = ""
     work_mode_priority: list[str] = field(default_factory=list)
     summary_variants: list[dict] = field(default_factory=list)
     projects: list[dict] = field(default_factory=list)
