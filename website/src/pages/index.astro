@@ -3,6 +3,7 @@ import BaseLayout from "@/layouts/BaseLayout.astro";
 import Hero from "@/components/home/Hero.astro";
 import Button from "@/components/ui/Button.astro";
 import Badge from "@/components/ui/Badge.astro";
+import VideoDemo from "@/components/ui/VideoDemo.tsx";
 import { stages } from "@/lib/pipeline";
 
 const features = [
@@ -135,12 +136,9 @@ const previewStages = stages.filter((s) =>
           </p>
           <p class="mt-4 text-[15px] leading-relaxed text-ink-2">
             A resume never invents a bullet. A cover letter never claims
-            something not in your profile. A deterministic check refuses to cache
-            a resume whose lines don't verbatim-match your facts.
+            something not in your profile.
           </p>
-        </div>
-        <div class="flex flex-col gap-3" data-reveal data-reveal-delay="80ms">
-          <div class="rounded-xl border border-border bg-surface p-5">
+          <div class="mt-6 rounded-xl border border-border bg-surface p-5">
             <div class="mb-2 flex items-center gap-2">
               <span class="font-mono text-xs text-accent">profile.yaml</span>
               <Badge variant="accent">Source of truth</Badge>
@@ -150,18 +148,48 @@ const previewStages = stages.filter((s) =>
               via <code class="font-mono text-[13px]">careeros start</code>, edited rarely.
             </p>
           </div>
-          <div class="ml-6 flex items-center gap-2 text-faint">
+        </div>
+        <div class="flex flex-col gap-3" data-reveal data-reveal-delay="80ms">
+          <div class="flex items-center gap-2 text-faint">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
             <span class="text-xs">derives, never re-derives</span>
           </div>
-          <div class="grid grid-cols-2 gap-3">
-            {["Daily report", "Resume", "Cover letter", "Application answers"].map((d) => (
-              <div class="rounded-lg border border-border bg-surface-2 px-4 py-3">
-                <p class="text-sm font-medium text-ink-2">{d}</p>
-              </div>
-            ))}
-          </div>
+          <VideoDemo
+            client:visible
+            src="resume-cover"
+            label="resume.md + cover.md, written live"
+            caption="A deterministic check refuses to cache a resume whose lines don't verbatim-match your profile — this is that write, unedited. The daily report and application answers derive the same way."
+          />
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Watch it actually run -->
+  <section class="border-b border-border py-20">
+    <div class="container-page">
+      <div class="mb-10 max-w-2xl" data-reveal>
+        <p class="eyebrow mb-3">Not a mockup</p>
+        <h2 class="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+          Watch it actually run.
+        </h2>
+        <p class="mt-4 text-[15px] leading-relaxed text-muted">
+          Real terminal output from a real <code class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[13px]">careeros daily</code> run — unedited, including where the pipeline pushes back.
+        </p>
+      </div>
+      <div class="grid gap-6 sm:grid-cols-2" data-reveal data-reveal-delay="60ms">
+        <VideoDemo
+          client:visible
+          src="gate-parallel"
+          label="gate stage — 7 parallel agents"
+          caption="Seven background agents dispatched at once, each reasoning through its own batch of jobs — with live token and time counters, not a progress bar."
+        />
+        <VideoDemo
+          client:visible
+          src="apply-honest"
+          label="apply stage — a dead listing"
+          caption="Egnyte's posting had expired. Per the apply prompt's rule, CareerOS won't invent answers for a listing that no longer exists — it flags it and moves on."
+        />
       </div>
     </div>
   </section>

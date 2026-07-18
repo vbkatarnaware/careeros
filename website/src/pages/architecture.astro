@@ -2,6 +2,7 @@
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import ArchitectureDiagram from "@/components/ArchitectureDiagram.tsx";
 import Badge from "@/components/ui/Badge.astro";
+import VideoDemo from "@/components/ui/VideoDemo.tsx";
 import { stages } from "@/lib/pipeline";
 
 const layout = [
@@ -19,20 +20,30 @@ const layout = [
   <!-- Hero -->
   <section class="border-b border-border">
     <div class="container-page py-16 sm:py-20">
-      <div class="max-w-2xl">
-        <p class="eyebrow mb-3">Architecture</p>
-        <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-          A job earns each stage before it reaches the next.
-        </h1>
-        <p class="mt-5 text-lg leading-relaxed text-muted">
-          The pipeline is a fixed sequence of stages, each reading one file and
-          writing another. Deterministic code does everything it can for free;
-          the model is spent only where judgment is genuinely required.
-        </p>
-        <div class="mt-6 flex flex-wrap gap-2">
-          <Badge variant="deterministic">Deterministic — plain Python, zero tokens</Badge>
-          <Badge variant="reasoning">AI reasoning — read prompt, write file</Badge>
-          <Badge variant="output">Output — what you open and act on</Badge>
+      <div class="grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
+        <div>
+          <p class="eyebrow mb-3">Architecture</p>
+          <h1 class="text-balance text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+            A job earns each stage before it reaches the next.
+          </h1>
+          <p class="mt-5 text-lg leading-relaxed text-muted">
+            The pipeline is a fixed sequence of stages, each reading one file and
+            writing another. Deterministic code does everything it can for free;
+            the model is spent only where judgment is genuinely required.
+          </p>
+          <div class="mt-6 flex flex-wrap gap-2">
+            <Badge variant="deterministic">Deterministic — plain Python, zero tokens</Badge>
+            <Badge variant="reasoning">AI reasoning — read prompt, write file</Badge>
+            <Badge variant="output">Output — what you open and act on</Badge>
+          </div>
+        </div>
+        <div data-reveal data-reveal-delay="80ms">
+          <VideoDemo
+            client:visible
+            src="pipeline-start"
+            label="careeros daily — a real run starting"
+            caption="Doctor checks, then discovery: providers fetched live, jobs deduplicated, nothing spent yet — every stage below is what happens next."
+          />
         </div>
       </div>
     </div>

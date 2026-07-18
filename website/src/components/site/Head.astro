@@ -1,5 +1,6 @@
 ---
 import { site } from "@/lib/site";
+import StructuredData from "@/components/site/StructuredData.astro";
 
 interface Props {
   title?: string;
@@ -8,14 +9,15 @@ interface Props {
 const { title, description = site.description } = Astro.props;
 const fullTitle = title ? `${title} — ${site.name}` : `${site.name} — ${site.tagline}`;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://careeros.vercel.app").href;
+const ogImage = new URL("/og-image.png", Astro.site ?? "https://careeros.vercel.app").href;
 ---
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{fullTitle}</title>
 <meta name="description" content={description} />
 <link rel="canonical" href={canonical} />
-<meta name="theme-color" content="#08090a" media="(prefers-color-scheme: dark)" />
-<meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#08090a" />
+<meta name="color-scheme" content="dark" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -23,11 +25,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://careeros.ve
 <meta property="og:title" content={fullTitle} />
 <meta property="og:description" content={description} />
 <meta property="og:url" content={canonical} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content={fullTitle} />
 <meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="sitemap" href="/sitemap-index.xml" />
+<StructuredData />

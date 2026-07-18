@@ -4,36 +4,13 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 
-/* Dark mode driven by a class on <html> (set by the no-flash inline script). */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /*
   Design tokens — CareerOS.
   A cool, graphite-and-indigo system. Neutrals are deliberately biased a few
   degrees toward the indigo accent so nothing reads as an unconsidered mid-grey.
-  Single accent (indigo), spent sparingly.
+  Single accent (indigo), spent sparingly. Dark-only by design.
 */
 :root {
-  --bg: #fcfcfd;
-  --bg-subtle: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f9fafb;
-  --ink: #16181d;
-  --ink-2: #363a44;
-  --muted: #60646c;
-  --faint: #8a8f99;
-  --border: #e7e8ec;
-  --border-strong: #d6d8de;
-  --accent: #5b5bd6;
-  --accent-hover: #5151cd;
-  --accent-soft: #eeeefb;
-  --accent-ring: rgba(91, 91, 214, 0.4);
-  --good: #1f9d63;
-  --warn: #b7791f;
-  --shadow-color: 220 24% 12%;
-}
-
-:root.dark {
   --bg: #08090a;
   --bg-subtle: #0c0d0f;
   --surface: #101114;

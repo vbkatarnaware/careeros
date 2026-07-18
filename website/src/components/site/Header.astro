@@ -1,7 +1,6 @@
 ---
 import { primaryNav, site } from "@/lib/site";
 import Logo from "./Logo.astro";
-import ThemeToggle from "@/components/ui/ThemeToggle.tsx";
 import GitHubLink from "@/components/ui/GitHubLink.astro";
 import MobileNav from "./MobileNav.tsx";
 
@@ -33,7 +32,6 @@ const isActive = (href: string) =>
       </nav>
     </div>
     <div class="flex items-center gap-2">
-      <ThemeToggle client:load />
       <div class="hidden md:block">
         <GitHubLink label />
       </div>

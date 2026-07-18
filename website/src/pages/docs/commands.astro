@@ -1,5 +1,6 @@
 ---
 import DocsLayout from "@/layouts/DocsLayout.astro";
+import VideoDemo from "@/components/ui/VideoDemo.tsx";
 
 const endUser = [
   { cmd: "careeros init", desc: "Scaffold the local .careeros/ directory with config and a profile template." },
@@ -83,5 +84,13 @@ const dev = [
         </code>
       ))
     }
+  </div>
+  <div class="not-prose mt-8">
+    <VideoDemo
+      client:visible
+      src="resume-cover"
+      label="artifacts:prepare → resume.md, cover.md"
+      caption="The artifacts stage writing resume.md and cover.md for a real job, straight from profile.yaml — no invented lines."
+    />
   </div>
 </DocsLayout>

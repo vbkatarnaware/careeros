@@ -56,9 +56,7 @@ website/
 
 - **Direction:** cool graphite with a single indigo accent (Linear-adjacent),
   all-sans with tight display tracking.
-- **Themes:** light and dark are both fully designed. Theme is set before paint
-  by an inline script and toggled by the header control; the preference is
-  stored in `localStorage`.
+- **Theme:** dark-only, by design.
 - **Tokens:** defined once as CSS custom properties in `src/styles/global.css`
   and exposed to Tailwind via `@theme inline`. Change the palette there.
 

@@ -1,0 +1,44 @@
+---
+import { site } from "@/lib/site";
+
+const siteUrl = Astro.site?.href ?? "https://careeros.vercel.app/";
+
+const graph = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${siteUrl}#website`,
+      name: site.name,
+      url: siteUrl,
+      description: site.description,
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: site.name,
+      description: site.description,
+      url: siteUrl,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Cross-platform (runs inside an AI coding CLI: Claude Code, Codex, Gemini CLI, or OpenCode)",
+      softwareVersion: "1.6.0",
+      license: "https://opensource.org/licenses/MIT",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      author: {
+        "@type": "Person",
+        name: site.author,
+      },
+      codeRepository: site.github,
+    },
+    {
+      "@type": "Person",
+      name: site.author,
+      url: site.github,
+    },
+  ],
+};
+---
+<script type="application/ld+json" set:html={JSON.stringify(graph)} />

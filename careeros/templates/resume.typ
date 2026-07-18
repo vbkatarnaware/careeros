@@ -117,15 +117,15 @@
 
 // Each item is boxed so Typst never breaks a line in the middle of a phone
 // number or URL -- a wrap point can only fall between whole contact items.
-// No personal-site link here on purpose: phone/email/LinkedIn/GitHub fit on
-// one line as real handle text (not generic "LinkedIn"/"GitHub" labels,
-// which some ATS pipelines and recruiter tools can't pattern-match a
+// All links render as real handle text (not generic "LinkedIn"/"Portfolio"
+// labels, which some ATS pipelines and recruiter tools can't pattern-match a
 // structured profile URL out of if the visible text isn't the URL itself).
 #let contact-list = (
   if data.phone != "" { box[#data.phone] },
   if data.email != "" { box[#link("mailto:" + data.email)[#data.email]] },
   if data.linkedin != "" { box[#link("https://" + data.linkedin)[#data.linkedin]] },
   if data.at("github", default: "") != "" { box[#link("https://" + data.github)[#data.github]] },
+  if data.at("portfolio_url", default: "") != "" { box[#link("https://" + data.portfolio_url)[#data.portfolio_url]] },
 ).filter(c => c != none)
 
 #show: resume.with(

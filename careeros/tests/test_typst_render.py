@@ -191,11 +191,10 @@ def test_build_render_data_contact_links_empty_when_absent(profile):
     assert data["portfolio_url"] == ""
 
 
-def test_rendered_pdf_contains_github_but_not_portfolio_site():
-    """GitHub renders as real handle text in the header. The personal-site
-    link is deliberately NOT rendered (even though build_render_data still
-    computes it as a fact) -- it was dropped to keep the contact line to one
-    row; see resume.typ's header comment for the ATS-parsing reasoning."""
+def test_rendered_pdf_contains_github_and_portfolio_site():
+    """GitHub and the personal-site link both render as real handle text in
+    the header — wrapping to a second line if the contact list doesn't fit
+    on one, rather than dropping either link."""
     out = render_resume_pdf(_profile_with_links(), {
         "summary": "Summary.",
         "experience": [{"company": "Acme Corp", "bullets": ["Shipped widget X, growing revenue 40%."]}],
@@ -203,7 +202,7 @@ def test_rendered_pdf_contains_github_but_not_portfolio_site():
     })
     text = _extract_text(out)
     assert "github.com/testcandidate" in text
-    assert "testcandidate.dev" not in text
+    assert "testcandidate.dev" in text
 
 
 def test_renders_a_valid_pdf_when_no_github_or_portfolio_on_file(profile):

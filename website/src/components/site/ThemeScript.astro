@@ -1,17 +1,8 @@
 ---
-// Runs before paint to set the theme class, avoiding a flash of the wrong theme.
+// Marks JS as available so reveal animations can safely hide content until
+// they run. Without JS, content stays visible (see global.css). The site is
+// dark-only, so there is no theme to set before paint.
 ---
 <script is:inline>
-  (function () {
-    // Mark that JS is available so reveal animations can safely hide content
-    // until they run. Without JS, content stays visible (see global.css).
-    document.documentElement.classList.add("js");
-    try {
-      var stored = localStorage.getItem("careeros-theme");
-      var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      var dark = stored ? stored === "dark" : prefersDark;
-      document.documentElement.classList.toggle("dark", dark);
-      document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    } catch (e) {}
-  })();
+  document.documentElement.classList.add("js");
 </script>

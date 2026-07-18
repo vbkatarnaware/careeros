@@ -1,6 +1,7 @@
 ---
 import DocsLayout from "@/layouts/DocsLayout.astro";
 import CommandBlock from "@/components/ui/CommandBlock.tsx";
+import VideoDemo from "@/components/ui/VideoDemo.tsx";
 ---
 <DocsLayout
   title="Quick start"
@@ -44,6 +45,14 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
     and Sheet. Deterministic stages cost nothing; the two reasoning stages spend
     tokens only on jobs that earned them.
   </p>
+  <div class="not-prose">
+    <VideoDemo
+      client:visible
+      src="pipeline-start"
+      label="careeros daily — real terminal output"
+      caption="Doctor checks pass, then discovery runs against live providers — this is unedited output from an actual run, not a mockup."
+    />
+  </div>
 
   <h2>4. Open your Sheet</h2>
   <p>
