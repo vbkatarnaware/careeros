@@ -80,7 +80,7 @@ person thinks it means. Both changes come out of two weeks of real daily use.
   its candidate-key lists (`TITLE_KEYS`, `pick_field`, …) were never
   Apify-specific, and no Apify provider remains to justify the name.
 
-
+## [1.6.0] - 2026-07-14
 
 A senior-UX pass for the open-source launch: a zero-Google local-first mode,
 a per-job command for full on-demand treatment of any single job, and a
