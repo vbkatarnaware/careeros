@@ -61,6 +61,8 @@ _FIT_TIERS = [
     {"size": "9.0", "margin": "12.5"},
     {"size": "8.6", "margin": "12"},
     {"size": "8.2", "margin": "11.5"},
+    {"size": "8.1", "margin": "11.375"},
+    {"size": "8.0", "margin": "11.25"},
     {"size": "7.8", "margin": "11"},  # last resort before >1 page
 ]
 
