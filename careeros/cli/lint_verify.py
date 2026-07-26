@@ -35,7 +35,7 @@ def verify_resume(
     reworded experience bullet must preserve every number/metric from its
     source profile.yaml bullet (no invented or dropped fact), and no field
     may name the target company. CareerOS's analog of Career Ops'
-    plan-lint.mjs verbatim check — enforces resume_v2.md's rules
+    plan-lint.mjs verbatim check — enforces the active resume prompt's rules
     mechanically, not just via prompt instruction.
 
     A bare .md file (v1 legacy) is also accepted for backward compatibility

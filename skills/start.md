@@ -42,7 +42,7 @@ by answering questions instead.)"**
 convenience input for onboarding ONLY — a versioned record you can re-paste
 from when facts change, and the raw source Step 2 extracts confirmed
 `profile.yaml` bullets from. It is never read directly by any later stage.
-Resume generation (`resume_v2.md`) selects and reworks language only from
+Resume generation (the active resume prompt) selects and reworks language only from
 the CONFIRMED `profile.yaml` bullets, never from raw CV text or invented
 facts — that's what the fact-preservation rule and `careeros verify-resume`
 enforce. Evaluation scores
@@ -247,7 +247,7 @@ Repeat for `projects` (same bullet/tags/visibility shape).
 Draft 1-2 short professional-summary paragraphs together — a generic
 default (`jd_tags: []`) and, if their background spans a distinct secondary
 domain (e.g. fintech), one more tagged for that domain. Get explicit
-sign-off on the exact wording; this is what `resume_v2.md` selects from and
+sign-off on the exact wording; this is what the resume prompt selects from and
 may reword (never invents facts beyond) when tailoring to a job.
 
 ## Step 10 — Skills and education

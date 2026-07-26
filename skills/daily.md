@@ -191,7 +191,8 @@ version as a prior run) are written directly to
 reasoning spent. For whatever's left, this prints an instruction block
 naming exactly which job(s) need a resume and/or cover letter. For each one:
 
-1. **Resume** — read `prompts/resume_v2.md`. Write
+1. **Resume** — read the resume prompt named by `config.prompts.resume`
+   (`prompts/resume_<version>.md`). Write
    `artifacts/<job-id>/resume.json` (tailoring zones only — canonical facts
    like company/dates/education are merged in from `profile.yaml` at render
    time, never written here). v2's rule: reword bullet language to mirror

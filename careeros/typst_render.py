@@ -14,7 +14,7 @@ The renderer MERGES two inputs and hands the result to `templates/resume.typ`:
     model — the tailoring JSON below can never alter them;
   - tailoring (tagline, summary, reworded-but-fact-preserving experience
     bullets, which companies/projects to include, skills selection/order)
-    comes from the AI content step (`resume.json`, see prompts/resume_v2.md).
+    comes from the AI content step (`resume.json`, see the active resume prompt).
 
 This split is the actual anti-hallucination guarantee: a bug or prompt
 regression in the tailoring step can misword a bullet, but it structurally

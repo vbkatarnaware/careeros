@@ -196,7 +196,7 @@ def verify_resume_bullets(resume_md: str, profile) -> list[str]:
 
 # ── Resume truthfulness v2: fact-preserving reword enforcement ────────────
 #
-# v2 (resume_v2.md, prompts/typst_render.py) loosens "verbatim copy" to
+# v2+ (the active resume prompt, prompts/typst_render.py) loosens "verbatim copy" to
 # "reword the language, preserve every fact" — the LLM may mirror a JD's
 # keywords in its own phrasing, but every hard NUMBER (a metric, percentage,
 # dollar amount, headcount) in a profile bullet must survive into its

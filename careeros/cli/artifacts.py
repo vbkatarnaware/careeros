@@ -90,7 +90,7 @@ def _artifacts_prepare(cfg: Config, date: str, job_id: str = None) -> None:
             jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
     profile = _load_profile(cfg)
-    resume_prompt_version = cfg.prompts.get("resume", "v2")
+    resume_prompt_version = cfg.prompts.get("resume", "v4")
     cover_prompt_version = cfg.prompts.get("cover", "v1")
     cache = Cache(cfg.cache_dir)
 
@@ -128,7 +128,7 @@ def _artifacts_prepare(cfg: Config, date: str, job_id: str = None) -> None:
             })
 
     # Each resume/cover generation independently reads the full profile.yaml
-    # (per prompts/resume_v2.md, prompts/cover_v1.md) plus the job's own
+    # (per the active resume prompt, prompts/cover_v1.md) plus the job's own
     # description — so the estimate multiplies profile size by the number of
     # generation tasks, not just by job count.
     profile_bytes = cfg.profile_path.stat().st_size if cfg.profile_path.exists() else 0
@@ -157,7 +157,7 @@ def _artifacts_prepare(cfg: Config, date: str, job_id: str = None) -> None:
             "AGENT INSTRUCTIONS:\n"
             f"Read {cfg.prompt_path('resume')} and {cfg.prompt_path('cover')} plus .careeros/profile.yaml.\n"
             "For each job below needing resume/cover, write the file(s) to its artifacts_path:\n"
-            "  - resume.json (tailoring zones only — see resume_v2.md; canonical facts are\n"
+            "  - resume.json (tailoring zones only — see the active resume prompt; canonical facts are\n"
             "    merged in from profile.yaml at render time, never write them here)\n"
             "  - cover.md (unchanged from v1 — freely written, grounded prose)\n"
             "Run `careeros verify-resume <path>/resume.json --company \"<company>\"` + `careeros lint`\n"
@@ -182,7 +182,7 @@ def _artifacts_finalize(cfg: Config, date: str, job_id: str = None) -> None:
             jobs_by_id = {j["id"]: Job.from_dict(j) for j in json.load(f)}
 
     profile = _load_profile(cfg)
-    resume_prompt_version = cfg.prompts.get("resume", "v2")
+    resume_prompt_version = cfg.prompts.get("resume", "v4")
     cover_prompt_version = cfg.prompts.get("cover", "v1")
     cache = Cache(cfg.cache_dir)
     resume_schema = json.loads((runmeta.SCHEMAS_DIR / "resume.schema.json").read_text())

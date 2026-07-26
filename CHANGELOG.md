@@ -4,6 +4,47 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] - 2026-07-26
+
+### Changed
+
+- **Resume skills section: a floor, then fill (`prompts/resume_v4.md`, now
+  the default).** Measured across the 18 resumes generated on 2026-07-26,
+  `resume_v3` emitted a median of **9 skills out of the profile's 65**, never
+  once surfaced the Tools category, and surfaced Growth once — so tools a
+  recruiter searches for by name (Jira, Notion, Figma, GA4, Looker Studio)
+  were present in `profile.yaml` but structurally unreachable on the page.
+  Two causes, both fixed: a JD's `ats_keywords` never contain a category tag
+  like `tools`, so v3's tag-only matching could not reach those entries; and
+  with no target count and no space-awareness clause, the model minimized.
+  v4 selects in three passes — every `visibility: headline` skill as a
+  non-negotiable floor, then supporting skills matched by tag **or by name
+  appearing in the JD**, then fill to a 22-28 item target band. Category
+  labels are now a fixed set (Product, Growth, AI & Automation, FinTech,
+  Analytics, Tools); v3 drifted across nine variants including "Product
+  Operations", "Data & Research", and "Automation", which weakened keyword
+  matching for no gain.
+- **Resume bullets front-load the fact.** v4 adds a compression rule: cut
+  leading process filler so a bullet reaches its first number sooner ("Owned
+  the full product lifecycle (discovery, PRDs, roadmap, MVP launch, and GTM)
+  for…" spends fourteen words before its first metric). Explicitly a
+  compression rule, not a truncation one — every number, entity, and
+  technology still survives, and no metric is ever dropped to save a line.
+  Bullet density is the asset; the goal is fewer wasted words per fact.
+- `resume_v3.md` stays on disk for rollback — set `prompts.resume: v3` in
+  `.careeros/config.yaml`. Switching versions invalidates the artifact cache
+  (the prompt version is part of the cache key), so resumes regenerate.
+
+### Fixed
+
+- Restored the `## [1.6.0]` CHANGELOG heading, which the 1.7.0 entry was
+  written over — that release's body had been left orphaned under 1.7.0.
+- `careeros/cli/artifacts.py` fell back to `"v2"` when `prompts.resume` was
+  unset, two versions behind the shipped default.
+- Documentation and schema comments referenced `prompts/resume_v2.md` by
+  filename in nine places; they now point at "the active resume prompt" so
+  they stop going stale on every prompt version bump.
+
 ## [1.7.0] - 2026-07-26
 
 Discovery collapses to one source, and `api.limit` starts meaning what a

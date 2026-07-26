@@ -64,7 +64,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "prompts": {
         "gate": "v1",
         "eval": "v2",
-        "resume": "v3",
+        "resume": "v4",
         "cover": "v1",
     },
     # Approximate FX to INR for salary constraint checks. A margin is applied

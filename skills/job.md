@@ -44,7 +44,7 @@ careeros artifacts --job-id {job-id} --date {date} --prepare
 Cache-checked, same as `daily`'s batch version — a cache hit needs no
 reasoning. If it reports something to generate, follow the printed
 AGENT INSTRUCTIONS exactly (same rules as skills/daily.md Step 8: resume
-tailoring zones only from `prompts/resume_v2.md`, cover letter freely
+tailoring zones only from the active resume prompt, cover letter freely
 written from `prompts/cover_v1.md`, verify each with `careeros
 verify-resume` + `careeros lint` before moving on). Then:
 
