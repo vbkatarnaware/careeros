@@ -202,13 +202,14 @@ def render_summary(
     near_miss_section = "\n".join(f"- {e.score:.1f} {_label(e)}" for e in near_miss) or "_None._"
 
     # apify_cost_usd_total is a LOWER BOUND, not the settled final spend —
-    # found live (2026-07-08) that the actor's own reported usageTotalUsd can
-    # undercount the real monthly-usage delta (some charges settle async,
-    # after discover already returns). Directionally useful for comparing
-    # runs/configs; check your Apify console for the authoritative total.
+    # found live (2026-07-08) that a paid source's own reported per-run cost
+    # can undercount the real monthly-usage delta (some charges settle async,
+    # after discover already returns). The field name is kept for continuity
+    # with archived run.json history. Directionally useful for comparing
+    # runs/configs; check the source's own console for the authoritative total.
     cost_total = totals.get("apify_cost_usd_total", 0.0)
     cost_per_job = totals.get("cost_per_selected_job_usd")
-    cost_line = f"${cost_total:.4f} Apify spend today (lower bound, not settled final total — see below)"
+    cost_line = f"${cost_total:.4f} discovery spend today (lower bound, not settled final total — see below)"
     if cost_per_job is not None:
         cost_line += f" → **${cost_per_job:.4f} per selected (≥{threshold:.1f}) job**"
     else:
@@ -230,8 +231,8 @@ def render_summary(
 
 ## Cost
 {cost_line}
-_Apify's own reported cost can settle asynchronously after a query returns, so
-this figure may undercount your actual monthly usage — check the Apify
+_A paid source's reported cost can settle asynchronously after a query returns,
+so this figure may undercount your actual monthly usage — check that source's
 console for the authoritative total; treat this as a directional signal for
 comparing runs/configs, not an exact bill._
 

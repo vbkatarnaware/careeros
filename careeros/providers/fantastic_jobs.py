@@ -3,16 +3,11 @@
 https://developer.fantastic.jobs/documentation/how-fantastic-jobs-api-works
 https://developer.fantastic.jobs/api/new-jobs
 
-The default, maintained Fantastic Jobs provider. Same underlying dataset and
-the SAME field names as the legacy Apify actor
-(careeros/providers/legacy/fantastic_jobs_actor.py, registered as
-`fantastic-jobs-actor`) — confirmed during the P2.6/P2.7 architecture review:
-`.careeros/qa/sample_raw.json` is already API-shaped (id, source,
+The Fantastic Jobs provider, and since v1.7 the only registered discovery
+source. Its field names were confirmed during the P2.6/P2.7 architecture
+review: `.careeros/qa/sample_raw.json` is already API-shaped (id, source,
 source_type, title, organization, url, locations_derived,
-ai_work_arrangement, ai_salary_*, org_linkedin_slug, ...). `to_job_dict()`
-below is therefore copied verbatim from the actor provider — this migration
-only changes fetch(); normalize/queryplan/gate/evaluate/threshold/artifacts
-never know the difference.
+ai_work_arrangement, ai_salary_*, org_linkedin_slug, ...).
 
 Two commercial transports, one architecture (config.api.transport):
   - "direct"   — https://data.fantastic.jobs (developer.fantastic.jobs)
@@ -52,7 +47,7 @@ from typing import Any
 import requests
 
 from careeros.config import Config
-from careeros.providers._apify_common import (
+from careeros.providers._field_mapping import (
     COMPANY_KEYS, DESCRIPTION_KEYS, TITLE_KEYS, URL_KEYS, pick_field,
 )
 from careeros.providers.base import ProviderError, ProviderResult
@@ -307,7 +302,7 @@ class FantasticJobsProvider:
         (job-id-keyed) collapses the small real overlap (no extra dedup here).
 
         `cost_usd` on the returned `ProviderResult` is always 0.0: unlike the
-        Apify actor's pay-per-result billing, both REST transports are
+        a pay-per-result actor's billing, both REST transports are
         subscription/credit-metered, not priced per call, so there is no
         real per-call USD figure to report (0.0 is the documented contract
         for a non-metered-per-call source — see providers/base.py)."""

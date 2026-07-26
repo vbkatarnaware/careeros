@@ -28,11 +28,10 @@ from careeros.tests.conftest import make_job
 
 def _cfg(**overrides) -> Config:
     defaults = dict(
-        provider="fantastic-jobs",
         threshold=4.0, consider_threshold=3.5,
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={},
-        sheets={"enabled": True}, apify={}, api={}, fx_rates={}, drive={"enabled": False},
+        sheets={"enabled": True}, api={}, fx_rates={}, drive={"enabled": False},
     )
     defaults.update(overrides)
     return Config(**defaults)

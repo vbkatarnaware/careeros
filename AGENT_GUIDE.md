@@ -87,10 +87,9 @@ committed). Rules, no exceptions:
   key into one of these fields is a real misconfiguration bug that has
   happened before; if you're editing one of these fields, the value you
   write should look like a shouty env-var name, never like a token.
-- **Never persist a raw Apify token anywhere**, including new state
-  files. The token-exhaustion cache (`.careeros/apify_tokens.json`)
-  stores only a `sha256` fingerprint, by design — if you're touching that
-  file's logic, preserve that property.
+- **Never persist a raw API credential anywhere**, including new state
+  files. If you add a cache keyed by a credential, store only a `sha256`
+  fingerprint — never the key itself.
 
 ## The Failure Handling Principle
 
@@ -117,7 +116,7 @@ this section rather than restate it.
 >
 > The agent must never silently skip important work or make assumptions
 > about what the user prefers. This applies uniformly across every stage
-> — Fantastic Jobs, Apify/any discovery provider, Drive, Sheets,
+> — Fantastic Jobs/any discovery provider, Drive, Sheets,
 > Playwright/form-reading, resume/cover/answers generation, network
 > timeouts — alike. One rule, applied consistently, not a per-stage
 > special case.
@@ -131,14 +130,14 @@ tool-permission gate, so it is not bypassed by permission settings.
 
 `careeros doctor` is a fast, read-only sanity check (Python version,
 profile, discovery credentials, Sheets/Drive config, per-provider
-last-run health, Apify token pool status) — by default it makes no network
-calls and modifies nothing. Run it before `careeros daily` so configuration
-problems surface up front instead of mid-run. See `skills/daily.md`'s
-Step 0. Pass `--live` to opt into actually verifying Fantastic Jobs and
-every configured Apify token against their real APIs (a small, bounded
-amount of real quota) instead of trusting local/stored state alone — use
-this whenever local state and reality might have diverged (e.g. right after
-rotating a key), never as the default.
+last-run health, current vs recommended daily job limit) — by default it
+makes no network calls and modifies nothing. Run it before `careeros daily`
+so configuration problems surface up front instead of mid-run. See
+`skills/daily.md`'s Step 0. Pass `--live` to opt into actually verifying
+Fantastic Jobs against its real API (a small, bounded amount of real quota)
+instead of trusting local/stored state alone — use this whenever local state
+and reality might have diverged (e.g. right after rotating a key), never as
+the default.
 
 ## Testing
 

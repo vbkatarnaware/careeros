@@ -127,6 +127,6 @@ from careeros.cli.gate_evaluate import _evaluate_finalize, _evaluate_prepare  # 
 from careeros.cli.perjob import job, publish  # noqa: E402,F401
 from careeros.cli.pipeline import constraints, dedupe, normalize, threshold  # noqa: E402,F401
 from careeros.cli.reports import _build_discovery_stats, summary  # noqa: E402,F401
-from careeros.cli.setup import config, init, migrate_config, providers  # noqa: E402,F401
+from careeros.cli.setup import config, init, providers  # noqa: E402,F401
 from careeros.cli.sheets_cmds import sheets_append, sheets_migrate, sheets_sync_status  # noqa: E402,F401
 from careeros.cli.stubs import daily, prep, scan, start  # noqa: E402,F401

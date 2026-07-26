@@ -4,7 +4,83 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
-## [1.6.0] - 2026-07-14
+## [1.7.0] - 2026-07-26
+
+Discovery collapses to one source, and `api.limit` starts meaning what a
+person thinks it means. Both changes come out of two weeks of real daily use.
+
+### Changed — BREAKING
+
+- **`api.limit` is now a DAILY TOTAL, not a per-search count.** `discover`
+  divides it evenly across however many query tiers your
+  `profile.work_mode_priority` generates (`pipeline/queryplan.py`), so
+  `limit: 120` on a 3-tier profile fetches 40 per search, 120/day total.
+  It previously meant records *per search*, which reliably surprised people:
+  the same `120` quietly fetched 360/day and could exhaust a 500/week free
+  quota in under two days. `careeros/budget.py`'s `recommend()` no longer
+  multiplies by the tier count; it gained `recommended_daily_total` and
+  `configured_per_search`, and its printed guard block now leads with daily
+  totals and shows the per-search split in parentheses. `--limit` on
+  `discover` is a daily total too. **If you had set `api.limit`, divide your
+  old value by your tier count to keep the same behaviour** — or leave it
+  null and take the guard's recommendation.
+  - A daily total smaller than your tier count floors at 1 per search and
+    warns, rather than silently dropping tiers.
+- **`careeros doctor`'s "Discovery limit" check** compares daily totals and
+  spells out the split (`current=120 jobs/day (40 per search × 3 search(es))`),
+  so tier drift is visible: add a `work_mode_priority` entry and the daily
+  total holds while the per-search number drops.
+- **`skills/start.md` Step 5 rewritten.** It asked for a *"daily discovery
+  limit"* and wrote the answer straight to the then-per-search `api.limit` —
+  the bug above, in the onboarding path. It now asks **"How many jobs per day
+  do you want from Fantastic Jobs?"** as a loop over enabled sources, showing
+  each source's search count and recommendation derived from the candidate's
+  own profile and plan. Tier labels and counts are never hardcoded, so a
+  remote-only candidate correctly sees one search, not three.
+
+### Removed — BREAKING
+
+- **Seven discovery providers and the legacy Apify actor.** `remoteok`,
+  `we-work-remotely`, `glassdoor`, `ziprecruiter`, `naukri`, `foundit`,
+  `indeed`, and `fantastic-jobs-actor` are gone — source files, tests,
+  registry entries, and config defaults. `fantastic-jobs` is the only
+  registered provider. Evidence from the 2026-07-26 run (524 discovered, 18
+  selected): Fantastic Jobs produced 9 of the 18 selected jobs from 13% of
+  raw volume at $0, while ZipRecruiter took 60% of the spend and 99% of the
+  wall-clock for 1 selected job, and RemoteOK converted nothing from 100
+  jobs. Full per-source numbers are preserved in
+  `careeros/providers/README.md`'s new "Evaluated and removed" section, along
+  with the "don't judge cost from a `--limit 3` trial" lesson. All are
+  recoverable from git history.
+  - The multi-provider machinery is untouched — `providers:` ordering,
+    concurrent fetch, per-provider guards and reporting all still work. This
+    is a decision about which sources are worth running, not an architecture
+    change. `providers/README.md` gained an "Adding a provider" section.
+- **The `apify:` config block**, `Config.apify`, and
+  `careeros/providers/_apify_actor_common.py` (shared `run_actor`, token-pool
+  rotation, `validate_apify_token`). `doctor` no longer has Apify credential,
+  token-pool, or budget checks. `.careeros/apify_tokens.json` and its
+  `budget.py` helpers (`token_fingerprint`, `load_apify_tokens_state`,
+  `mark_token_exhausted`, `is_token_exhausted`) are gone — that cache existed
+  only for the deleted `run_actor`.
+  - **Kept deliberately:** `budget.guard_for`'s `"monthly"` capability and
+    the rolling-month spend guard (`check_apify_budget`, `load_apify_state`,
+    `record_apify_spend`). No provider declares it today, but it is keyed off
+    a config *shape* — a `max_monthly_budget_usd` key — not a provider name,
+    so a future paid source gets spend-capping without touching `discover`.
+    `run.json`'s `apify_cost_usd*` field names and `apify_budget.json` keep
+    their names: they hold real accumulated history that a rename would
+    orphan.
+- **The deprecated `provider:` config key** and its whole upgrade-on-read
+  path: `_migrate_legacy_provider`, `LEGACY_PROVIDER_DEPRECATION_NOTICE`,
+  `Config.provider`, `Config.provider_migrated`, and the hidden
+  `careeros migrate-config` command. The shim existed to upgrade configs
+  naming providers that no longer exist. Use `providers:`.
+- `careeros/providers/_apify_common.py` is renamed to `_field_mapping.py` —
+  its candidate-key lists (`TITLE_KEYS`, `pick_field`, …) were never
+  Apify-specific, and no Apify provider remains to justify the name.
+
+
 
 A senior-UX pass for the open-source launch: a zero-Google local-first mode,
 a per-job command for full on-demand treatment of any single job, and a

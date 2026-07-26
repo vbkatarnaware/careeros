@@ -15,19 +15,15 @@ from careeros.config import Config
 
 
 def _cfg(**overrides) -> Config:
-    """v1.2: `_run_doctor_checks` reads `enabled_providers(cfg)` (the
-    `providers:` model), not `cfg.provider` — default to exactly ONE enabled
-    provider matching whatever `provider=` a test passes (mirroring the
-    single-provider behavior these tests were written against). A test that
-    wants a different/additional set can still pass `providers=...` directly."""
-    provider_name = overrides.get("provider", "fantastic-jobs")
+    """`_run_doctor_checks` reads `enabled_providers(cfg)` (the `providers:`
+    model). Defaults to exactly ONE enabled provider; a test that wants a
+    different/additional set passes `providers=...` directly."""
     defaults = dict(
-        provider="fantastic-jobs",
         threshold=4.0, consider_threshold=3.5,
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={},
-        sheets={}, apify={}, api={}, fx_rates={}, drive={"enabled": False},
-        providers={provider_name: {"enabled": True}},
+        sheets={}, api={}, fx_rates={}, drive={"enabled": False},
+        providers={"fantastic-jobs": {"enabled": True}},
     )
     defaults.update(overrides)
     return Config(**defaults)
@@ -120,24 +116,6 @@ def test_transport_unset_fails(tmp_path, monkeypatch):
     status, detail = _status_for(results, "Discovery credentials")
     assert status == _CheckStatus.FAIL
     assert "transport" in detail
-
-
-def test_legacy_actor_provider_checks_apify_token(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    _init_careeros_dir(tmp_path, _VALID_PROFILE)
-    monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    monkeypatch.delenv("APIFY_TOKENS", raising=False)
-    cfg = _cfg(provider="fantastic-jobs-actor",
-               apify={"token_env": "APIFY_TOKEN", "tokens_env": "APIFY_TOKENS"})
-
-    results = _run_doctor_checks(cfg)
-    status, _ = _status_for(results, "legacy actor")
-    assert status == _CheckStatus.FAIL
-
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    results = _run_doctor_checks(cfg)
-    status, _ = _status_for(results, "legacy actor")
-    assert status == _CheckStatus.PASS
 
 
 def test_sheets_disabled_is_a_warning_not_a_failure(tmp_path, monkeypatch):
@@ -358,17 +336,34 @@ def test_last_discovery_error_surfaces_as_warning_from_local_state_only(tmp_path
     assert "API key rejected" in detail
 
 
-def test_discovery_limit_warns_when_current_exceeds_recommended(tmp_path, monkeypatch):
+def test_discovery_limit_warns_when_explicit_limit_exceeds_recommended(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)  # no work_mode_priority -> 1 query tier
     monkeypatch.setenv("X", "k")
-    # api.limit unset -> DEFAULT_LIMIT (100); recommended = 500 // 7 // 1 = 71
-    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "plan": "free"})
+    # explicitly chosen 100/day; recommended = 500 // 7 = 71
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both",
+                    "plan": "free", "limit": 100})
     results = _run_doctor_checks(cfg)
     status, detail = _status_for(results, "Discovery limit")
     assert status == _CheckStatus.WARN
-    assert "current=100" in detail
+    assert "current=100 jobs/day" in detail
     assert "recommended=71" in detail
+
+
+def test_discovery_limit_reports_what_discover_will_actually_fetch(tmp_path, monkeypatch):
+    """With api.limit unset, `discover` fetches the RECOMMENDATION — so the
+    guard must report that, not the CLI fallback default. Reporting
+    `current=100` here would describe a limit that is not in effect and warn
+    about a quota the user was never going to blow."""
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    monkeypatch.setenv("X", "k")
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "plan": "free"})
+    results = _run_doctor_checks(cfg)
+    status, detail = _status_for(results, "Discovery limit")
+    assert status == _CheckStatus.PASS
+    assert "current=71 jobs/day" in detail
+    assert "within quota" in detail
 
 
 def test_discovery_limit_passes_when_within_recommendation(tmp_path, monkeypatch):
@@ -384,13 +379,13 @@ def test_discovery_limit_passes_when_within_recommendation(tmp_path, monkeypatch
 
 
 def test_discovery_limit_shown_with_assumed_free_plan_when_plan_unset(tmp_path, monkeypatch):
-    """P2.9.1: an unset plan now assumes Free rather than being purely
-    informational, so the Discovery limit row shows using that assumption,
-    clearly flagged as assumed rather than an explicit user choice."""
+    """An unset plan assumes Free rather than being purely informational, so
+    the Discovery limit row shows using that assumption, clearly flagged as
+    assumed rather than an explicit user choice."""
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     monkeypatch.setenv("X", "k")
-    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both"})  # no plan
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "limit": 100})
     results = _run_doctor_checks(cfg)
     status, detail = _status_for(results, "Discovery limit")
     assert status == _CheckStatus.WARN
@@ -403,7 +398,8 @@ def test_discovery_limit_no_assumed_note_when_plan_explicit(tmp_path, monkeypatc
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     monkeypatch.setenv("X", "k")
-    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both", "plan": "free"})
+    cfg = _cfg(api={"transport": "direct", "api_key_env": "X", "endpoint": "both",
+                    "plan": "free", "limit": 100})
     results = _run_doctor_checks(cfg)
     status, detail = _status_for(results, "Discovery limit")
     assert status == _CheckStatus.WARN
@@ -423,7 +419,7 @@ def test_no_failures_means_a_fully_configured_setup_is_all_clear(tmp_path, monke
     assert not [r for r in results if r[0] == _CheckStatus.FAIL]
 
 
-# ── v1.3: per-provider last-run health/timing + Apify token pool status ──
+# ── per-provider last-run health/timing ──
 
 def _write_discover_raw(tmp_path, date: str, meta: dict) -> None:
     stage_dir = tmp_path / ".careeros" / "runs" / date / "01_discover"
@@ -434,7 +430,7 @@ def _write_discover_raw(tmp_path, date: str, meta: dict) -> None:
 def test_no_run_history_shows_never_run_for_every_active_provider(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
-    cfg = _cfg(providers={"fantastic-jobs": {"enabled": True}, "remoteok": {"enabled": True}})
+    cfg = _cfg(providers={"fantastic-jobs": {"enabled": True}, "stub-source-a": {"enabled": True}})
 
     results = _run_doctor_checks(cfg)
     # No .careeros/runs/ at all -> _latest_discovery_meta returns nothing,
@@ -446,13 +442,13 @@ def test_last_run_shows_success_with_items_and_duration(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     _write_discover_raw(tmp_path, "2026-07-11", {
-        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 42, "seconds": 1.23,
+        "stub-source-a": {"cost_usd": 0.0, "requests": 1, "records": 42, "seconds": 1.23,
                      "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
     })
-    cfg = _cfg(providers={"remoteok": {"enabled": True}})
+    cfg = _cfg(providers={"stub-source-a": {"enabled": True}})
 
     results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Last run (remoteok)")
+    status, detail = _status_for(results, "Last run (stub-source-a)")
     assert status == _CheckStatus.PASS
     assert "42 items" in detail
     assert "1.2s" in detail
@@ -462,16 +458,16 @@ def test_last_run_shows_skip_reason_for_a_skipped_provider(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     _write_discover_raw(tmp_path, "2026-07-11", {
-        "glassdoor": {"cost_usd": 0.0, "requests": 0, "records": 0, "seconds": 0.0,
+        "stub-source-c": {"cost_usd": 0.0, "requests": 0, "records": 0, "seconds": 0.0,
                       "warnings": [], "errors": [], "skipped": True,
-                      "skip_reason": "monthly Apify budget exhausted"},
+                      "skip_reason": "monthly spend budget exhausted"},
     })
-    cfg = _cfg(providers={"glassdoor": {"enabled": True}})
+    cfg = _cfg(providers={"stub-source-c": {"enabled": True}})
 
     results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Last run (glassdoor)")
+    status, detail = _status_for(results, "Last run (stub-source-c)")
     assert status == _CheckStatus.WARN
-    assert "monthly Apify budget exhausted" in detail
+    assert "monthly spend budget exhausted" in detail
 
 
 def test_last_run_shows_never_run_for_a_provider_missing_from_latest_meta(tmp_path, monkeypatch):
@@ -480,13 +476,13 @@ def test_last_run_shows_never_run_for_a_provider_missing_from_latest_meta(tmp_pa
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     _write_discover_raw(tmp_path, "2026-07-11", {
-        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 5, "seconds": 0.5,
+        "stub-source-a": {"cost_usd": 0.0, "requests": 1, "records": 5, "seconds": 0.5,
                      "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
     })
-    cfg = _cfg(providers={"remoteok": {"enabled": True}, "naukri": {"enabled": True}})
+    cfg = _cfg(providers={"stub-source-a": {"enabled": True}, "stub-source-b": {"enabled": True}})
 
     results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Last run (naukri)")
+    status, detail = _status_for(results, "Last run (stub-source-b)")
     assert status == _CheckStatus.WARN
     assert "never run" in detail
 
@@ -495,60 +491,16 @@ def test_last_run_picks_the_most_recent_of_multiple_run_dates(tmp_path, monkeypa
     monkeypatch.chdir(tmp_path)
     _init_careeros_dir(tmp_path, _VALID_PROFILE)
     _write_discover_raw(tmp_path, "2026-07-08", {
-        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 1, "seconds": 0.1,
+        "stub-source-a": {"cost_usd": 0.0, "requests": 1, "records": 1, "seconds": 0.1,
                      "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
     })
     _write_discover_raw(tmp_path, "2026-07-11", {
-        "remoteok": {"cost_usd": 0.0, "requests": 1, "records": 99, "seconds": 2.0,
+        "stub-source-a": {"cost_usd": 0.0, "requests": 1, "records": 99, "seconds": 2.0,
                      "warnings": [], "errors": [], "skipped": False, "skip_reason": None},
     })
-    cfg = _cfg(providers={"remoteok": {"enabled": True}})
+    cfg = _cfg(providers={"stub-source-a": {"enabled": True}})
 
     results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Last run (remoteok)")
+    status, detail = _status_for(results, "Last run (stub-source-a)")
     assert "99 items" in detail
     assert "2026-07-11" in detail
-
-
-def test_apify_token_pool_not_shown_when_no_monthly_provider_enabled(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    _init_careeros_dir(tmp_path, _VALID_PROFILE)
-    cfg = _cfg(providers={"remoteok": {"enabled": True}})
-
-    results = _run_doctor_checks(cfg)
-    assert _status_for(results, "Apify token pool") == (None, None)
-
-
-def test_apify_token_pool_shows_all_available_when_none_exhausted(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    _init_careeros_dir(tmp_path, _VALID_PROFILE)
-    monkeypatch.setenv("APIFY_TOKENS", "tok-a,tok-b")
-    cfg = _cfg(
-        apify={"tokens_env": "APIFY_TOKENS"},
-        providers={"naukri": {"enabled": True, "max_monthly_budget_usd": None}},
-    )
-
-    results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Apify token pool")
-    assert status == _CheckStatus.PASS
-    assert "2/2 token(s) available" in detail
-
-
-def test_apify_token_pool_shows_exhausted_count_and_fails_when_all_exhausted(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    _init_careeros_dir(tmp_path, _VALID_PROFILE)
-    monkeypatch.setenv("APIFY_TOKENS", "tok-a,tok-b")
-    state = budget.load_apify_tokens_state(tmp_path / ".careeros", "2026-07-11")
-    budget.mark_token_exhausted(state, "tok-a")
-    budget.mark_token_exhausted(state, "tok-b")
-    budget.save_apify_tokens_state(tmp_path / ".careeros", state)
-    cfg = _cfg(
-        apify={"tokens_env": "APIFY_TOKENS"},
-        providers={"naukri": {"enabled": True, "max_monthly_budget_usd": None}},
-    )
-
-    results = _run_doctor_checks(cfg)
-    status, detail = _status_for(results, "Apify token pool")
-    assert status == _CheckStatus.FAIL
-    assert "0/2 token(s) available" in detail
-    assert "2 exhausted" in detail

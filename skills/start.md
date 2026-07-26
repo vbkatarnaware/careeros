@@ -2,7 +2,7 @@
 
 Guided onboarding to build `.careeros/profile.yaml` (the candidate's facts —
 one of CareerOS's two sources of truth, the other being a job's evaluation)
-and to set the candidate's discovery goal, plan, and daily record limit.
+and to set the candidate's discovery goal, plan, and daily job limit.
 Run once at onboarding, and again any time the candidate's facts materially
 change.
 
@@ -75,7 +75,7 @@ any. → `candidate`. (Skip anything Step 2 already confirmed.)
 everything you'd seriously consider?" → `targets` (use short tags:
 `product-manager`, `apm`, etc., not full sentences).
 
-## Step 5 — Discovery goal and plan
+## Step 5 — Discovery goal, plan, and per-source limits
 
 Ask: **"What's your target — how many interviews per week are you aiming
 for?"** → `.careeros/config.yaml`'s `goals.interviews_per_week`. This never
@@ -84,7 +84,7 @@ and, later, for measuring your real application-to-interview conversion
 (see the roadmap's P3 outcome-tracking phase).
 
 Ask: **"Which Fantastic Jobs plan are you on?"** and offer exactly these
-choices (P2.9.1):
+choices:
 1. **Free** (500 records/week) — the default for most new users.
 2. **Paid** (RapidAPI, a paid direct-API plan, or enterprise) — ask which,
    and whether they know their own weekly record allotment.
@@ -93,111 +93,91 @@ choices (P2.9.1):
 
 **Always write their choice to config.yaml explicitly** — even if they pick
 Free, write `api.plan: free` rather than leaving it unset. This matters:
-CareerOS now assumes Free by default whenever `api.plan` is unset (so a
-skipped question never silently over-fetches), but an explicit choice here
-means the candidate's config states their real plan instead of relying on
-that default, and the assumed-plan disclosure line never has to show up on
-their `discover` runs.
+CareerOS assumes Free by default whenever `api.plan` is unset (so a skipped
+question never silently over-fetches), but an explicit choice here means the
+candidate's config states their real plan instead of relying on that
+default, and the assumed-plan disclosure line never has to show up on their
+`discover` runs.
 
-Then run `careeros config` and read its printed quota-guard recommendation
-block (it looks like: *"Quota guard — plan: free (500 records/week) ...
-Recommended: limit N/request..."*). Under the hood its arithmetic is: plan's
-weekly record quota ÷ active discovery days ÷ number of query tiers this
-candidate's own profile generates (one tier per `work_mode_priority` entry
-— see `pipeline/queryplan.py`; **this count is never hardcoded, it's
-whatever that candidate's own `work_mode_priority` list produces** — a
-remote-only candidate with one entry gets 1 search, a candidate with four
-tiers gets 4, and so on).
+### The per-source limit question
 
-**Present this to the candidate in plain English, not as raw arithmetic.**
-Turn each `_work_mode` value into a short human label — `global_remote` →
-"Remote", `{place}_remote` → the place name (title-cased, e.g. `india_remote`
-→ "India"), `onsite` → "Onsite" — and list only the tiers this candidate
-actually has:
+Now ask how many jobs per day they want from each enabled source. Run this
+as a **loop over `enabled_providers(cfg)`** — today that's just
+`fantastic-jobs`, but structuring it as a loop is what makes adding a second
+source later a matter of one more pass, not a rewrite of this step.
+
+For each enabled source:
+
+**1. Derive that source's search count from the candidate's OWN profile.**
+For `fantastic-jobs`, that's `len(build_query_plan(profile, cfg.api))` — one
+query tier per `profile.work_mode_priority` entry (see
+`careeros/pipeline/queryplan.py`). **This count is never hardcoded.** A
+remote-only candidate with one entry gets 1 search; a candidate with four
+tiers gets 4.
+
+**2. Turn each `_work_mode` tag into a short human label.** The rule:
+`global_remote` → "Remote"; `{place}_remote` → the place name, title-cased
+(`india_remote` → "India", `united_kingdom_remote` → "United Kingdom");
+`onsite` → "Onsite". List only the tiers this candidate actually has. No
+place name is ever hardcoded — it comes from their own tier strings.
+
+**3. Get the recommendation from the code, not by hand.** Run
+`careeros config` and read its quota-guard block, or compute it the same way
+`careeros/budget.py`'s `recommend()` does: the plan's weekly record quota ÷
+`api.active_days_per_week`. That daily total is
+`Recommendation.recommended_daily_total`; the per-search split it implies is
+`recommended_per_request`.
+
+**4. Ask, presenting the arithmetic in plain English:**
 
 ```
+Fantastic Jobs — your primary source.
+
 Based on your search preferences ({tier labels, comma-separated}), CareerOS
-will run {N} discovery search{"es" if N != 1 else ""} every day. On the
-{plan} plan ({quota} records/week), the recommended limit is {per-search}
-records per search (≈{daily} records/day).
+runs {N} search{"es" if N != 1} per day for this source. On the {plan} plan
+({quota} records/week over {active_days} active days), the recommended total
+is {daily} jobs per day — {per_search} per search.
 
-Recommended limit: {per-search}   Accept? (Y/n)
-Or enter your own value: _
+How many jobs per day do you want from Fantastic Jobs?  [{daily}] _
 ```
 
-For example, a candidate with `work_mode_priority: [global_remote,
-india_remote, mumbai_onsite]` (3 tiers) on the Free plan sees: *"Based on
-your search preferences (Remote, India, Onsite), CareerOS will run 3
-discovery searches every day. On the Free plan (500 records/week), the
-recommended limit is 23 records per search (≈69 records/day)."* A candidate
-with only `work_mode_priority: [global_remote]` (1 tier) sees: *"CareerOS
-will run 1 discovery search every day. Recommended limit: 71 records per
-search."* Never hardcode the tier count or labels — always derive them from
-this candidate's own configured tiers.
+The numbers and labels above are **placeholders** — every one comes from
+this candidate's own profile and plan. For example, a candidate with
+`work_mode_priority: [global_remote, india_remote, mumbai_onsite]` (3 tiers)
+on the Free plan sees: *"Based on your search preferences (Remote, India,
+Onsite), CareerOS runs 3 searches per day for this source. On the Free plan
+(500 records/week over 7 active days), the recommended total is 71 jobs per
+day — 23 per search."* A candidate with only `work_mode_priority:
+[global_remote]` sees *"1 search per day … the recommended total is 71 jobs
+per day — 71 per search."* **Never hardcode the tier count, the labels, or
+any of the numbers** — always derive them from this candidate's own config.
 
-- If yes: leave `api.limit` unset (null) in config.yaml — `discover` computes
-  and applies this exact recommendation as its default whenever the value is
-  null and the weekly quota is known (P2.9; see `careeros/budget.py
-  recommend()` / `cli.py discover`'s base-limit resolution).
-- If no: ask **"Enter your preferred daily discovery limit:"**, accept any
-  positive integer, and write it to `api.limit` in config.yaml. If the
-  number they choose is likely to exceed their weekly quota, say so plainly
-  (re-run `careeros config` after writing it — the guard will print a
-  warning if so) but **write whatever they chose anyway** — the guard
-  recommends and warns, it never overrides the candidate's own choice.
-- Either way, mention this can be changed later by editing `api.limit` in
-  `.careeros/config.yaml` directly (see the README's Configuration section),
-  or via `careeros doctor`, which shows the current vs. recommended limit on
-  every run.
+Behaviour on their answer:
 
-### Optional paid job sources (v1.2)
+- **They accept the recommendation** → leave `api.limit` unset (null) in
+  config.yaml. `discover` recomputes the recommendation on every run, so it
+  self-corrects when their profile tiers or plan change later. This is the
+  existing P2.9 behaviour (see `careeros/budget.py recommend()` and
+  `cli/discover.py`'s daily-total resolution).
+- **They enter their own number** → write it to `api.limit` verbatim. It is
+  a **daily total across all searches**; `discover` divides it evenly across
+  the tiers. If the number would exceed their weekly quota, say so plainly
+  (e.g. *"120/day × 7 days = 840/week, above your 500 — you'd hit the cap
+  around day 4"*) and **write it anyway**. The guard recommends and warns; it
+  never overrides the candidate's own choice.
+- **If their number is smaller than their search count** (e.g. 2 jobs/day
+  across 3 tiers), tell them `discover` will floor at 1 per search, so the
+  real total is the tier count. Suggest a higher number or fewer tiers.
 
-Three sources are already on by default and need nothing from the
-candidate: Fantastic Jobs (the primary source, configured above),
-RemoteOK, and We Work Remotely. This step is about additional, paid job
-sources the candidate can opt into — reason about these as named job
-boards, not as any particular fetch mechanism; that's an implementation
-detail that only comes up later, if at all (see the credential note
-below).
+Either way, mention the three levers they can change later, all in
+`.careeros/config.yaml`:
+- `api.limit` — the daily total itself.
+- `api.active_days_per_week` — the quota is spread across these, so
+  **lowering it raises the daily limit** (Free plan at 5 days → 100/day
+  instead of 71).
+- their plan (`api.plan` / `api.weekly_record_quota`) — the real ceiling.
 
-Ask: **"Want to enable any paid job sources beyond the free ones? A few
-options, each a few tenths of a cent per job:**
-- **Naukri** — India-focused, low overlap with your main source, every job
-  in testing was genuinely relevant.
-- **Glassdoor** — general job board, relevant results, but runs slower
-  (up to a few minutes).
-- **ZipRecruiter** — the most relevant results of the paid options in
-  testing, but roughly 1 in 3 runs fails outright and returns nothing
-  (CareerOS handles that gracefully and just tries again next run — it
-  won't break your daily discovery).
-
-**You can skip this and add sources later."** (Indeed is available too but
-tends to return weak results for a "Product Manager"-style search
-specifically — mention it only if asked, don't offer it by default. Don't
-offer Foundit — evidence says its results are consistently low-quality
-regardless of search term.)
-
-- If no (or they want to decide later): leave every paid provider at
-  `enabled: false` in `providers:` (already the default — nothing to
-  write). Mention `providers/README.md`'s "Shipped providers" section for
-  the full evidence behind each one, and its "Turning on a paid provider"
-  section for when they're ready.
-- If yes: ask **"What's your monthly budget for these paid sources, in
-  USD? (This is a shared soft cap across all of them — suggested default:
-  $10.)"** — accept any positive number, prefill $10 if they just want the
-  default, and write it to `apify.max_monthly_budget_usd` in config.yaml.
-  For each source they want on, set `providers.<name>.enabled: true` in
-  config.yaml. Mention this is a best-effort estimate, not a hard ceiling
-  (`careeros doctor` shows current spend vs. budget). Only now, if they
-  don't already have one configured, mention that these paid sources share
-  one credential behind the scenes (an Apify account — `APIFY_TOKEN` or
-  `APIFY_TOKENS` in `.careeros/secrets.env`) and point them to
-  `providers/README.md` for setup; it's worth also setting a matching hard
-  spend limit in that account's own console.
-- Either way, mention `apify.max_monthly_budget_usd` and each provider's
-  `enabled`/`limit` are editable any time by hand-editing config.yaml, and
-  `careeros doctor` always shows current budget-vs-spend for whatever's
-  enabled.
+Also mention `careeros doctor` shows current-vs-recommended on every run.
 
 ## Step 6 — Results: Google Sheets/Drive, or local-only
 

@@ -34,9 +34,7 @@ def _load_profile(cfg: Config) -> Profile:
 
 
 def _provider_query_cfg(cfg: Config, provider_name: str) -> dict:
-    """Thin alias for `config.provider_config_block` (v1.2) — kept under this
-    name since it's used throughout the cli package. See that function's
-    docstring for the exact per-provider resolution and why `cfg.apify` is
-    deliberately NOT merged in generically (it would leak Apify-budget guard
-    capability into the free providers)."""
+    """Thin alias for `config.provider_config_block` — kept under this name
+    since it's used throughout the cli package. See that function's docstring
+    for the exact per-provider resolution."""
     return provider_config_block(cfg, provider_name)

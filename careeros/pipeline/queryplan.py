@@ -10,7 +10,7 @@ one query already — work-mode/location was.
 So: one query per REMOTE work-mode tier, plus ONE consolidated query covering
 every onsite city the profile accepts, each searching all of
 `profile.role_priorities` at once. For a typical profile that's still 3-4
-Apify calls total, not a cartesian product — cost- and complexity-bounded by
+calls total, not a cartesian product — cost- and complexity-bounded by
 construction.
 
 The P2.6 benchmark (2026-07-08) added two refinements, both evidence-backed:

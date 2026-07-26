@@ -24,13 +24,15 @@ class _ProviderPlan:
     """Everything one provider's actual fetch(es) need, decided during the
     serial PREFLIGHT phase (`_preflight_provider`) — validate() plus the
     budget/quota guard CHECK (never the recording of consumption). Built so
-    the fetch itself (`_fetch_provider`, pure network/Apify I/O) can safely
+    the fetch itself (`_fetch_provider`, pure network I/O) can safely
     run inside a worker thread: it touches no shared file-backed state, only
     this plan and the provider's own `fetch()` call."""
 
     name: str
     capability: str  # "weekly" | "monthly" | "none"
     queries: list[Optional[dict]] = field(default_factory=lambda: [None])
+    # PER-TIER record allocation, already divided out of the user's daily
+    # total by `_preflight_provider` — not the daily total itself.
     base_limit: int = 100
     http_requests: int = 1
     effective_limit: int = 100
@@ -51,7 +53,7 @@ def _preflight_provider(
     filters. Every other provider gets exactly ONE fetch call: issuing N
     near-identical calls to a provider that doesn't understand the segmented
     spec would just waste real money for zero benefit (most of the v1.2
-    additions are paid Apify actors)."""
+    sources are paid)."""
     p = get_provider(name)
     provider_cfg = _provider_query_cfg(cfg, name)
 
@@ -71,20 +73,41 @@ def _preflight_provider(
 
         explicit_limit = provider_cfg.get("limit")
         has_explicit_limit = limit is not None or (isinstance(explicit_limit, int) and explicit_limit > 0)
-        base_limit = limit if limit is not None else (explicit_limit or 100)
+
+        # v1.7: `limit` (CLI --limit or api.limit) is a DAILY TOTAL across
+        # every search, divided evenly across this candidate's tiers below.
+        # It used to be read as per-search, so a 3-tier profile silently
+        # fetched 3x the number the user typed.
+        daily_total = limit if limit is not None else (explicit_limit or 100)
+
+        rec = budget.recommend(provider_cfg, cfg.goals, len(queries),
+                               cli_default_limit=daily_total, limit_is_explicit=has_explicit_limit)
+        if not has_explicit_limit and rec.recommended_daily_total is not None:
+            daily_total = rec.recommended_daily_total
+            rec = budget.recommend(provider_cfg, cfg.goals, len(queries),
+                                   cli_default_limit=daily_total, limit_is_explicit=has_explicit_limit)
+        for line in rec.lines():
+            typer.echo(f"[discover] {name}: {line}")
+
+        # Divide the daily total across tiers. Floored at 1: asking for fewer
+        # jobs/day than you have searches still fetches one per search, which
+        # means the real total exceeds what was asked for — say so plainly
+        # rather than silently dropping tiers.
+        base_limit = max(1, daily_total // len(queries))
+        if daily_total < len(queries):
+            typer.echo(
+                f"[discover] {name}: ⚠ limit {daily_total} jobs/day is fewer than your"
+                f" {len(queries)} search tier(s) — fetching 1 per search"
+                f" ({len(queries)} jobs/day total, above the {daily_total} you asked for)."
+                " Raise api.limit or reduce profile.work_mode_priority tiers."
+            )
 
         # "both" SPLITS base_limit across the 2 endpoints, so records/tier
         # stays = base_limit regardless of endpoint count — reason the record
         # budget in query TIERS; the HTTP call count (tiers x endpoints) is
         # tracked separately for the informational request counter.
         num_endpoints = 2 if provider_cfg.get("endpoint", "both") == "both" else 1
-        rec = budget.recommend(provider_cfg, cfg.goals, len(queries), cli_default_limit=base_limit)
-        if not has_explicit_limit and rec.recommended_per_request is not None:
-            base_limit = rec.recommended_per_request
-            rec = budget.recommend(provider_cfg, cfg.goals, len(queries), cli_default_limit=base_limit)
         http_requests = len(queries) * num_endpoints
-        for line in rec.lines():
-            typer.echo(f"[discover] {name}: {line}")
         # LIVE quota is authoritative, never the local counter alone (a real
         # incident: a rotated-in fresh API key still got reported "exhausted"
         # because the local .careeros/discovery_budget.json counter is a
@@ -112,6 +135,12 @@ def _preflight_provider(
         )
 
     if capability == "monthly":
+        # Kept as provider-agnostic scaffolding: no CURRENTLY REGISTERED
+        # provider declares "monthly" capability (v1.7 removed all of them),
+        # but the guard is keyed off a config SHAPE — a provider block with a
+        # `max_monthly_budget_usd` key — not any provider name, so a future
+        # paid source gets spend-capping for free.
+        #
         # HONEST LIMITATION (deliberate trade-off, not a bug): this check
         # only sees spend already RECORDED before this discover call, not
         # what a sibling "monthly" provider fetching CONCURRENTLY in this
@@ -119,22 +148,20 @@ def _preflight_provider(
         # after every concurrent fetch finishes (see `discover`). Multiple
         # monthly-capability providers enabled together can therefore
         # collectively land slightly over `max_monthly_budget_usd` within a
-        # single run before the NEXT run's check catches up. This mirrors
-        # `check_apify_budget`'s own documented best-effort/soft-guard
-        # philosophy; the real backstop is the per-call `max_total_charge_usd`
-        # hard cap Apify enforces server-side on every individual actor run.
-        max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
+        # single run before the NEXT run's check catches up. The real backstop
+        # is whatever per-call hard cap the paid source enforces server-side.
+        max_budget = provider_cfg.get("max_monthly_budget_usd")
         apify_state = budget.load_apify_state(cfg.careeros_dir, date)
         ok, msg = budget.check_apify_budget(apify_state, max_budget)
         if msg:
             typer.echo(f"[discover] {name}: {msg}")
         if not ok and not ignore_budget:
-            return ProviderResult.skip(name, "monthly Apify budget exhausted")
+            return ProviderResult.skip(name, "monthly spend budget exhausted")
 
         effective_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
         return _ProviderPlan(name=name, capability="monthly", effective_limit=effective_limit)
 
-    # capability == "none": unmetered, no guard (RemoteOK, We Work Remotely).
+    # capability == "none": an unmetered source with no guard to apply.
     effective_limit = limit if limit is not None else (provider_cfg.get("limit") or 100)
     return _ProviderPlan(name=name, capability="none", effective_limit=effective_limit)
 
@@ -186,12 +213,12 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
         try:
             result = p.fetch(cfg, limit=plan.effective_limit, search=search, query=None)
         except ProviderError as e:
-            # A HARD failure from the actor/account itself (e.g. every
-            # rotated Apify token exhausted or out of balance) — distinct
-            # from the soft max_monthly_budget_usd guard checked in
-            # preflight. Tell the user clearly and skip just THIS provider.
+            # A HARD failure from the source/account itself (e.g. credentials
+            # exhausted or out of balance) — distinct from the soft
+            # max_monthly_budget_usd guard checked in preflight. Tell the user
+            # clearly and skip just THIS provider.
             typer.echo(f"[discover] {name}: skipped — {e}")
-            return ProviderResult.skip(name, f"Apify usage/quota exhausted: {e}")
+            return ProviderResult.skip(name, f"usage/quota exhausted: {e}")
         typer.echo(
             f"[discover] {name}: {len(result.items)} items (${result.cost_usd:.4f}, {result.seconds:.1f}s)"
         )
@@ -237,8 +264,9 @@ def discover(
                     "dry-run/trial workflow (providers/README.md) before enabling a source for real"),
     date: str = typer.Option(None, help="Run date, default today"),
     limit: Optional[int] = typer.Option(
-        None, help="Per-query max records; default from each provider's own configured limit, "
-                    "else 100. Overridden per-tier by tier_limits (Fantastic Jobs only)"),
+        None, help="Max jobs per DAY from each provider, divided across its search tiers; "
+                    "default from each provider's own configured limit, else 100. "
+                    "Overridden per-tier by tier_limits (Fantastic Jobs only)"),
     search: str = typer.Option(
         "", help="Manual single-query override — bypasses profile-driven segmentation"),
     dry_run: bool = typer.Option(False, help="Fetch and print, don't write raw.json"),
@@ -255,7 +283,7 @@ def discover(
 
     v1.3: each provider's actual fetch() runs CONCURRENTLY (a thread pool,
     capped by `discovery_max_workers` — default 4, set to 1 to force serial)
-    since every fetch is blocking network/Apify I/O. Budget/quota
+    since every fetch is blocking network I/O. Budget/quota
     CHECKING and the merged result order always stay serial and in CONFIG
     ORDER regardless of which provider's network call finishes first — see
     `_preflight_provider` (validate + guard check, serial), `_fetch_provider`
@@ -266,7 +294,7 @@ def discover(
     (see `budget.guard_for`): a provider whose own config declares a weekly
     record quota (Fantastic Jobs) gets that guard (unchanged — the segmented
     per-work-mode query plan, P2.8's quota-aware default limit, everything);
-    one declaring a monthly USD budget (every Apify-actor provider) gets the
+    one declaring a monthly USD budget gets the
     rolling-month soft guard; an unmetered free provider (RemoteOK, We Work
     Remotely) gets none. A provider that's ENABLED but can't run this call
     (failed `validate()`, its guard says stop, or a hard fetch error) is
@@ -302,7 +330,7 @@ def discover(
             else:
                 plans.append(outcome)
 
-        # Phase 2 — fetch, concurrent: the actual network/Apify calls. Each
+        # Phase 2 — fetch, concurrent: the actual network calls. Each
         # provider's own hard-error handling (ProviderError -> skip) already
         # happens inside _fetch_provider, so a worker never needs to raise.
         if plans:

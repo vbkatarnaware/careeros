@@ -1,12 +1,15 @@
-"""Shared Apify field-mapping helpers, ported from the Career Ops archive's
-`providers/_apify.mjs`.
+"""Shared field-mapping helpers for provider output.
 
-Apify actor output field names are NOT contractually guaranteed and vary by
-actor/version ("company" vs "company_name" vs "employer"). The archive's own
-hard-won lesson (see providers/apify-indeed.mjs there): never hardcode a
-single field name; try a candidate list, verify the real shape live once a
-token is configured, and extend the candidate list if the actor renames a
-field. This module is that same defensive pattern for CareerOS's providers.
+A job source's output field names are NOT contractually guaranteed and vary
+by source/version ("company" vs "company_name" vs "employer"). The lesson
+this module encodes: never hardcode a single field name; try a candidate
+list, verify the real shape live once a credential is configured, and extend
+the candidate list if the source renames a field.
+
+Source-agnostic on purpose — any new provider reuses these lists rather than
+re-deriving its own. (Named `_apify_common.py` until v1.7, when the
+Apify-backed providers were removed; the pattern itself was never
+Apify-specific.)
 """
 
 from __future__ import annotations

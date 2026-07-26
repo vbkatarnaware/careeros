@@ -11,6 +11,11 @@ so you can see exactly why a number was chosen. Consumption is tracked in
 `.careeros/discovery_budget.json` — a plain rolling-week counter, not a
 database — so a run can stop BEFORE a mid-week hard 429 rather than after.
 
+v1.7: `api.limit` is a DAILY TOTAL across every search, not a per-search
+count. `discover` divides it across however many query tiers the candidate's
+profile generates. The old per-search reading meant a 3-tier profile fetched
+3x whatever number the user typed — see `Recommendation.configured_per_search`.
+
 Design contract: this module is advisory + protective. `recommend()` and the
 warnings are pure/printable; `check_before_run()` can ask the caller to stop,
 but nothing here edits the user's config or changes what gets fetched beyond
@@ -19,7 +24,6 @@ honoring an already-exhausted weekly budget.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -41,7 +45,7 @@ PLAN_WEEKLY_RECORD_QUOTA: dict[str, Optional[int]] = {
     "enterprise": None,
 }
 
-DEFAULT_LIMIT = 100  # mirrors the `discover --limit` default in cli.py
+DEFAULT_LIMIT = 100  # mirrors the `discover --limit` default (a daily total)
 BUDGET_FILENAME = "discovery_budget.json"
 
 
@@ -68,9 +72,9 @@ def weekly_quota(api_cfg: dict[str, Any]) -> Optional[int]:
 
 
 def effective_limit(api_cfg: dict[str, Any], cli_default: int = DEFAULT_LIMIT) -> int:
-    """The per-request record limit the user actually gets: their configured
-    `api.limit` if set, else the CLI default. The guard reads this; it never
-    rewrites it."""
+    """The DAILY job total the user actually gets: their configured
+    `api.limit` if set, else the CLI default. `discover` divides this across
+    the candidate's search tiers. The guard reads this; it never rewrites it."""
     v = api_cfg.get("limit")
     return v if isinstance(v, int) and v > 0 else cli_default
 
@@ -95,10 +99,26 @@ class Recommendation:
     recommended_records_per_day: Optional[int]
     over_quota: bool
 
+    @property
+    def configured_per_search(self) -> int:
+        """How `configured_limit` (a DAILY total) is actually spent per search
+        once `discover` divides it across this candidate's tiers. Floored at 1
+        — asking for fewer jobs/day than you have searches still fetches at
+        least one per search, which `discover` warns about."""
+        return max(1, self.configured_limit // max(1, self.requests_per_run))
+
+    @property
+    def recommended_daily_total(self) -> Optional[int]:
+        """The number onboarding/`doctor` quote: jobs per DAY, all searches
+        combined. Same value as `recommended_records_per_day`, named for the
+        question a person actually gets asked."""
+        return self.recommended_records_per_day
+
     def lines(self) -> list[str]:
         """A short, plain-language explanation block for `discover`/`config`.
         Leads with the one-time assumed-plan disclosure when applicable —
-        see `plan_is_assumed`."""
+        see `plan_is_assumed`. Quotes DAILY TOTALS first (the unit `api.limit`
+        is in since v1.7), with the per-search split as a parenthetical."""
         out: list[str] = []
         if self.plan_is_assumed:
             out.append(
@@ -114,8 +134,8 @@ class Recommendation:
         )
         out.append(f"Quota guard — plan: {plan_txt} ({quota_txt}){goal_txt}")
         out.append(
-            f"  {self.requests_per_run} request(s)/run × limit {self.configured_limit}"
-            f" ≈ {self.configured_records_per_day} records/day"
+            f"  Configured: {self.configured_records_per_day} jobs/day"
+            f" ({self.configured_per_search} per search × {self.requests_per_run} search(es))"
             + (
                 f", ~{self.configured_weekly_records}/week"
                 f" ({round(100 * self.configured_weekly_records / self.quota)}% of quota)"
@@ -123,18 +143,18 @@ class Recommendation:
                 else ""
             )
         )
-        if self.recommended_per_request is not None:
+        if self.recommended_daily_total is not None:
             out.append(
-                f"  Recommended: limit {self.recommended_per_request}/request"
-                f" (≈ {self.recommended_records_per_day} records/day) to spread"
+                f"  Recommended: {self.recommended_daily_total} jobs/day"
+                f" ({self.recommended_per_request} per search) to spread"
                 f" {self.quota} across {self.active_days} active day(s)."
                 " Set api.limit to change; CareerOS never changes it for you."
             )
         if self.over_quota:
             out.append(
                 "  ⚠ Your configured limit is on track to exceed your weekly"
-                " quota — you may hit the cap mid-week. Lower api.limit or"
-                " raise your plan."
+                " quota — you may hit the cap mid-week. Lower api.limit,"
+                " lower api.active_days_per_week, or raise your plan."
             )
         if self.quota is None:
             out.append(
@@ -149,21 +169,36 @@ def recommend(
     goals: dict[str, Any],
     requests_per_run: int,
     cli_default_limit: int = DEFAULT_LIMIT,
+    limit_is_explicit: Optional[bool] = None,
 ) -> Recommendation:
     """Pure: compute the recommendation + whether the configured limit is on
-    track to blow the weekly quota. No I/O, no mutation."""
+    track to blow the weekly quota. No I/O, no mutation.
+
+    `limit_is_explicit` says whether the user actually CHOSE a number (via
+    `api.limit` or `discover --limit`). Left None it's derived from `api.limit`
+    alone. It matters because when nothing is set, `discover` fetches the
+    RECOMMENDATION, not `cli_default_limit` — so reporting the latter as
+    "configured" would describe a limit that is not in effect, and could warn
+    about blowing a quota the user was never going to blow."""
     requests_per_run = max(1, requests_per_run)
     quota = weekly_quota(api_cfg)
     active_days = _active_days(api_cfg)
     limit = effective_limit(api_cfg, cli_default_limit)
-
-    configured_per_day = limit * requests_per_run
-    configured_weekly = configured_per_day * active_days
+    if limit_is_explicit is None:
+        cfg_limit = api_cfg.get("limit")
+        limit_is_explicit = isinstance(cfg_limit, int) and cfg_limit > 0
 
     rec_per_request = rec_per_day = None
     if quota:
         rec_per_day = max(1, quota // active_days)
         rec_per_request = max(1, rec_per_day // requests_per_run)
+
+    # v1.7: `limit` is a DAILY TOTAL across all searches, not a per-search
+    # count — `discover` divides it across this candidate's tiers. It used to
+    # be multiplied by requests_per_run here, which meant a 3-tier profile
+    # quietly fetched 3x whatever number the user typed.
+    configured_per_day = limit if limit_is_explicit or rec_per_day is None else rec_per_day
+    configured_weekly = configured_per_day * active_days
 
     over = bool(quota) and configured_weekly > quota
     goal = (goals or {}).get("interviews_per_week")
@@ -174,7 +209,7 @@ def recommend(
         active_days=active_days,
         requests_per_run=requests_per_run,
         goal_interviews_per_week=goal if isinstance(goal, int) and goal > 0 else None,
-        configured_limit=limit,
+        configured_limit=configured_per_day,
         configured_records_per_day=configured_per_day,
         configured_weekly_records=configured_weekly,
         recommended_per_request=rec_per_request,
@@ -272,21 +307,20 @@ def clear_last_error(careeros_dir: Path) -> None:
 
 def guard_for(provider_config: dict[str, Any]) -> str:
     """Which budget/quota CAPABILITY a provider's own resolved config block
-    declares — v1.2's uniform, name-free enforcement (`discover`'s loop never
+    declares — uniform, name-free enforcement (`discover`'s loop never
     branches on a provider's identity). Detected purely from which keys are
     PRESENT in the dict (not their values), because each provider config
     shape is structurally distinct by design:
 
     - "weekly": the block has a "plan" key — this is Fantastic Jobs' own
       `api:` block (the only config shape with that key), so this is its
-      EXISTING records/week quota guard, unchanged.
+      records/week quota guard.
     - "monthly": the block has a "max_monthly_budget_usd" key (even if its
-      value is null) — the Apify-actor-based providers' resolved config
-      (their own `providers.<name>` block) declares this key; a null value
-      just means "use the shared apify.max_monthly_budget_usd account
-      default," resolved by the caller, not here.
-    - "none": neither key present — an unmetered source (RemoteOK, We Work
-      Remotely) has no guard to apply.
+      value is null) — a paid, metered source declaring a rolling-month spend
+      ceiling in its own `providers.<name>` block. No provider ships with
+      this today (v1.7 removed them all); the capability stays so a future
+      paid source is spend-capped without touching `discover`.
+    - "none": neither key present — an unmetered source, no guard to apply.
     """
     if "plan" in provider_config:
         return "weekly"
@@ -295,10 +329,12 @@ def guard_for(provider_config: dict[str, Any]) -> str:
     return "none"
 
 
-# ── rolling-month Apify spend tracking (the monthly-budget capability) ──────
+# ── rolling-month spend tracking (the monthly-budget capability) ────────────
 # Mirrors the rolling-week functions above exactly, one level up (month
 # instead of week) — a separate file/schema so neither counter's tests ever
-# have to change for the other's sake.
+# have to change for the other's sake. The `apify_*` names and filename are
+# kept as-is: they hold real accumulated user state on disk, and renaming
+# them would orphan it for no functional gain.
 
 APIFY_BUDGET_FILENAME = "apify_budget.json"
 
@@ -346,117 +382,32 @@ def record_apify_spend(state: dict[str, Any], cost_usd: float) -> dict[str, Any]
 def check_apify_budget(
     state: dict[str, Any], max_monthly_budget_usd: Optional[float]
 ) -> tuple[bool, Optional[str]]:
-    """Best-effort SOFT guard — decide whether an Apify-actor provider should
+    """Best-effort SOFT guard — decide whether a metered paid provider should
     run this call. Only PREVENTS when a budget is configured AND the
     recorded estimate has already reached it.
 
     HONEST LIMITATION (documented, not hidden): this can only be as accurate
-    as Apify's own reported per-run `usageTotalUsd`, which is a known LOWER
-    BOUND — real settled cost can be higher (charges settle asynchronously;
-    see `_apify_actor_common.run_actor`'s docstring). This is why every
-    Apify-actor call ALSO passes a hard `max_total_charge_usd` per-call cap
-    (enforced server-side by Apify) as the reliable half of this guard — this
-    function is the advisory, rolling-month half on top of that."""
+    as the paid source's own reported per-run cost, which is typically a
+    LOWER BOUND — real settled cost can be higher (charges often settle
+    asynchronously). A paid provider should therefore ALSO pass a hard
+    per-call cap enforced server-side as the reliable half of this guard —
+    this function is the advisory, rolling-month half on top of that."""
     if not max_monthly_budget_usd:
         return True, None
     spent = float(state.get("spend_usd", 0.0))
     if spent >= max_monthly_budget_usd:
         return False, (
-            f"Monthly Apify budget reached (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f}"
-            f" used since {state.get('month_start')}. This is a best-effort estimate (Apify's "
-            "reported usage can undercount real settled cost — also check your Apify console). "
+            f"Monthly spend budget reached (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f}"
+            f" used since {state.get('month_start')}. This is a best-effort estimate (a paid "
+            "source's reported usage can undercount real settled cost — also check its console). "
             "Raise max_monthly_budget_usd to continue, or wait for next month's reset."
             " (Override: run `discover` with --ignore-budget.)"
         )
     remaining = max_monthly_budget_usd - spent
     return True, (
-        f"Apify budget (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f} used this month"
+        f"Monthly spend (estimated): ${spent:.4f}/${max_monthly_budget_usd:.2f} used this month"
         f" (${remaining:.4f} remaining)."
     )
-
-
-# ── rolling-month Apify token-exhaustion cache ──────────────────────────────
-# A token that failed with a budget/consent error (see
-# providers/_apify_actor_common.py's run_actor) stays exhausted for the rest
-# of Apify's own billing cycle — retrying it on every single provider call
-# just re-earns the same rejection. This cache lets run_actor skip a
-# known-exhausted token instead of re-trying it, WITHOUT ever touching
-# .careeros/secrets.env (secrets stay exactly where the user put them) and
-# WITHOUT ever persisting the raw token — only a short, non-reversible
-# fingerprint, same spirit as a redacted log. Rolls over automatically at
-# the same monthly boundary as apify_budget.json (`month_start` above).
-
-APIFY_TOKENS_FILENAME = "apify_tokens.json"
-
-
-def token_fingerprint(token: str) -> str:
-    """A short, non-reversible identifier for a token — safe to persist to
-    disk. Never store or log the raw token itself."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
-
-
-def _apify_tokens_path(careeros_dir: Path) -> Path:
-    return Path(careeros_dir) / APIFY_TOKENS_FILENAME
-
-
-def load_apify_tokens_state(careeros_dir: Path, today_iso: str) -> dict[str, Any]:
-    """Return this month's {month_start, exhausted: {fingerprint: last_marked_date_iso}}.
-    Rolls over automatically at the start of a new calendar month, same
-    pattern as `load_apify_state`.
-
-    `exhausted` is keyed by fingerprint -> the ISO date it was last marked
-    exhausted (not a bare list) — see `is_token_exhausted`'s docstring for
-    why the date matters: a mark only skips a token PRE-EMPTIVELY on the
-    SAME day it was recorded, never for the rest of the month unverified."""
-    ms = month_start(today_iso)
-    path = _apify_tokens_path(careeros_dir)
-    if path.exists():
-        try:
-            state = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            state = {}
-        if state.get("month_start") == ms:
-            exhausted = state.get("exhausted")
-            if isinstance(exhausted, list):
-                # Migrate the pre-2026-07-12 bare-list format: treat every
-                # entry as marked on month_start (never today), so it
-                # naturally gets one fresh live retry on the next call
-                # instead of crashing or silently staying stuck exhausted.
-                state["exhausted"] = {fp: ms for fp in exhausted}
-            else:
-                state.setdefault("exhausted", {})
-            return state
-    return {"month_start": ms, "exhausted": {}}
-
-
-def save_apify_tokens_state(careeros_dir: Path, state: dict[str, Any]) -> None:
-    _apify_tokens_path(careeros_dir).write_text(json.dumps(state))
-
-
-def mark_token_exhausted(state: dict[str, Any], token: str, today_iso: Optional[str] = None) -> dict[str, Any]:
-    fp = token_fingerprint(token)
-    state.setdefault("exhausted", {})[fp] = today_iso or date.today().isoformat()
-    return state
-
-
-def is_token_exhausted(state: dict[str, Any], token: str, today_iso: Optional[str] = None) -> bool:
-    """A token counts as pre-emptively exhausted (skip without trying) ONLY
-    if it was ALREADY verified-dead earlier the SAME day — this is what lets
-    `run_actor` avoid re-hitting a known-dead token on every provider call
-    within one day's run. On any OTHER day (including still within the same
-    billing month), a previously-exhausted token gets ONE fresh live retry
-    before being trusted as exhausted again — never a silent skip for the
-    rest of the month from a single earlier failure. This is what makes a
-    mid-month top-up (same token, more balance) or a same-token-different-day
-    recovery visible the very next run, instead of only at month rollover.
-    See AGENT_GUIDE.md: verify against the live source, never a stored
-    calculation alone."""
-    fp = token_fingerprint(token)
-    marked_date = state.get("exhausted", {}).get(fp)
-    if marked_date is None:
-        return False
-    today_iso = today_iso or date.today().isoformat()
-    return marked_date == today_iso
 
 
 def check_before_run(

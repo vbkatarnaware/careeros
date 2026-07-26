@@ -2,47 +2,29 @@
 # Every key here has a built-in default (see careeros/config.py); only
 # override what you need to change.
 
-# THE discovery source model (v1.2). `providers:` controls which sources are
-# ENABLED and RUN ORDER (dedupe keeps the FIRST occurrence of a duplicate
-# role, so list your primary/most-trusted source first) — it does NOT hold
-# each provider's detailed settings. Fantastic Jobs' own detailed config
-# (transport, endpoint, search filters, weekly quota) stays in the separate
-# `api:` block below, unmoved — mature, tested, frozen. Every other
-# provider's config lives inline in its own block here.
+# THE discovery source model. `providers:` controls which sources are ENABLED
+# and their RUN ORDER (dedupe keeps the FIRST occurrence of a duplicate role,
+# so list your primary/most-trusted source first) — it does NOT hold each
+# provider's detailed settings. Fantastic Jobs' own detailed config
+# (transport, endpoint, search filters, weekly quota) lives in the separate
+# `api:` block below. Any provider you add later gets its config inline here.
+#
+# v1.7: ONE source. RemoteOK, We Work Remotely, Glassdoor, ZipRecruiter,
+# Naukri, Foundit and Indeed shipped through v1.6 and were removed on live
+# evidence — see providers/README.md's "Evaluated and removed" for the
+# per-source numbers, and "Adding a provider" if you want to write your own.
 providers:
-  fantastic-jobs: { enabled: true }      # Core — your main source — detail in api: below
-  remoteok: { enabled: true }            # Core — free, direct, no signup — providers/remoteok.py
-  we-work-remotely: { enabled: true }    # Core — free, direct, no signup — providers/we_work_remotely.py
-  # Paid sources — OFF by default: they cost real money per job, a fresh
-  # clone has no credential configured yet, and each carries its own
-  # evidence-backed caveat worth reading before enabling — see
-  # providers/README.md's "Shipped providers" section (relevance/cost/
-  # reliability findings from live verification, not assumptions) and
-  # "Cost: don't trust a `--limit 3` trial" before judging any of these on
-  # a quick dry-run. Live-verify one with:
-  #   careeros discover --provider <name> --dry-run --limit 3   (shape/relevance check)
-  #   careeros discover --provider <name> --limit 30             (real cost check)
-  # Optional (relevant, reasonably priced — recommended to enable deliberately):
-  naukri: { enabled: false, limit: 100, max_monthly_budget_usd: null }
-  glassdoor: { enabled: false, limit: 100, max_monthly_budget_usd: null }
-  ziprecruiter: { enabled: false, limit: 100, max_monthly_budget_usd: null } # ~63% actor run-success rate — expect an occasional empty run
-  # Experimental (works, but underperforms for this project's default
-  # "Product Manager" search — retarget search_keyword or verify first):
-  indeed: { enabled: false, limit: 100, max_monthly_budget_usd: null }
-  # Not Recommended (irrelevant results in live testing across multiple
-  # search terms — kept registered for completeness, not for enabling):
-  foundit: { enabled: false, limit: 100, max_monthly_budget_usd: null }       # = Monster India, rebranded
+  fantastic-jobs: { enabled: true }      # your main source — detail in api: below
 
 threshold: 4.0          # APPLY: score >= this -> full pipeline (resume/cover/report + Drive + Sheet)
 consider_threshold: 3.5 # CONSIDER: this <= score < threshold -> Sheet row only (score + reason, no AI artifacts). Below this = omitted
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
 description_max_chars: 4000
 # How many enabled providers' discover() fetch() calls run CONCURRENTLY —
-# each is a blocking network/Apify call, so this is real wall-clock savings
-# with no correctness risk (budget/quota is always checked+recorded
-# serially; merge order is always config order, never completion order).
-# Set to 1 to force the old fully-serial behavior (e.g. to debug one
-# provider's timing/output in isolation without others' output interleaved).
+# each is a blocking network call, so this is real wall-clock savings with no
+# correctness risk (budget/quota is always checked+recorded serially; merge
+# order is always config order, never completion order). Only matters once
+# you run more than one source. Set to 1 to force fully-serial behavior.
 discovery_max_workers: 4
 
 # Your job-search target. Used only as CONTEXT in the discovery quota-guard's
@@ -71,9 +53,9 @@ sheets:
   credentials_path: null        # path to a Google service-account JSON key
   worksheet: "Jobs"
 
-# Config for the DEFAULT `fantastic-jobs` provider (the official Fantastic
-# Jobs REST API). Only read when providers.fantastic-jobs.enabled: true
-# (above) — this block itself does NOT enable/disable the provider.
+# Config for the `fantastic-jobs` provider (the official Fantastic Jobs REST
+# API). Only read when providers.fantastic-jobs.enabled: true (above) — this
+# block itself does NOT enable/disable the provider.
 api:
   # REQUIRED — no default. "direct" (developer.fantastic.jobs) or "rapidapi"
   # (RapidAPI's "Active Jobs DB"). Both return the identical dataset; pick
@@ -104,74 +86,28 @@ api:
   work_arrangement: []             # any of: "On-site" | "Hybrid" | "Remote OK" | "Remote Solely"
   remove_agency: true
   has_salary: null
+  # Optional per-work-mode-tier override (keys = your own
+  # profile.work_mode_priority tier names). A tier listed here ignores the
+  # even split of `limit` below; when you set any of these, your real daily
+  # total is the SUM of the tier limits. Ships EMPTY on purpose — which tiers
+  # deserve a bigger fetch is specific to your profile and conversion history
+  # (check run.json's cost-per-selected-job over a few days). Example:
+  # tier_limits:
+  #   global_remote: 15
+  #   india_remote: 25
   tier_limits: {}
   # ── Quota guard (advisory). CareerOS recommends a daily limit and warns
   # before you exhaust your weekly record quota, but never changes these. ──
   plan: null                       # free | rapidapi | paid | enterprise  (free -> 500 records/week)
   weekly_record_quota: null        # set for a paid plan so the guard knows your ceiling
-  active_days_per_week: 7          # how the weekly quota is spread when recommending a daily limit
-  limit: null                      # your per-query record cap; null -> 100. Guard warns if it blows the quota
-
-# Shared Apify config: token auth (used by EVERY Apify-actor-based provider —
-# fantastic-jobs-actor below, plus naukri/foundit/indeed/glassdoor/
-# ziprecruiter above, all billing against the SAME Apify account) and the
-# legacy actor's own detailed settings (only read when
-# providers.fantastic-jobs-actor.enabled: true).
-apify:
-  token_env: APIFY_TOKEN        # single-token env var (back-compat)
-  tokens_env: APIFY_TOKENS      # comma-separated token pool — set this for
-                                 # automatic rotation when one token's monthly
-                                 # budget is exhausted (checked first, falls
-                                 # back to token_env if unset). Rotation is
-                                 # silent and an exhausted token is cached
-                                 # (by fingerprint, not the raw key) for the
-                                 # rest of the billing cycle so it's skipped
-                                 # rather than retried — see providers/README.md.
-                                 # If you run CareerOS regularly, either a
-                                 # paid Apify plan with real headroom or
-                                 # several accounts' tokens listed here is
-                                 # recommended.
-  # v1.2: shared rolling-month spend ceiling across EVERY Apify-actor
-  # provider — a provider's own `max_monthly_budget_usd` (in its `providers:`
-  # block above) overrides this if set; null there means "use this shared
-  # default." Best-effort SOFT guard, not a precise ceiling — Apify's own
-  # reported usage can undercount real settled cost (see budget.py's
-  # check_apify_budget docstring); also set a matching hard cap in your
-  # Apify console. A modest starting default — raise it once you know your
-  # real usage.
-  max_monthly_budget_usd: 10
-  actor: "fantastic-jobs/career-site-job-listing-api"
-  time_range: "7d"                    # actor timeRange: 1h | 24h | 7d | 6m
-  # "profile" (default): `discover` runs one segmented query per
-  # profile.yaml's work_mode_priority tier (see careeros/pipeline/queryplan.py)
-  # — a single broad query was found to yield far fewer apply-worthy jobs than
-  # targeted per-work-mode ones. "single" restores the classic one-query
-  # behavior driven by title_search/location_search below (also the automatic
-  # fallback if your profile has no work_mode_priority/role_priorities yet).
-  discovery_mode: profile
-  title_search: ["Product Manager"]   # only used in discovery_mode: single
-  location_search: []                 # only used in discovery_mode: single
-  title_exclusion_search: []          # actor titleExclusionSearch (array)
-  location_exclusion_search: []       # actor locationExclusionSearch (array)
-  # Source-side filtering (fetch fewer, more-targeted jobs instead of
-  # fetching broadly and discarding most of it in `constraints` — the
-  # highest-ROI discovery lever found in the 2026-07-08 benchmark).
-  work_arrangement: []           # any of: "On-site" | "Hybrid" | "Remote OK" | "Remote Solely"
-  remove_agency: true            # drop recruiting-agency postings server-side
-  has_salary: null               # true/false to filter on salary presence; null = don't filter
-  # Per-call spend cap (USD) — this is a pay-per-result actor on a metered
-  # free-tier budget; QA hit a raw crash after exhausting it unbounded.
-  max_cost_usd: 1.0
-  # Optional per-work-mode-tier limit override (keys = your own
-  # profile.work_mode_priority tier names). Any tier not listed here uses
-  # `discover --limit`. Deliberately ships EMPTY — which tiers are worth a
-  # bigger fetch is specific to your own profile and conversion history
-  # (check run.json's cost-per-selected-job over a few days), not something
-  # CareerOS should assume for you. Example shape, commented out:
-  # tier_limits:
-  #   global_remote: 15
-  #   india_remote: 25
-  tier_limits: {}
+  # Days/week you actually run discovery. The weekly quota is spread across
+  # these, so LOWERING this RAISES your daily limit (free plan, 5 days -> 100/day).
+  active_days_per_week: 7
+  # Jobs per DAY from this source, divided evenly across however many search
+  # tiers your profile.work_mode_priority generates. null = use the guard's
+  # recommendation (quota ÷ active_days), which self-corrects when your
+  # profile or plan changes. `careeros doctor` shows current vs recommended.
+  limit: null
 
 # Approximate FX to your profile's comp currency, used only by the
 # deterministic salary hard-constraint (careeros/pipeline/constraints.py).

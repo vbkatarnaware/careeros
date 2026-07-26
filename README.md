@@ -27,9 +27,8 @@ pip install -e .
 careeros init
 ```
 
-Set your discovery credentials — three sources are on by default: the
-official **Fantastic Jobs** REST API (needs a free key), plus **RemoteOK**
-and **We Work Remotely** (free, no signup, nothing to configure):
+Set your discovery credential — one source is on by default: the official
+**Fantastic Jobs** REST API (needs a free key):
 
 ```
 export FANTASTIC_API_KEY=...   # developer.fantastic.jobs — or RAPIDAPI_KEY, see Installation below
@@ -173,11 +172,10 @@ auto-load a per-tool file.
 
 ## Pipeline
 
-1. **Discover** — call a provider (Fantastic Jobs REST API by default; a
-   legacy Apify-actor provider is also available — see
+1. **Discover** — call a provider (the Fantastic Jobs REST API; see
    `careeros/providers/README.md`), by default as one segmented query per
    profile work-mode tier rather than a single broad fetch
-   (`pipeline/queryplan.py`). The REST provider queries **both** Fantastic
+   (`pipeline/queryplan.py`). The provider queries **both** Fantastic
    sources by default — `active-ats` (career sites/ATS: Greenhouse, Lever,
    Ashby…) and `active-jb` (+ LinkedIn/YC/Wellfound) — merged and deduped.
    A production acceptance audit (full 107-job population) found the two
@@ -274,7 +272,7 @@ you want just one piece of the full treatment.
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
 | `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan + Sheets/Drive-or-local choice. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, and (if enabled) Sheets/Drive — plus your current vs. recommended discovery limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything, never fails just because Sheets/Drive are off. Add `--live` to actually verify Fantastic Jobs + every configured Apify token against their real APIs right now, instead of trusting local/stored state alone |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, and (if enabled) Sheets/Drive — plus your current vs. recommended daily job limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything, never fails just because Sheets/Drive are off. Add `--live` to actually verify Fantastic Jobs against its real API right now, instead of trusting local/stored state alone |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros job <job-id>` | Full Apply-tier treatment for ONE job, any score — resume, cover, report, application answers, auto-published |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
@@ -329,34 +327,29 @@ That installs the `careeros` CLI plus the default REST provider's dependency
   see [Architecture](#architecture).
 - **A Fantastic Jobs API key** (default provider) — see Quickstart above.
 
-## Setting up your profile and discovery providers
+## Setting up your profile and discovery source
 
-1. **Set your discovery providers' credentials.** `careeros` runs three
-   **Core** sources by default (`.careeros/config.yaml`'s `providers:`
-   block): the official Fantastic Jobs REST API (your main source — needs a
-   key), plus RemoteOK and We Work Remotely (free, direct, no signup —
-   nothing to configure). For Fantastic Jobs, pick one transport in
-   `api:` and export the matching key:
+1. **Set your discovery credential.** `careeros` runs one source
+   (`.careeros/config.yaml`'s `providers:` block): the official Fantastic
+   Jobs REST API. Pick one transport in `api:` and export the matching key:
    - `api.transport: direct` → `export FANTASTIC_API_KEY=...` ([developer.fantastic.jobs](https://developer.fantastic.jobs))
    - `api.transport: rapidapi` → `export RAPIDAPI_KEY=...` (RapidAPI's "Active Jobs DB")
 
-   *(Want more sources? `/careeros start` offers a handful of **Optional**
-   paid job boards by name — Naukri, Glassdoor, ZipRecruiter — each with a
-   one-line evidence-based pitch; opt in, set a monthly budget, and they run
-   on a single shared Apify credential behind the scenes (`export
-   APIFY_TOKEN=...`, or `APIFY_TOKENS=tok1,tok2,...` for multi-account
-   rotation). See `careeros/providers/README.md`'s "Shipped providers" for
-   the full relevance/cost/reliability evidence behind every source,
-   including the legacy Apify-actor Fantastic Jobs backend
-   (`fantastic-jobs-actor`) kept as an advanced reference option.)*
+   *(Seven other sources shipped through v1.6 — RemoteOK, We Work Remotely,
+   Glassdoor, ZipRecruiter, Naukri, Foundit, Indeed — and were removed in
+   v1.7 after two weeks of live use: Fantastic Jobs produced half the
+   selected jobs from 13% of the raw volume, for free. See
+   `careeros/providers/README.md`'s "Evaluated and removed" for the
+   per-source numbers, and "Adding a provider" to write your own.)*
 2. **Set up your profile**: `/careeros start` inside your host coding CLI —
    opens by asking you to paste your CV (optional; `skip` to answer
    questions instead), then extracts your facts into `.careeros/profile.yaml`,
    asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
-   Custom quota) to recommend a daily discovery limit, explained in plain
-   English against your own search preferences (e.g. *"CareerOS will run 3
-   discovery searches every day. On the Free plan, the recommended limit is
-   23 records per search."*) — accept it or enter your own value, and asks
+   Custom quota), then asks how many jobs per day you want from each source,
+   explained in plain English against your own search preferences (e.g.
+   *"Based on your search preferences (Remote, India, Onsite), CareerOS runs
+   3 searches per day. On the Free plan, the recommended total is 71 jobs
+   per day — 23 per search."*) — accept it or enter your own number, and asks
    whether you want a Google Sheet + Drive or to stay local-only (see
    Quickstart above; nothing extra to set up either way). **If you skip the
    plan question or never set `api.plan`, CareerOS assumes the Free plan by
@@ -364,8 +357,8 @@ That installs the `careeros` CLI plus the default REST provider's dependency
    see a one-time note about the assumption on `discover`/`careeros config`,
    and `careeros doctor` always shows current-vs-recommended. Or hand-edit
    `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
-   **Change the limit anytime later** by editing `api.limit`/`api.plan` in
-   `.careeros/config.yaml`.
+   **Change the limit anytime later** by editing `api.limit` (a daily total),
+   `api.active_days_per_week`, or `api.plan` in `.careeros/config.yaml`.
 3. **Check your setup**: `careeros doctor` — a green/red checklist for
    Python version, profile, discovery credentials, and (if enabled)
    Sheets/Drive. Fixes nothing itself; just tells you exactly what's
@@ -377,10 +370,9 @@ That installs the `careeros` CLI plus the default REST provider's dependency
    `doctor` also shows the last failure from local state, with no extra
    API call. Want to catch a bad or exhausted key *before* your first
    `daily` run instead of finding out mid-`discover`? Run `careeros doctor
-   --live` — it actually pings Fantastic Jobs and every configured Apify
-   token right now (a small, bounded amount of real quota: one 1-record
-   fetch, plus a free account-usage check per Apify token, no actor run)
-   and reports their real status instead of only local state.
+   --live` — it actually pings Fantastic Jobs right now (a small, bounded
+   amount of real quota: one 1-record fetch) and reports its real status
+   instead of only local state.
 4. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Local-first results digest
@@ -600,12 +592,10 @@ cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 
 ## What's built today
 
-The full pipeline runs end to end: profile-driven segmented discovery merged
-across multiple providers (Fantastic Jobs REST plus free RemoteOK/We Work
-Remotely on by default; Naukri/Glassdoor/ZipRecruiter/Indeed/Foundit and the
-legacy Apify-actor Fantastic Jobs backend available opt-in — see
-`careeros/providers/README.md` for the evidence behind each), deterministic
-normalize/dedupe/constraints/two-tier threshold,
+The full pipeline runs end to end: profile-driven segmented discovery from
+the Fantastic Jobs REST API (seven other sources were evaluated and removed
+in v1.7 — see `careeros/providers/README.md` for the evidence),
+deterministic normalize/dedupe/constraints/two-tier threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, automatic Application
 Answers for Apply-tier jobs (background HTTP/Playwright form-reading, with
@@ -623,8 +613,8 @@ in `templates/`); replace it with your own facts — via `/careeros start`
 
 ## Roadmap
 
-- Direct-API providers for Greenhouse, Ashby, Lever, Workday (no Apify
-  actor needed — see `careeros/providers/README.md`)
+- Direct-API providers for Greenhouse, Ashby, Lever, Workday (see
+  `careeros/providers/README.md`)
 - Incremental (`date_created_gte`) discovery — deferred out of the REST
   provider migration to keep it a pure parity swap. (LinkedIn/Wellfound/YC
   via the `active-jb` endpoint is now **live** — the default `endpoint:

@@ -18,11 +18,10 @@ from careeros.models import dumps
 
 def _cfg(**overrides) -> Config:
     defaults = dict(
-        provider="fantastic-jobs",
         threshold=4.0, consider_threshold=3.5,
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={},
-        sheets={}, apify={}, api={"endpoint": "both"}, fx_rates={}, drive={"enabled": False},
+        sheets={}, api={"endpoint": "both"}, fx_rates={}, drive={"enabled": False},
     )
     defaults.update(overrides)
     return Config(**defaults)
@@ -110,12 +109,11 @@ def test_records_and_quota_reflect_rolling_week_state(tmp_path, monkeypatch):
 
 
 def test_no_request_record_stats_for_non_fantastic_jobs_provider(tmp_path, monkeypatch):
-    """The actor/other providers have their own cost models — no
-    endpoint/requests concept to compute, so those keys are simply absent
-    rather than wrong."""
+    """Other providers have their own cost models — no endpoint/requests
+    concept to compute, so those keys are simply absent rather than wrong."""
     monkeypatch.chdir(tmp_path)
-    cfg = _cfg(provider="fantastic-jobs-actor")
-    _write_raw(cfg, "2026-07-08", providers=["fantastic-jobs-actor"], items={"fantastic-jobs-actor": []})
+    cfg = _cfg(providers={"stub-source-a": {"enabled": True}})
+    _write_raw(cfg, "2026-07-08", providers=["stub-source-a"], items={"stub-source-a": []})
     stats = _build_discovery_stats(cfg, "2026-07-08")
     assert "requests_this_run" not in stats
     assert "records_this_run" not in stats

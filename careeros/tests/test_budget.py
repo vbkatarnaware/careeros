@@ -78,11 +78,27 @@ def test_recommend_divides_by_requests_per_run():
 def test_recommend_flags_over_quota_and_never_mutates():
     api_cfg = {"plan": "free", "limit": 100, "active_days_per_week": 7}
     rec = budget.recommend(api_cfg, {}, requests_per_run=2)
-    # 100 * 2 * 7 = 1400 records/week >> 500 quota
-    assert rec.configured_weekly_records == 1400
-    assert rec.over_quota is True
+    # v1.7: `limit` is a DAILY TOTAL, so 100/day * 7 days = 700/week — NOT
+    # multiplied by the 2 searches (that was the old per-search reading).
+    assert rec.configured_records_per_day == 100
+    assert rec.configured_weekly_records == 700
+    assert rec.configured_per_search == 50  # 100/day split across 2 searches
+    assert rec.over_quota is True           # 700 > 500
     assert any("exceed your weekly quota" in ln for ln in rec.lines())
     assert api_cfg["limit"] == 100  # guard did not touch the config
+
+
+def test_configured_per_search_floors_at_one():
+    """Asking for fewer jobs/day than you have searches still fetches one per
+    search — `discover` warns that the real total exceeds the request."""
+    rec = budget.recommend({"plan": "free", "limit": 2}, {}, requests_per_run=3)
+    assert rec.configured_per_search == 1
+
+
+def test_recommended_daily_total_is_quota_over_active_days():
+    rec = budget.recommend({"plan": "free", "active_days_per_week": 5}, {}, requests_per_run=3)
+    assert rec.recommended_daily_total == 100  # 500/5, independent of tier count
+    assert rec.recommended_per_request == 33   # 100 split across 3 searches
 
 
 def test_recommend_informational_when_quota_unknown():

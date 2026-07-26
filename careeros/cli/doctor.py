@@ -10,10 +10,9 @@ import typer
 
 from careeros import budget
 from careeros.cli import app
-from careeros.cli._shared import _config, _load_profile, _today
-from careeros.config import Config, enabled_providers, provider_config_block
+from careeros.cli._shared import _config, _load_profile
+from careeros.config import Config, enabled_providers
 from careeros.pipeline.queryplan import build_query_plan
-from careeros.providers._apify_actor_common import iter_tokens
 from careeros.providers.base import ProviderError
 from careeros.providers.registry import get as get_provider
 
@@ -91,16 +90,12 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
             results.append(_check_result(_CheckStatus.FAIL, "Profile (.careeros/profile.yaml)",
                                          f"invalid — {type(e).__name__}: {e}"))
 
-    # Discovery provider credentials — v1.2: looped over every ENABLED
-    # provider (config.providers), not a single cfg.provider check, since
-    # several can run at once. Fantastic Jobs and the legacy actor keep
-    # their existing rich, battle-tested diagnostics (transport/endpoint/
-    # last-error/discovery-limit for the former, token check for the
-    # latter) unchanged; every v1.2 provider gets a uniform check via its
-    # own `validate()` — the same method `discover` calls before `fetch()`
-    # — plus its Apify budget-vs-spend if its capability is "monthly" (see
-    # budget.guard_for). No provider is special-cased beyond preserving the
-    # two pre-existing diagnostics blocks as-is.
+    # Discovery provider credentials — looped over every ENABLED provider
+    # (config.providers), since several can run at once. Fantastic Jobs keeps
+    # its existing rich, battle-tested diagnostics (transport/endpoint/
+    # last-error/discovery-limit); every other provider gets a uniform check
+    # via its own `validate()` — the same method `discover` calls before
+    # `fetch()`.
     active = enabled_providers(cfg)
 
     if "fantastic-jobs" in active:
@@ -137,48 +132,49 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
         else:
             results.append(_check_result(_CheckStatus.PASS, "Last discovery run", "no recorded failures"))
 
-        # Recommended vs configured discovery limit (P2.9) — same formula
+        # Recommended vs configured discovery limit — same formula
         # `careeros config`/`start` already print, surfaced here too so
         # `doctor` is a one-stop diagnostic. Display only; never mutates.
+        # Compares DAILY TOTALS (the unit api.limit is in since v1.7) and
+        # spells out the per-search split, so tier drift is visible: add a
+        # work_mode_priority entry and the daily total holds while the
+        # per-search number drops.
         if cfg.profile_path.exists():
             try:
                 num_queries = len(build_query_plan(_load_profile(cfg), cfg.api)) or 1
             except Exception:
                 num_queries = 1
             rec = budget.recommend(cfg.api, cfg.goals, num_queries)
-            if rec.quota and rec.recommended_per_request is not None:
+            if rec.quota and rec.recommended_daily_total is not None:
                 plan_note = f"{rec.plan} — assumed default, set api.plan to silence" if rec.plan_is_assumed else rec.plan
-                if rec.configured_limit > rec.recommended_per_request:
+                split = (f"{rec.configured_per_search} per search × {num_queries} search(es)")
+                if rec.configured_records_per_day > rec.recommended_daily_total:
                     results.append(_check_result(
                         _CheckStatus.WARN, "Discovery limit",
-                        f"current={rec.configured_limit}, recommended={rec.recommended_per_request} "
-                        f"(plan {plan_note}: {rec.quota} records/wk ÷ {rec.active_days} active days ÷ "
-                        f"{num_queries} query tier(s)) — edit api.limit in .careeros/config.yaml, or "
-                        "re-run `careeros start`."
+                        f"current={rec.configured_records_per_day} jobs/day ({split}), "
+                        f"recommended={rec.recommended_daily_total} "
+                        f"(plan {plan_note}: {rec.quota} records/wk ÷ {rec.active_days} active days) "
+                        "— edit api.limit in .careeros/config.yaml, or re-run `careeros start`."
                     ))
                 else:
                     results.append(_check_result(
                         _CheckStatus.PASS, "Discovery limit",
-                        f"current={rec.configured_limit}, recommended={rec.recommended_per_request} — within quota"
+                        f"current={rec.configured_records_per_day} jobs/day ({split}), "
+                        f"recommended={rec.recommended_daily_total} — within quota"
                     ))
-    if "fantastic-jobs-actor" in active:
-        token_env = cfg.apify.get("token_env", "APIFY_TOKEN")
-        tokens_env = cfg.apify.get("tokens_env", "APIFY_TOKENS")
-        if os.environ.get(tokens_env) or os.environ.get(token_env):
-            results.append(_check_result(_CheckStatus.PASS, "Discovery credentials (legacy actor)",
-                                         f"{tokens_env} or {token_env} is set"))
-        else:
-            results.append(_check_result(_CheckStatus.FAIL, "Discovery credentials (legacy actor)",
-                                         f"neither {tokens_env} nor {token_env} is set"))
-
-    # Every other v1.2 provider: uniform validate()-based check, no special
-    # cases — plus its Apify budget-vs-spend when its capability is
-    # "monthly" (never a name check, see budget.guard_for).
+    # Every other provider: uniform validate()-based check, no special cases.
+    # An unregistered name (a typo in config.yaml's `providers:`, or a source
+    # removed by an upgrade) is a config problem to REPORT, not a traceback —
+    # `doctor` exists to explain exactly this kind of breakage.
     for name in active:
-        if name in ("fantastic-jobs", "fantastic-jobs-actor"):
+        if name == "fantastic-jobs":
             continue
-        provider_cfg = provider_config_block(cfg, name)
-        problems = get_provider(name).validate(cfg)
+        try:
+            provider = get_provider(name)
+        except ValueError as e:
+            results.append(_check_result(_CheckStatus.FAIL, f"Discovery provider ({name})", str(e)))
+            continue
+        problems = provider.validate(cfg)
         if problems:
             results.append(_check_result(_CheckStatus.FAIL, f"Discovery credentials ({name})",
                                          "; ".join(problems)))
@@ -208,29 +204,6 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                     f"{provider_meta.get('records', 0)} items on {latest_date} "
                     f"({provider_meta.get('seconds', 0):.1f}s, ${provider_meta.get('cost_usd', 0):.4f})"
                 ))
-
-    # Apify token pool health (only relevant if some enabled provider is
-    # "monthly" capability) — how many of the configured tokens are
-    # available vs already known-exhausted this billing cycle (see
-    # budget.apify_tokens.json / _apify_actor_common.run_actor).
-    if any(budget.guard_for(provider_config_block(cfg, name)) == "monthly" for name in active):
-        tokens = iter_tokens(cfg.apify)
-        if tokens:
-            tokens_state = budget.load_apify_tokens_state(cfg.careeros_dir, _today())
-            exhausted_count = sum(1 for t in tokens if budget.is_token_exhausted(tokens_state, t))
-            available = len(tokens) - exhausted_count
-            status = _CheckStatus.PASS if available > 0 else _CheckStatus.FAIL
-            results.append(_check_result(
-                status, "Apify token pool",
-                f"{available}/{len(tokens)} token(s) available this billing cycle"
-                + (f" ({exhausted_count} exhausted)" if exhausted_count else "")
-            ))
-        if budget.guard_for(provider_cfg) == "monthly":
-            max_budget = provider_cfg.get("max_monthly_budget_usd") or cfg.apify.get("max_monthly_budget_usd")
-            state = budget.load_apify_state(cfg.careeros_dir, _today())
-            spent = state.get("spend_usd", 0.0)
-            results.append(_check_result(_CheckStatus.PASS, f"Apify budget ({name})",
-                                         f"${spent:.4f}/${max_budget or 0:.2f} used this month (estimated)"))
 
     # Sheets (optional — only checked if enabled)
     if cfg.sheets.get("enabled"):
@@ -344,10 +317,7 @@ def _run_doctor_live_checks(cfg: Config) -> list[tuple[str, str, str]]:
     day, per AGENT_GUIDE.md — `_run_doctor_checks` above stays network-free
     (so plain `doctor` never spends quota just by being run); this function
     is opt-in via `--live` and spends a small, bounded amount of real quota
-    (one 1-record Fantastic Jobs fetch; one free, non-actor-run Apify
-    account-usage call per configured token) specifically to verify."""
-    import os
-
+    (one 1-record Fantastic Jobs fetch) specifically to verify."""
     results: list[tuple[str, str, str]] = []
     active = enabled_providers(cfg)
 
@@ -369,29 +339,6 @@ def _run_doctor_live_checks(cfg: Config) -> list[tuple[str, str, str]]:
                 ))
         except ProviderError as e:
             results.append(_check_result(_CheckStatus.FAIL, "Fantastic Jobs (LIVE)", str(e)))
-
-    if any(budget.guard_for(provider_config_block(cfg, name)) == "monthly" for name in active):
-        tokens = iter_tokens(cfg.apify)
-        if not tokens:
-            results.append(_check_result(_CheckStatus.WARN, "Apify tokens (LIVE)", "no tokens configured"))
-        else:
-            from apify_client import ApifyClient
-            from apify_client.errors import ApifyApiError
-
-            for i, token in enumerate(tokens, start=1):
-                fp = budget.token_fingerprint(token)
-                try:
-                    usage = ApifyClient(token).user().monthly_usage()
-                    spent = usage.total_usage_credits_usd_after_volume_discount
-                    results.append(_check_result(
-                        _CheckStatus.PASS, f"Apify token {i}/{len(tokens)} (LIVE, {fp})",
-                        f"reachable — ${spent:.4f} used this billing cycle (live, not the local estimate)"
-                    ))
-                except ApifyApiError as e:
-                    results.append(_check_result(
-                        _CheckStatus.FAIL, f"Apify token {i}/{len(tokens)} (LIVE, {fp})",
-                        f"rejected/exhausted — {e}"
-                    ))
 
     return results
 
