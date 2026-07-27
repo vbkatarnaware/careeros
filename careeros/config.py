@@ -65,7 +65,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "gate": "v1",
         "eval": "v2",
         "resume": "v4",
-        "cover": "v1",
+        "cover": "v2",
     },
     # Approximate FX to INR for salary constraint checks. A margin is applied
     # in constraints.py so a borderline conversion never wrongly hard-rejects.

@@ -10,13 +10,15 @@ from unittest.mock import MagicMock, patch
 
 from careeros.models import Contact, Eval, Rubric
 from careeros.sheets import (
+    DEFAULT_STATUS,
     DEPRECATED_HEADERS,
     SHEET_HEADERS,
     STATUS_OPTIONS,
     _apply_formatting,
+    _conditional_rule_exists,
     _ensure_headers,
-    _score_conditional_rule_exists,
     _sort_rows_by_date_desc,
+    _STATUS_COLORS,
     append_rows,
     job_to_row,
     migrate,
@@ -286,7 +288,7 @@ def test_append_rows_realigns_canonical_row_to_drifted_live_header():
     job = make_job(id="id-xyz", company="Acme", company_linkedin="https://li/acme")
     canonical = job_to_row("2026-07-08", job, make_eval(), eval_drive_link="https://drive/eval.md")
     with patch("careeros.sheets._open_worksheet", return_value=ws), \
-         patch("careeros.sheets._score_conditional_rule_exists", return_value=True):
+         patch("careeros.sheets._conditional_rule_exists", return_value=True):
         append_rows(MagicMock(), [canonical])
 
     # P2.11: new rows are INSERTED at row 2 (directly below the header), not
@@ -467,7 +469,11 @@ def test_apply_formatting_adds_score_conditional_rules_once():
     _apply_formatting(ws, list(SHEET_HEADERS))
     ws.spreadsheet.batch_update.assert_called_once()
     requests = ws.spreadsheet.batch_update.call_args.args[0]["requests"]
-    score_requests = [r for r in requests if "addConditionalFormatRule" in r]
+    rules = [r for r in requests if "addConditionalFormatRule" in r]
+    score_requests = [
+        r for r in rules
+        if r["addConditionalFormatRule"]["rule"]["booleanRule"]["condition"]["type"].startswith("NUMBER_")
+    ]
     assert len(score_requests) == 2
     conditions = {
         r["addConditionalFormatRule"]["rule"]["booleanRule"]["condition"]["type"] for r in score_requests
@@ -475,19 +481,63 @@ def test_apply_formatting_adds_score_conditional_rules_once():
     assert conditions == {"NUMBER_GREATER_THAN_EQ", "NUMBER_LESS"}
 
 
+def test_apply_formatting_adds_one_color_rule_per_status():
+    """Every STATUS_OPTIONS value gets its own TEXT_EQ fill rule, so the
+    column is readable at a glance instead of uniformly white."""
+    ws = _mock_ws([list(SHEET_HEADERS)])
+    ws.id = 42
+    ws.spreadsheet.fetch_sheet_metadata.return_value = {"sheets": []}
+    _apply_formatting(ws, list(SHEET_HEADERS))
+    requests = ws.spreadsheet.batch_update.call_args.args[0]["requests"]
+    text_rules = [
+        r for r in requests
+        if "addConditionalFormatRule" in r
+        and r["addConditionalFormatRule"]["rule"]["booleanRule"]["condition"]["type"] == "TEXT_EQ"
+    ]
+    assert len(text_rules) == len(STATUS_OPTIONS)
+    colored = {
+        r["addConditionalFormatRule"]["rule"]["booleanRule"]["condition"]["values"][0]["userEnteredValue"]
+        for r in text_rules
+    }
+    assert colored == set(STATUS_OPTIONS)
+    # Each rule must carry a real fill, not an empty format block.
+    for r in text_rules:
+        assert r["addConditionalFormatRule"]["rule"]["booleanRule"]["format"]["backgroundColor"]
+
+
+def test_every_status_option_has_a_color():
+    """A status with no entry in _STATUS_COLORS would silently render white
+    and be invisible in the column -- the exact problem this exists to fix."""
+    assert set(STATUS_OPTIONS) == set(_STATUS_COLORS)
+
+
+def test_removed_status_values_are_gone():
+    """Offer and Ongoing / In Process were retired in v1.7.2."""
+    assert "Offer" not in STATUS_OPTIONS
+    assert "Ongoing / In Process" not in STATUS_OPTIONS
+    assert "Expired" in STATUS_OPTIONS
+    assert DEFAULT_STATUS == "Not Applied"
+
+
 def test_apply_formatting_skips_conditional_rules_when_already_present():
     """Idempotency: calling _apply_formatting twice must never stack
-    duplicate conditional-format rules on the Score column. The Status
+    duplicate conditional-format rules. This is the failure mode that
+    matters most -- addConditionalFormatRule APPENDS, so an unguarded Status
+    block would add seven fresh rules on every daily run. The Status
     dropdown's setDataValidation request still fires every time -- it
     REPLACES rather than stacks, so it needs no existence check (see
     _apply_formatting's docstring)."""
     ws = _mock_ws([list(SHEET_HEADERS)])
     ws.id = 42
     score_col = SHEET_HEADERS.index("Score")
+    status_col = SHEET_HEADERS.index("Status")
     ws.spreadsheet.fetch_sheet_metadata.return_value = {
         "sheets": [{
             "properties": {"sheetId": 42},
-            "conditionalFormats": [{"ranges": [{"startColumnIndex": score_col}]}],
+            "conditionalFormats": [
+                {"ranges": [{"startColumnIndex": score_col}]},
+                {"ranges": [{"startColumnIndex": status_col}]},
+            ],
         }]
     }
     _apply_formatting(ws, list(SHEET_HEADERS))
@@ -517,16 +567,16 @@ def test_apply_formatting_sets_status_dropdown():
     assert "endRowIndex" not in rng
 
 
-def test_score_conditional_rule_exists_true_when_present():
+def test_conditional_rule_exists_true_when_present():
     meta = {"sheets": [{"properties": {"sheetId": 1}, "conditionalFormats": [
         {"ranges": [{"startColumnIndex": 4}]},
     ]}]}
-    assert _score_conditional_rule_exists(meta, sheet_id=1, score_col=4) is True
+    assert _conditional_rule_exists(meta, sheet_id=1, column=4) is True
 
 
-def test_score_conditional_rule_exists_false_when_absent():
+def test_conditional_rule_exists_false_when_absent():
     meta = {"sheets": [{"properties": {"sheetId": 1}, "conditionalFormats": []}]}
-    assert _score_conditional_rule_exists(meta, sheet_id=1, score_col=4) is False
+    assert _conditional_rule_exists(meta, sheet_id=1, column=4) is False
 
 
 def test_apply_formatting_noop_when_no_score_column():

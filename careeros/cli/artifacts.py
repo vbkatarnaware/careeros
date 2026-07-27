@@ -91,7 +91,7 @@ def _artifacts_prepare(cfg: Config, date: str, job_id: str = None) -> None:
 
     profile = _load_profile(cfg)
     resume_prompt_version = cfg.prompts.get("resume", "v4")
-    cover_prompt_version = cfg.prompts.get("cover", "v1")
+    cover_prompt_version = cfg.prompts.get("cover", "v2")
     cache = Cache(cfg.cache_dir)
 
     to_generate: list[dict] = []
@@ -128,7 +128,7 @@ def _artifacts_prepare(cfg: Config, date: str, job_id: str = None) -> None:
             })
 
     # Each resume/cover generation independently reads the full profile.yaml
-    # (per the active resume prompt, prompts/cover_v1.md) plus the job's own
+    # (per the active resume/cover prompts) plus the job's own
     # description — so the estimate multiplies profile size by the number of
     # generation tasks, not just by job count.
     profile_bytes = cfg.profile_path.stat().st_size if cfg.profile_path.exists() else 0
@@ -183,7 +183,7 @@ def _artifacts_finalize(cfg: Config, date: str, job_id: str = None) -> None:
 
     profile = _load_profile(cfg)
     resume_prompt_version = cfg.prompts.get("resume", "v4")
-    cover_prompt_version = cfg.prompts.get("cover", "v1")
+    cover_prompt_version = cfg.prompts.get("cover", "v2")
     cache = Cache(cfg.cache_dir)
     resume_schema = json.loads((runmeta.SCHEMAS_DIR / "resume.schema.json").read_text())
 
@@ -288,7 +288,9 @@ def _artifacts_finalize(cfg: Config, date: str, job_id: str = None) -> None:
                     newly_cached += 1
 
             if cover_ok:
-                cover_pdf_bytes = render_cover_pdf(profile, cover_text)
+                cover_pdf_bytes = render_cover_pdf(
+                    profile, cover_text, job=jobs_by_id.get(e.id), date=date,
+                )
                 if cover_pdf_bytes is not None:
                     (artifacts_path / "cover.pdf").write_bytes(cover_pdf_bytes)
                 # No hard failure if the cover PDF specifically can't render

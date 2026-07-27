@@ -4,6 +4,52 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [1.7.2] - 2026-07-27
+
+### Changed
+
+- **Sheet Status column: color-coded, and the value set finally matches the
+  funnel.** Every status rendered identically before this — a 38-row sheet
+  gave no visual sense of where anything stood. `STATUS_OPTIONS`
+  (`careeros/sheets.py`) drops `Offer` and `Ongoing / In Process` (states
+  this funnel doesn't use) and adds `Expired` (a posting that closed before
+  it was applied to), then each of the seven values gets its own
+  conditional-format fill: grey for Not Applied, green for Applied, blue for
+  Received Call, amber for Interview, purple for After Interview, red for
+  Rejected, dark grey for Expired — chosen so the column scans by
+  temperature (in-flight vs. closed) rather than requiring you to read every
+  cell. Existing rows already holding a removed value keep their text; the
+  pipeline never rewrites a human-edited cell, so Sheets just flags them as
+  outside the dropdown until you update them yourself.
+- **Cover letters now read the job posting (`prompts/cover_v2.md`, now the
+  default).** Measured across the 18 letters generated on 2026-07-26, every
+  opening was interchangeable between companies — *"Marvin's focus on
+  AI-driven B2B SaaS solutions caught my attention," "Mercury's focus on
+  providing financial tools ... caught my attention."* Root cause: v1 built
+  the letter from the eval's `company_summary`, and 67 of that run's 149
+  evals (45%) have a thin or generic one (*"Company details are limited but
+  the role focuses on core PM execution"*) — while the job's own full
+  `description` was passed to this stage the entire time and the prompt
+  never once told the model to read it. v2 mines the JD for a concrete hook
+  first (a named product, a stated problem, team shape, a specific tool),
+  adds real company/domain research with a hard no-fabrication rule (if it
+  can't be verified, don't write it — silence beats a guess), and picks an
+  entry angle (problem-first, parallel, question, wedge) from what the
+  evidence actually supports instead of running one fixed shape every time.
+  A list of the observed filler phrases (*"caught my attention," "is a
+  compelling fit," "I look forward to hearing from you,"* etc.) is banned
+  outright. `cover_v1.md` stays on disk for rollback via `prompts.cover`.
+- **Cover letter PDF gets real letter furniture**
+  (`careeros/templates/cover.typ`). It was a centered name header over
+  justified prose with no date, recipient, salutation, or sign-off — it
+  didn't read as correspondence. `render_cover_pdf()` now optionally accepts
+  the `Job` (for the company/recipient block, and a named contact when the
+  posting has one) and the run's `date` (formatted as "27 July 2026," never
+  `date.today()` — re-rendering an old run must reproduce that run's letter,
+  not today's). Every added field is genuinely optional: an omitted one
+  skips its block in the template rather than printing a blank line, so the
+  existing call signature keeps working unchanged.
+
 ## [1.7.1] - 2026-07-26
 
 ### Changed

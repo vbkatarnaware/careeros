@@ -417,8 +417,11 @@ pass right now instead of waiting for the next `daily` run — this also
 sorts an older Sheet's existing rows by Date descending, a one-time fix
 for history that was written bottom-up. The header row is bold and frozen,
 `Score` is conditionally colored — light green at 4.0 and above, light
-yellow below — and `Status` shows its dropdown arrow, all applied
-automatically so you can scan Apply-quality at a glance.
+yellow below — and `Status` both shows its dropdown arrow and colors each
+cell by value (grey Not Applied, green Applied, blue Received Call, amber
+Interview, purple After Interview, red Rejected, dark grey Expired) — all
+applied automatically so you can scan Apply-quality and application
+progress at a glance, without reading every cell.
 
 `Job ID` is the join key `prep`/`apply`/`publish` use to look a row back up.
 `Company LinkedIn` is populated for ~100% of postings at zero extra cost.

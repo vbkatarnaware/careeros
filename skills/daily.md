@@ -199,9 +199,9 @@ naming exactly which job(s) need a resume and/or cover letter. For each one:
    the JD's keywords, but every number/entity from the source `profile.yaml`
    bullet must survive the reword unchanged (no invented or dropped fact),
    and no field may name the target company.
-2. **Cover letter** — read `prompts/cover_v1.md`. Write
-   `artifacts/<job-id>/cover.md` (unchanged from v1 — freely written,
-   grounded prose).
+2. **Cover letter** — read the cover prompt named by `config.prompts.cover`
+   (`prompts/cover_<version>.md`). Write `artifacts/<job-id>/cover.md` —
+   freely written, grounded prose.
 
 Then:
 

@@ -55,9 +55,16 @@ SHEET_HEADERS = [
 # reorder/reformat COLUMNS, never overwrite existing row DATA). The dropdown
 # (see `_apply_formatting`) constrains it to these values so the column stays
 # usable for filtering/reporting instead of drifting into free text.
+#
+# v1.7.2: listed in funnel order, and each one is color-coded (see
+# _STATUS_COLORS). "Offer" and "Ongoing / In Process" were removed as states
+# this funnel doesn't actually use, and "Expired" added for a posting that
+# closed before it was applied to. A cell still holding a removed value keeps
+# its text — Sheets just flags it as outside the dropdown — because the
+# pipeline never rewrites a human's own edit.
 STATUS_OPTIONS = [
     "Not Applied", "Applied", "Received Call", "Interview",
-    "After Interview", "Ongoing / In Process", "Offer", "Rejected",
+    "After Interview", "Rejected", "Expired",
 ]
 DEFAULT_STATUS = STATUS_OPTIONS[0]
 
@@ -76,6 +83,23 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 _HEADER_BG_COLOR = {"red": 0.85, "green": 0.88, "blue": 0.95}
 _SCORE_GREEN = {"red": 0.85, "green": 0.92, "blue": 0.83}   # ~#D9EAD3
 _SCORE_YELLOW = {"red": 1.0, "green": 0.95, "blue": 0.8}    # ~#FFF2CC
+
+# Status fills (v1.7.2). Chosen so the column scans by TEMPERATURE rather
+# than by reading each cell: the three in-flight states run green -> blue ->
+# amber -> purple as the process advances, while the two closed states sit at
+# opposite ends of the warmth range (red for a rejection, grey for a posting
+# that simply lapsed). "Not Applied" is deliberately the palest — it's where
+# most rows live, and it should recede. Same pastel register as the Score
+# fills above, so the two colored columns don't fight each other.
+_STATUS_COLORS = {
+    "Not Applied":     {"red": 0.937, "green": 0.937, "blue": 0.937},  # #EFEFEF grey
+    "Applied":         {"red": 0.851, "green": 0.918, "blue": 0.827},  # #D9EAD3 light green
+    "Received Call":   {"red": 0.812, "green": 0.886, "blue": 0.953},  # #CFE2F3 light blue
+    "Interview":       {"red": 1.0,   "green": 0.898, "blue": 0.6},    # #FFE599 amber
+    "After Interview": {"red": 0.851, "green": 0.824, "blue": 0.914},  # #D9D2E9 light purple
+    "Rejected":        {"red": 0.957, "green": 0.8,   "blue": 0.8},    # #F4CCCC light red
+    "Expired":         {"red": 0.718, "green": 0.718, "blue": 0.718},  # #B7B7B7 dark grey
+}
 
 
 def _open_worksheet(config: Config) -> gspread.Worksheet:
@@ -143,17 +167,21 @@ def _ensure_headers(worksheet: gspread.Worksheet) -> list[str]:
     return header
 
 
-def _score_conditional_rule_exists(sheet_meta: dict, sheet_id: int, score_col: int) -> bool:
-    """True if a conditional-format rule already targets `score_col` on this
+def _conditional_rule_exists(sheet_meta: dict, sheet_id: int, column: int) -> bool:
+    """True if a conditional-format rule already targets `column` on this
     sheet — the idempotency check so repeated `_apply_formatting` calls (every
     `append_rows`, or an explicit `sheets migrate`) never stack duplicate
-    rules on top of each other."""
+    rules on top of each other.
+
+    This matters more than it looks: `addConditionalFormatRule` APPENDS,
+    unlike `setDataValidation` (which replaces), so an unguarded Status block
+    would add seven fresh rules on every single daily run."""
     for sheet in sheet_meta.get("sheets", []):
         if sheet.get("properties", {}).get("sheetId") != sheet_id:
             continue
         for cf in sheet.get("conditionalFormats", []):
             for rng in cf.get("ranges", []):
-                if rng.get("startColumnIndex") == score_col:
+                if rng.get("startColumnIndex") == column:
                     return True
     return False
 
@@ -161,14 +189,15 @@ def _score_conditional_rule_exists(sheet_meta: dict, sheet_id: int, score_col: i
 def _apply_formatting(worksheet: gspread.Worksheet, live_header: list[str]) -> None:
     """Idempotent cosmetic pass: bold header row (frozen), a Score
     conditional-format rule (>= threshold -> light green, below -> light
-    yellow), and a Status dropdown (STATUS_OPTIONS) — each applies to every
-    row automatically, including ones written after this runs (unbounded
-    row range, no endRowIndex), never a one-time per-cell paint/rule a fresh
-    row would miss. Safe to call on every write: the Score rule checks the
-    sheet's existing conditional-format rules first so repeated calls never
-    duplicate it; the Status dropdown is a `setDataValidation` call, which
-    REPLACES whatever was on that range rather than stacking, so it's
-    naturally idempotent with no existence check needed."""
+    yellow), a Status dropdown (STATUS_OPTIONS), and one Status fill rule per
+    option (_STATUS_COLORS) — each applies to every row automatically,
+    including ones written after this runs (unbounded row range, no
+    endRowIndex), never a one-time per-cell paint/rule a fresh row would
+    miss. Safe to call on every write: both conditional-format blocks check
+    the sheet's existing rules first so repeated calls never duplicate them;
+    the Status dropdown is a `setDataValidation` call, which REPLACES
+    whatever was on that range rather than stacking, so it's naturally
+    idempotent with no existence check needed."""
     worksheet.format("1:1", {
         "textFormat": {"bold": True},
         "backgroundColor": _HEADER_BG_COLOR,
@@ -179,12 +208,16 @@ def _apply_formatting(worksheet: gspread.Worksheet, live_header: list[str]) -> N
     sheet_id = worksheet.id
     requests = []
 
-    if "Score" in live_header:
-        score_col = live_header.index("Score")  # 0-indexed, Sheets API convention
+    # One metadata read serves both conditional-format guards below.
+    meta = None
+    if "Score" in live_header or "Status" in live_header:
         meta = spreadsheet.fetch_sheet_metadata(
             params={"fields": "sheets(properties(sheetId),conditionalFormats)"}
         )
-        if not _score_conditional_rule_exists(meta, sheet_id, score_col):
+
+    if "Score" in live_header:
+        score_col = live_header.index("Score")  # 0-indexed, Sheets API convention
+        if not _conditional_rule_exists(meta, sheet_id, score_col):
             score_range = {
                 "sheetId": sheet_id, "startRowIndex": 1,
                 "startColumnIndex": score_col, "endColumnIndex": score_col + 1,
@@ -208,6 +241,28 @@ def _apply_formatting(worksheet: gspread.Worksheet, live_header: list[str]) -> N
 
     if "Status" in live_header:
         status_col = live_header.index("Status")
+        # One TEXT_EQ fill rule per status, so the column reads at a glance.
+        # Guarded as a block: either none of them exist yet or all do.
+        if not _conditional_rule_exists(meta, sheet_id, status_col):
+            status_range = {
+                "sheetId": sheet_id, "startRowIndex": 1,
+                "startColumnIndex": status_col, "endColumnIndex": status_col + 1,
+            }
+            for status in STATUS_OPTIONS:
+                color = _STATUS_COLORS.get(status)
+                if color is None:
+                    continue
+                requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                    "ranges": [status_range],
+                    "booleanRule": {
+                        "condition": {
+                            "type": "TEXT_EQ",
+                            "values": [{"userEnteredValue": status}],
+                        },
+                        "format": {"backgroundColor": color},
+                    },
+                }}})
+
         requests.append({"setDataValidation": {
             "range": {
                 "sheetId": sheet_id, "startRowIndex": 1,

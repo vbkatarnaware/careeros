@@ -38,8 +38,8 @@ goals:
 prompts:
   gate: v1
   eval: v2
-  resume: v3
-  cover: v1
+  resume: v4
+  cover: v2
 
 # Optional Google Sheets tracker (P2.6). ADDITIVE only — local Markdown
 # under .careeros/runs/ and .careeros/results/ stays the source of truth;

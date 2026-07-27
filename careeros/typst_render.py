@@ -28,6 +28,7 @@ never raises. Callers fall back to the legacy Markdown/fpdf2 path.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 from pathlib import Path
 from typing import Any
@@ -314,14 +315,38 @@ def render_data_to_markdown(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_cover_pdf(profile: Profile, cover_markdown: str) -> bytes | None:
+def _letter_date(date: str | None) -> str:
+    """Format the RUN date (an ISO 'YYYY-MM-DD' run-folder label) as
+    '27 July 2026'. Deliberately not `date.today()`: re-rendering an old run
+    must reproduce that run's letter exactly, and this repo's own QA runs use
+    non-calendar folder labels ('qa-hardening-01') which must degrade to no
+    date rather than crashing the render."""
+    if not date:
+        return ""
+    try:
+        return _dt.date.fromisoformat(date).strftime("%-d %B %Y")
+    except (ValueError, TypeError):
+        return ""
+
+
+def render_cover_pdf(
+    profile: Profile,
+    cover_markdown: str,
+    job: Any | None = None,
+    date: str | None = None,
+) -> bytes | None:
     """Render a cover letter PDF matching the resume's font/header design.
 
     `cover_markdown` is the existing cover.md content (unchanged content
     model — cover letters are still freely written prose, grounded in
     profile.yaml + the eval's fit_paragraph, not verbatim-selected bullets).
     Paragraphs are split on blank lines; markdown syntax is stripped to
-    plain prose. Fail-soft, same contract as render_resume_pdf."""
+    plain prose.
+
+    `job` and `date` are optional and only supply letter furniture (recipient
+    block, salutation, dated header). Omitting them renders the older
+    header-and-body layout rather than failing — the template skips any block
+    whose field is empty. Fail-soft, same contract as render_resume_pdf."""
     typst = _lazy_typst()
     if typst is None:
         return None
@@ -334,6 +359,18 @@ def render_cover_pdf(profile: Profile, cover_markdown: str) -> bytes | None:
         ]
         data = _contact_line_fields(profile.candidate)
         data["paragraphs"] = paragraphs
+        data["date"] = _letter_date(date)
+
+        company = getattr(job, "company", "") or "" if job is not None else ""
+        contact_name = ""
+        if job is not None and getattr(job, "contact", None) is not None:
+            contact_name = getattr(job.contact, "name", "") or ""
+        data["company"] = company
+        data["recipient"] = contact_name or ("Hiring Team" if company else "")
+        # Address a real person when the posting named one; otherwise stay
+        # generic rather than inventing a name.
+        data["salutation"] = f"Dear {contact_name}," if contact_name else "Dear Hiring Team,"
+
         template_src = _COVER_TEMPLATE_PATH.read_bytes()
         pdf_bytes = typst.compile(
             input=template_src,

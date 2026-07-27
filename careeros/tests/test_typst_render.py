@@ -158,6 +158,58 @@ def test_renders_a_valid_cover_letter_pdf(profile):
     assert "excited to apply" in text
 
 
+def test_cover_letter_omits_recipient_block_when_job_absent(profile):
+    """Back-compat: calling render_cover_pdf with no job (the pre-v1.7.2
+    signature) must still render. The salutation always defaults to "Dear
+    Hiring Team," (every letter should greet someone), but with no Job there
+    is no company to print in the recipient block above it, and the
+    template must skip that block rather than printing a blank line."""
+    md = "Some content.\n\nMore content."
+    out = render_cover_pdf(profile, md)
+    assert _is_valid_pdf(out)
+    text = _extract_text(out)
+    assert "Dear Hiring Team," in text
+    assert "Sincerely" in text
+
+
+def test_cover_letter_renders_recipient_and_date_from_job(profile):
+    from careeros.models import Contact, Job
+
+    job = Job(
+        id="x", source="s", title="PM", company="Acme Corp",
+        apply_url="https://example.com",
+        contact=Contact(name="Jordan Lee"),
+    )
+    md = "Some content."
+    out = render_cover_pdf(profile, md, job=job, date="2026-07-27")
+    assert _is_valid_pdf(out)
+    text = _extract_text(out)
+    assert "Acme Corp" in text
+    assert "Jordan Lee" in text
+    assert "27 July 2026" in text
+
+
+def test_cover_letter_addresses_hiring_team_when_no_named_contact(profile):
+    from careeros.models import Job
+
+    job = Job(id="x", source="s", title="PM", company="Acme Corp", apply_url="https://e.com")
+    out = render_cover_pdf(profile, "Some content.", job=job, date="2026-07-27")
+    text = _extract_text(out)
+    assert "Hiring Team" in text
+    assert "Dear Hiring Team," in text
+
+
+def test_letter_date_formats_iso_date():
+    assert tr._letter_date("2026-07-27") == "27 July 2026"
+
+
+def test_letter_date_degrades_to_empty_on_non_calendar_label():
+    """This repo's own QA runs use non-ISO folder labels like
+    'qa-hardening-01' as their --date — must never crash the render."""
+    assert tr._letter_date("qa-hardening-01") == ""
+    assert tr._letter_date(None) == ""
+
+
 def test_returns_none_when_typst_not_installed(profile):
     with patch.object(tr, "_lazy_typst", return_value=None):
         assert render_resume_pdf(profile, {}) is None
