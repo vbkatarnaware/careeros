@@ -3,9 +3,11 @@ Drive uploads (Phase 3, v1.1). Real fpdf2 is exercised (it's a cheap,
 pure-Python, deterministic render — no need to mock it); the fail-soft
 "[pdf] extra not installed" path is tested by simulating ImportError.
 
-CI installs `.[dev,pdf]` so these run for real there. A contributor running
-just `pip install -e ".[dev]"` locally (without the optional [pdf] extra)
-gets the real-render tests skipped rather than failed — see `importorskip`."""
+CI installs `.[dev,resume,apply]` (.github/workflows/ci.yml) — `[resume]`
+pulls in `fpdf2` transitively (see pyproject.toml), so these run for real
+there even though `[pdf]` itself is never named. A contributor running just
+`pip install -e ".[dev]"` locally (neither extra) gets the real-render tests
+skipped rather than failed — see `importorskip`."""
 
 from __future__ import annotations
 

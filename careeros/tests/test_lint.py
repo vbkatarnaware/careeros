@@ -295,3 +295,53 @@ def test_verify_resume_facts_catches_unknown_project_name():
     }
     issues = verify_resume_facts(resume_json, profile)
     assert any("projects" in i and "Rizent Ai" in i for i in issues)
+
+
+def _profile_with_skills():
+    profile = _profile_with_companies_and_projects()
+    profile.skills = [
+        {"name": "Product Strategy", "tags": [], "visibility": "headline"},
+        {"name": "SQL", "tags": [], "visibility": "supporting"},
+    ]
+    return profile
+
+
+def test_verify_resume_facts_passes_known_skills():
+    profile = _profile_with_skills()
+    resume_json = {
+        "tagline": "Product", "summary": "Summary.", "experience": [],
+        "skills": [{"category": "Product", "items": ["Product Strategy", "SQL"]}],
+    }
+    assert verify_resume_facts(resume_json, profile) == []
+
+
+def test_verify_resume_facts_catches_a_fabricated_skill():
+    """A skill absent from profile.yaml doesn't get silently dropped like an
+    unknown company/project does -- it renders. This is the fabrication case
+    lint_resume_json_text's voice-dna lint deliberately doesn't cover (it
+    skips `skills` entirely), so this is the only mechanical check for it."""
+    profile = _profile_with_skills()
+    resume_json = {
+        "tagline": "Product", "summary": "Summary.", "experience": [],
+        "skills": [{"category": "Tools", "items": ["Product Strategy", "Tableau"]}],
+    }
+    issues = verify_resume_facts(resume_json, profile)
+    assert any("skills" in i and "Tableau" in i for i in issues)
+
+
+def test_verify_resume_facts_skills_check_is_independent_of_other_checks():
+    """A resume.json with a clean companies/projects/experience section but a
+    fabricated skill must still be flagged -- the skills check can't be a
+    side effect of the other loops."""
+    profile = _profile_with_companies_and_projects()
+    profile.skills = [{"name": "Product Strategy", "tags": [], "visibility": "headline"}]
+    resume_json = {
+        "tagline": "Product", "summary": "Summary.",
+        "companies": ["QRapid"],
+        "experience": [{"company": "QRapid", "bullets": ["Shipped a POS product."]}],
+        "skills": [{"category": "Product", "items": ["Product Strategy", "Excel"]}],
+        "projects": [],
+    }
+    issues = verify_resume_facts(resume_json, profile)
+    assert len(issues) == 1
+    assert "Excel" in issues[0]

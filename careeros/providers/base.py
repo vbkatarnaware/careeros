@@ -1,10 +1,11 @@
-"""The provider contract (v1.2: standardized across every provider, no
-special cases).
+"""The provider contract (standardized across every provider, no special
+cases).
 
 A provider is one file exposing exactly three methods — this is the whole
-contract, and every provider (Fantastic Jobs, the legacy actor, and every
-v1.2 addition: RemoteOK, We Work Remotely, Naukri, Foundit, Indeed,
-Glassdoor, ZipRecruiter) implements all three identically:
+contract. Only `fantastic-jobs` ships today (see
+careeros/providers/README.md's "Evaluated and removed" for the eight that
+didn't), but the contract itself is unchanged and every future provider
+implements all three identically:
 
   - `validate(config) -> list[str]` — config/credential problems (empty =
     OK). Called by `careeros doctor` and by `discover` before `fetch()`, so

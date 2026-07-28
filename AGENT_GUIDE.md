@@ -3,9 +3,9 @@
 Canonical onboarding for any AI coding CLI working in this repo (Claude
 Code, Antigravity/Gemini, Codex, OpenCode, or anything else). Read this
 file first, in full, before running `careeros daily` or touching pipeline
-code. `CLAUDE.md`/`GEMINI.md`/`AGENTS.md` at the repo root are 3-line
-redirects to this file for CLIs that auto-load a per-tool file — this is
-the only copy of the actual content, kept in sync by editing here only.
+code. `CLAUDE.md` at the repo root is a thin redirect to this file for CLIs
+that auto-load a per-tool file — this is the only copy of the actual
+content, kept in sync by editing here only.
 
 ## What this repo is
 
@@ -81,7 +81,7 @@ committed). Rules, no exceptions:
   whether a key is set, check presence/length only (`[ -n "$VAR" ]`,
   `echo ${#VAR}`), never echo the value itself.
 - **Never write a raw secret value into `.careeros/config.yaml`.**
-  Config fields like `api_key_env`/`token_env`/`tokens_env` hold an ENV
+  Config fields like `api_key_env`/`rapidapi_key_env` hold an ENV
   VAR **NAME** (a string like `"FANTASTIC_API_KEY"`), looked up via
   `os.environ.get(...)` at runtime — not the key itself. Writing the raw
   key into one of these fields is a real misconfiguration bug that has

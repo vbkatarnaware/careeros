@@ -68,6 +68,7 @@ api:
   api_key_env: FANTASTIC_API_KEY   # set this env var to your developer.fantastic.jobs key
   # transport: rapidapi — verify the exact host against your own RapidAPI
   # dashboard for the "Active Jobs DB" listing before relying on this default.
+  rapidapi_base_url: null          # override only if RapidAPI's own base URL differs from the default derived from rapidapi_host
   rapidapi_host: active-jobs-db.p.rapidapi.com
   rapidapi_key_env: RAPIDAPI_KEY   # set this env var to your RapidAPI key
   endpoint: both                   # both (DEFAULT, frozen) | active-ats (career sites) | active-jb (+LinkedIn/YC/Wellfound)

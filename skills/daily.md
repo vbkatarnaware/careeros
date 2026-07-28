@@ -27,8 +27,8 @@ careeros doctor
 Loads real credentials into the shell (never cat/print/grep
 `secrets.env` itself — see `AGENT_GUIDE.md`'s Secrets handling section)
 and runs the read-only pre-flight checklist: Python version, profile,
-discovery credentials, Sheets/Drive config, per-provider last-run health,
-and Apify token pool status. `doctor` makes no network calls and changes
+discovery credentials, Sheets/Drive config, and per-provider last-run
+health. `doctor` makes no network calls and changes
 nothing. If it reports any FAIL, that's a configuration problem to
 surface via the Failure Handling Principle before Step 1 even starts —
 don't discover it mid-run.
@@ -44,10 +44,9 @@ By default this runs one segmented query per `profile.yaml`'s
 cities in `location.onsite_ok` are consolidated into a single query, not one
 per city), each searching all `role_priorities` at once — see
 `careeros/pipeline/queryplan.py`. Prints a line per query with its own limit
-and count, then the combined total. Set `discovery_mode: single` under
-whichever block your active provider reads (`api:` for the default REST
-provider, `apify:` for the legacy actor) in `.careeros/config.yaml` to fall
-back to one broad query instead. Each tier uses `--limit` by default;
+and count, then the combined total. Set `discovery_mode: single` under the
+`api:` block in `.careeros/config.yaml` to fall back to one broad query
+instead. Each tier uses `--limit` by default;
 `tier_limits` (same block) can override the limit for a specific tier (e.g.
 give a historically high-converting tier more headroom) — check `run.json`'s
 cost-per-selected-job over a few days before tuning this, rather than
@@ -66,7 +65,7 @@ provider means today's job list is missing a source the candidate
 deliberately enabled: read out that provider's own skip reason verbatim
 (don't paraphrase it away), explain the impact (fewer sources feeding the
 rest of the pipeline), and present the real options — fix it now
-(new/rotated API key, top up the Apify budget, edit
+(new/rotated API key, raise the weekly quota, edit
 `.careeros/config.yaml`) and re-run `discover`, or continue with just the
 providers that succeeded. Wait for the candidate's answer either way. If N
 is 0 for the whole run (every provider skipped), the same discover output
@@ -195,10 +194,10 @@ naming exactly which job(s) need a resume and/or cover letter. For each one:
    (`prompts/resume_<version>.md`). Write
    `artifacts/<job-id>/resume.json` (tailoring zones only — canonical facts
    like company/dates/education are merged in from `profile.yaml` at render
-   time, never written here). v2's rule: reword bullet language to mirror
-   the JD's keywords, but every number/entity from the source `profile.yaml`
-   bullet must survive the reword unchanged (no invented or dropped fact),
-   and no field may name the target company.
+   time, never written here). The governing rule: reword bullet language to
+   mirror the JD's keywords, but every number/entity from the source
+   `profile.yaml` bullet must survive the reword unchanged (no invented or
+   dropped fact), and no field may name the target company.
 2. **Cover letter** — read the cover prompt named by `config.prompts.cover`
    (`prompts/cover_<version>.md`). Write `artifacts/<job-id>/cover.md` —
    freely written, grounded prose.

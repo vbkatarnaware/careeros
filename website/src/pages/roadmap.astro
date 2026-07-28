@@ -5,20 +5,19 @@ import Badge from "@/components/ui/Badge.astro";
 // Honest buckets. "Current" = shipped in the v1.x slice. "Planned"/"Research"
 // are not presented as done.
 const current = [
-  "Profile-driven segmented discovery, merged across multiple providers",
-  "Free core sources on by default: Fantastic Jobs (REST), RemoteOK, We Work Remotely",
+  "Profile-driven segmented discovery against Fantastic Jobs, the single provider left after two weeks of live evidence on the rest",
+  "A provider registry built to take more sources — see providers/README.md's \"Adding a provider\"",
   "Deterministic normalize, dedupe, constraints, and two-tier thresholding",
   "AI Gate and structured Evaluate with a file-based prepare/finalize contract",
-  "Resume and cover-letter generation with verbatim verification and voice lint",
+  "Resume and cover-letter generation with fact-preservation verification (numbers, companies, projects, and skills) and voice lint",
   "Automatic Application Answers with per-form status reporting",
-  "Zero-cost daily report and a Google Sheet you open every morning",
+  "Zero-cost daily report and a Google Sheet you open every morning, with a color-coded Status column",
   "Optional Google Drive backup (PDF, flat, idempotent)",
-  "Parallel provider discovery and resilient multi-token rotation",
   "LinkedIn, Wellfound, and YC listings via the active-jb source",
 ];
 
 const planned = [
-  "Direct-API providers for Greenhouse, Ashby, Lever, and Workday — no actor needed",
+  "Direct-API providers for Greenhouse, Ashby, Lever, and Workday",
   "Incremental discovery that fetches only what's new since the last run",
   "A validated, scriptable config editor (careeros config get / set / show)",
   "Richer profile sections, such as adaptive framing and negotiation scripts",
@@ -30,6 +29,14 @@ const research = [
 ];
 
 const versions = [
+  { v: "1.8.0", note: "Pre-release audit: a wrong stage path breaking prep/apply, a cache crash on a corrupt file, a dead core dependency, and a fabrication hole in resume skills validation, all fixed." },
+  { v: "1.7.2", note: "Color-coded Sheet Status column (seven states, no more Offer/Ongoing), and cover letters that actually read the job posting instead of falling back to filler." },
+  { v: "1.7.1", note: "Resume skills selection rebuilt: a floor of every headline skill, then fill to a real range, instead of a median of 9 skills from a 65-skill profile." },
+  { v: "1.7.0", note: "Discovery collapses to one source (Fantastic Jobs) after live evidence on the other seven, and api.limit becomes a daily total instead of a per-search count." },
+  { v: "1.6.0", note: "Zero-Google local-first mode, a per-job command for full on-demand treatment of any single job, and a cleaner CLI surface." },
+  { v: "1.5.0", note: "Resume PDF design overhaul — small-caps headers, a real one-line contact row, New Computer Modern type." },
+  { v: "1.4.1", note: "Tailored Selected Projects — 2-3 of profile.yaml's projects chosen by JD relevance instead of every project rendering unconditionally." },
+  { v: "1.4.0", note: "Redesigned resume PDF rendering via Typst — a real typeset design, ATS-safe, one page densely filled." },
   { v: "1.3.0", note: "Parallel provider discovery, multi-token rotation, provider health in doctor, one canonical onboarding doc." },
   { v: "1.2.0", note: "Multi-provider discovery, a provider-result contract, and capability-driven budget and quota enforcement." },
   { v: "1.1.0", note: "Automatic Application Answers, the publish command, per-form statuses, and newest-on-top Sheet ordering." },

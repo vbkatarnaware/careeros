@@ -1,6 +1,6 @@
 """Reads an application form's visible page text, for the `apply` stage's
 automatic Application Answers generation (P2.10; Apply-tier, score >= 4.0,
-jobs only — see cli.py `_apply_prepare`).
+jobs only — see careeros/cli/apply_stage.py's `_apply_prepare`).
 
 Two-tier by design, HTTP-first:
 
@@ -250,7 +250,19 @@ def _fetch_via_playwright(url: str, timeout: float) -> Optional[str]:
     beacons, chat widgets, a bot-check's own verification polling), so it
     can hard-timeout with ZERO text captured even though the real content
     rendered within a second or two. A short fixed buffer after `load` lets
-    client-side JS finish painting before `inner_text` reads the page."""
+    client-side JS finish painting before `inner_text` reads the page.
+
+    ONE bounded retry if that still isn't enough: verified live on a Workday
+    posting (DBS Bank) that returned only "Loading" plus nav chrome — well
+    under `_MIN_CONTENT_CHARS` — because the SPA hadn't finished hydrating
+    within the fixed 1.5s buffer. When the first extract is that thin,
+    `wait_for_load_state("networkidle", ...)` is tried as a FALLBACK-ONLY
+    second chance (still never the primary wait, for the same reason as
+    above — hence its own short timeout, swallowed if it never fires) before
+    re-reading the page once. Never loops further than this, and the retried
+    read is itself independently guarded so a failure on the SECOND read
+    (page navigated away, closed, whatever) can't discard a perfectly good
+    first read."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -263,13 +275,24 @@ def _fetch_via_playwright(url: str, timeout: float) -> Optional[str]:
                 page = browser.new_page()
                 page.goto(url, timeout=timeout * 1000, wait_until="load")
                 page.wait_for_timeout(1500)
-                text = page.inner_text("body")
+                text = page.inner_text("body").strip()
+
+                if len(text) < _MIN_CONTENT_CHARS:
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass
+                    try:
+                        retried_text = page.inner_text("body").strip()
+                        if len(retried_text) > len(text):
+                            text = retried_text
+                    except Exception:
+                        pass
             finally:
                 browser.close()
     except Exception:
         return None
 
-    text = text.strip()
     return text or None
 
 
@@ -292,7 +315,8 @@ def _playwright_installed() -> bool:
 
 # Reasons `fetch_visible_text` can attach to a `(None-or-real-but-wrong, ...)`
 # result, letting the `apply` stage assign one of several specific statuses
-# instead of one generic `manual_required` (see cli.py's `_apply_prepare`).
+# instead of one generic `manual_required` (see
+# careeros/cli/apply_stage.py's `_apply_prepare`).
 # `None` (no reason) means either the fetch succeeded with a usable form, or
 # it failed in some other unclassified way -- still folded into the original
 # generic manual-review bucket rather than guessing.

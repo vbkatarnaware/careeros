@@ -31,7 +31,7 @@ The P2.6 benchmark (2026-07-08) added two refinements, both evidence-backed:
   regardless of what discovery returns.
 
 Each returned spec is a plain dict using the exact keys
-`providers/fantastic_jobs.py`'s `_build_run_input()` already understands
+`providers/fantastic_jobs.py`'s `_build_params()` already understands
 (title_search, location_search, work_arrangement, ...), so wiring this in
 required zero new field-mapping logic.
 """

@@ -427,8 +427,8 @@ def job_to_row(
     uploaded. `answers_drive_link` may also be the literal string "Manual
     questions required" (see careeros/apply/) rather than a URL — the caller
     decides which to pass; this function just places whatever string it's
-    given. sheets.py has no import dependency on drive.py; cli.py resolves
-    the links and passes them in, keeping the two modules decoupled.
+    given. sheets.py has no import dependency on drive.py; cli/sheets_cmds.py
+    resolves the links and passes them in, keeping the two modules decoupled.
 
     `status` is ONLY ever set here, on a brand-new row — see STATUS_OPTIONS'
     comment for why the pipeline never touches it again afterward.

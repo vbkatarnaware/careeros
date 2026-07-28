@@ -252,15 +252,22 @@ def verify_resume_facts(
     - no reworded bullet, the tagline, or the summary may contain the
       target company's name (job-agent's transferable-language rule).
 
-    Also checks that every name in `companies` and `projects` is a real
-    profile.yaml entry — a typo here doesn't fail schema validation (it's
-    still valid JSON matching the shape), but silently drops content: a
+    Also checks that every name in `companies`, `projects`, and `skills` is a
+    real profile.yaml entry — a typo here doesn't fail schema validation
+    (it's still valid JSON matching the shape), but silently drops content: a
     misspelled `companies` entry means the matching profile.yaml company
     never gets included (careeros/typst_render.py's `build_render_data`
     filters profile.experience down to exact-string matches in `companies`),
     and a misspelled `projects[].name` means that project is filtered out of
     `selected_projects` the same way. Both fail-soft to "content vanishes",
     not to an error — so this check is the only thing that catches it.
+
+    A `skills[].items` entry that names no profile.yaml `skills[].name` is a
+    DIFFERENT failure mode from the two above: it doesn't get silently
+    dropped, it renders — a skill the candidate has never used, invented
+    because the JD wanted it. `lint_resume_json_text` deliberately skips
+    `skills` (short keyword phrases, not prose the voice-dna rules apply to),
+    so this is the only place a hallucinated skill is ever caught.
     """
     issues: list[str] = []
     profile_bullets_by_company = {
@@ -269,6 +276,7 @@ def verify_resume_facts(
     }
     known_companies = set(profile_bullets_by_company)
     known_projects = {p.get("name") for p in getattr(profile, "projects", []) or []}
+    known_skills = {s.get("name") for s in getattr(profile, "skills", []) or []}
 
     for name in resume_json.get("companies", []):
         if name not in known_companies:
@@ -284,6 +292,14 @@ def verify_resume_facts(
                 f"projects: \"{name}\" does not match any profile.yaml projects[].name "
                 f"— this project will be silently dropped from the resume, not included"
             )
+
+    for group in resume_json.get("skills", []):
+        for item in group.get("items", []):
+            if item not in known_skills:
+                issues.append(
+                    f"skills: \"{item}\" does not match any profile.yaml skills[].name "
+                    f"— this is a fabricated skill, not a dropped-content risk; it WILL render"
+                )
 
     for entry in resume_json.get("experience", []):
         company = entry.get("company", "")

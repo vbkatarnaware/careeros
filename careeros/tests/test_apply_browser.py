@@ -27,6 +27,7 @@ from careeros.apply.browser import (
     _looks_like_js_shell,
     _looks_like_login_wall,
     _looks_like_unresolved_apply_page,
+    _playwright_installed,
     fetch_visible_text,
 )
 
@@ -212,15 +213,32 @@ def test_fetch_via_http_extracts_text_on_success():
 
 
 def test_fetch_via_playwright_returns_none_when_not_installed():
-    """This repo's default test env has no [apply] extra -- exercises the
-    REAL ImportError path, not a mock. If playwright IS installed (e.g. CI
-    running the full extras matrix), this test is not meaningful -- skip."""
-    try:
-        import playwright  # noqa: F401
-        pytest.skip("playwright is installed in this environment")
-    except ImportError:
-        pass
-    assert _fetch_via_playwright("https://example.com/apply", timeout=1) is None
+    """Regression: the previous version of this test relied on a REAL absent
+    import and skipped itself whenever playwright WAS installed -- and CI
+    (ci.yml) always installs the [apply] extra, so this always skipped
+    there. The "Playwright Missing" degradation path -- exactly what a fresh
+    OSS clone without [apply] hits -- was verified nowhere in CI.
+
+    Fixed by forcing the ImportError deterministically: setting a
+    sys.modules entry to None makes Python's import system raise ImportError
+    for that name regardless of whether the real package is actually
+    installed, so this now runs (and means something) in every environment."""
+    with patch.dict("sys.modules", {"playwright.sync_api": None}):
+        assert _fetch_via_playwright("https://example.com/apply", timeout=1) is None
+
+
+def test_playwright_installed_returns_false_when_import_fails():
+    """Same deterministic-ImportError technique as the test above, applied to
+    the sibling function `fetch_visible_text` actually calls to decide
+    REASON_PLAYWRIGHT_MISSING -- also environment-independent, also
+    previously unverified by any direct test."""
+    with patch.dict("sys.modules", {"playwright.sync_api": None}):
+        assert _playwright_installed() is False
+
+
+def test_playwright_installed_returns_true_when_import_succeeds():
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock()}):
+        assert _playwright_installed() is True
 
 
 def test_fetch_via_playwright_smoke_real_browser():
@@ -244,6 +262,111 @@ def test_fetch_via_playwright_returns_none_on_any_failure():
     fake_sync_playwright.return_value.__enter__.side_effect = RuntimeError("boom")
     with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
         assert _fetch_via_playwright("https://example.com/apply", timeout=1) is None
+
+
+def _fake_playwright_page(inner_text_results, wait_for_load_state_effect=None):
+    """A mocked Playwright chain (sync_playwright() -> chromium.launch() ->
+    new_page()) whose `page.inner_text` returns `inner_text_results` in
+    order on successive calls. Mocked rather than a real browser + real JS
+    timing, which would race against CI's own timing variance -- these
+    tests are about the RETRY LOGIC itself, not actual browser hydration."""
+    fake_page = MagicMock()
+    fake_page.inner_text.side_effect = inner_text_results
+    if wait_for_load_state_effect is not None:
+        fake_page.wait_for_load_state.side_effect = wait_for_load_state_effect
+
+    fake_browser = MagicMock()
+    fake_browser.new_page.return_value = fake_page
+
+    fake_context = MagicMock()
+    fake_context.chromium.launch.return_value = fake_browser
+
+    fake_sync_playwright = MagicMock()
+    fake_sync_playwright.return_value.__enter__.return_value = fake_context
+    return fake_page, fake_sync_playwright
+
+
+def test_fetch_via_playwright_retries_when_first_extract_is_thin():
+    """Regression: a real Workday-hosted posting (DBS Bank) returned only
+    132 characters ("Loading" plus nav chrome) from the fixed 1.5s buffer
+    alone, because the SPA hadn't finished hydrating -- and that got
+    misclassified downstream as "no essay questions" instead of "never saw
+    the real form." When the first extract is under _MIN_CONTENT_CHARS, a
+    second (post-networkidle) read that returns MORE text must win."""
+    thin_text = "Loading"
+    full_text = "Real Application Form\n" + ("Field label. " * 40).strip()
+    fake_page, fake_sync_playwright = _fake_playwright_page([thin_text, full_text])
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
+        text = _fetch_via_playwright("https://example.com/apply", timeout=10)
+
+    assert text == full_text
+    fake_page.wait_for_load_state.assert_called_once_with("networkidle", timeout=5000)
+    assert fake_page.inner_text.call_count == 2
+
+
+def test_fetch_via_playwright_does_not_retry_when_first_extract_is_substantial():
+    """The fast path -- most pages -- must not pay for a second read at all."""
+    real_text = "Real Application Form\n" + ("Field label. " * 40).strip()
+    fake_page, fake_sync_playwright = _fake_playwright_page([real_text])
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
+        text = _fetch_via_playwright("https://example.com/apply", timeout=10)
+
+    assert text == real_text
+    fake_page.wait_for_load_state.assert_not_called()
+    assert fake_page.inner_text.call_count == 1
+
+
+def test_fetch_via_playwright_keeps_first_extract_if_retry_is_not_longer():
+    """A retry that comes back equal-or-shorter (the page genuinely never
+    gained content) must not silently replace a perfectly fine first read --
+    "longer wins" only, never "second read always wins"."""
+    thin_text = "Loading a bit more"
+    even_thinner = "Load"
+    fake_page, fake_sync_playwright = _fake_playwright_page([thin_text, even_thinner])
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
+        text = _fetch_via_playwright("https://example.com/apply", timeout=10)
+
+    assert text == thin_text
+
+
+def test_fetch_via_playwright_retry_survives_networkidle_never_firing():
+    """`wait_for_load_state("networkidle", ...)` is a bounded FALLBACK-ONLY
+    wait -- see the function's own docstring on why networkidle is never the
+    PRIMARY wait. A page that never goes network-idle within the 5s cap must
+    not abort the retry; the second `inner_text` read still happens."""
+    full_text = "Real Application Form\n" + ("Field label. " * 40).strip()
+    fake_page, fake_sync_playwright = _fake_playwright_page(
+        ["Loading", full_text],
+        wait_for_load_state_effect=TimeoutError("never idle"),
+    )
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
+        text = _fetch_via_playwright("https://example.com/apply", timeout=10)
+
+    assert text == full_text
+
+
+def test_fetch_via_playwright_retry_survives_second_read_failing():
+    """If the SECOND `inner_text` call itself raises (page navigated away,
+    closed, whatever), the already-captured first read must still be
+    returned -- a failed retry attempt must never discard a good result."""
+    thin_text = "Loading"
+    fake_page = MagicMock()
+    fake_page.inner_text.side_effect = [thin_text, RuntimeError("page closed")]
+    fake_browser = MagicMock()
+    fake_browser.new_page.return_value = fake_page
+    fake_context = MagicMock()
+    fake_context.chromium.launch.return_value = fake_browser
+    fake_sync_playwright = MagicMock()
+    fake_sync_playwright.return_value.__enter__.return_value = fake_context
+
+    with patch.dict("sys.modules", {"playwright.sync_api": MagicMock(sync_playwright=fake_sync_playwright)}):
+        text = _fetch_via_playwright("https://example.com/apply", timeout=10)
+
+    assert text == thin_text
 
 
 # ── orchestration: fetch_visible_text ────────────────────────────────────

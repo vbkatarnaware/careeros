@@ -1,7 +1,7 @@
 <!--
 Stage: cover (part of skills/daily.md's artifact-generation step).
 Cache key: sha1(job_hash + profile.version + eval.score + prompt_version).
-Input: profile.yaml, the Job, and its 05_evaluate/<id>.json.
+Input: profile.yaml, the Job, and its 06_evaluate/<id>.json.
 Output: artifacts/<job-id>/cover.md
 -->
 
@@ -12,7 +12,7 @@ Import `prompts/voice-dna.md` for tone.
 ## Ground every claim
 
 Every claim in the letter must trace to `profile.yaml` or to
-`05_evaluate/<job-id>.json`. The **same truthfulness rule** as the resume
+`06_evaluate/<job-id>.json`. The **same truthfulness rule** as the resume
 applies: reframe the JD's themes with the candidate's own adjacent wording,
 never adopt the JD's specific term as the candidate's own unless it's
 actually backed by a profile fact.

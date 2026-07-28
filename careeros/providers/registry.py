@@ -4,10 +4,11 @@ code. Adding a provider = write the file, add one line here.
 
 v1.7: deliberately down to ONE source. Seven providers (RemoteOK, We Work
 Remotely, Glassdoor, ZipRecruiter, Naukri, Foundit, Indeed) plus the legacy
-Apify actor were removed after two weeks of live evidence — see README.md's
-"Evaluated and removed" section for the per-source numbers. This file being
-one entry long is a decision about which sources are worth running, not a
-change to the architecture that lets you add more.
+Apify actor were removed after two weeks of live evidence — see this
+package's own README.md (careeros/providers/README.md)'s "Evaluated and
+removed" section for the per-source numbers. This file being one entry long
+is a decision about which sources are worth running, not a change to the
+architecture that lets you add more.
 """
 
 from __future__ import annotations

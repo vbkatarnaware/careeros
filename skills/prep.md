@@ -7,8 +7,8 @@ one.
 
 ## 1. Locate the job and its evaluation
 
-Find `{job-id}` in the most recent run's `05_evaluate/{job-id}.json` (search
-`.careeros/runs/*/05_evaluate/` if the date isn't given — the id is stable
+Find `{job-id}` in the most recent run's `06_evaluate/{job-id}.json` (search
+`.careeros/runs/*/06_evaluate/` if the date isn't given — the id is stable
 across runs). If no evaluation exists for this id, tell the candidate this
 job hasn't been evaluated yet and stop; this stage expands an evaluation, it
 does not create one.

@@ -2,7 +2,7 @@
 Stage: resume (part of skills/daily.md's artifact-generation step, for jobs
 that survived `threshold`). Cache key: sha1(job_hash + profile.version +
 eval.score + prompt_version) — see careeros/cache.py.
-Input: .careeros/profile.yaml, the Job, and its 05_evaluate/<id>.json.
+Input: .careeros/profile.yaml, the Job, and its 06_evaluate/<id>.json.
 Output: artifacts/<job-id>/resume.md
 -->
 
@@ -39,7 +39,7 @@ experience is exactly the failure mode this rule exists to prevent.
 
 ## Steps
 
-1. **Read** `profile.yaml`, the Job, and `05_evaluate/<job-id>.json` (for
+1. **Read** `profile.yaml`, the Job, and `06_evaluate/<job-id>.json` (for
    `ats_keywords`, `strengths`, `fit_paragraph`).
 2. **Pick the summary.** Select the `summary_variants` entry whose `jd_tags`
    best match this JD's domain, or the one with empty `jd_tags` (generic) if

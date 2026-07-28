@@ -184,9 +184,9 @@ from careeros.providers.my_provider import PROVIDER as MY_PROVIDER
 _REGISTRY = {..., MY_PROVIDER.id: MY_PROVIDER}
 ```
 
-And add its own block to `providers:` in your `config.yaml` (see any of the
-v1.2 entries in `templates/config.example.yaml` for the shape — at minimum
-`{enabled: false}`; add whatever config keys your own `fetch()` reads).
+And add its own block to `providers:` in your `config.yaml` (see the
+`fantastic-jobs` entry in `templates/config.example.yaml` for the shape — at
+minimum `{enabled: false}`; add whatever config keys your own `fetch()` reads).
 
 That's the whole integration: **one provider file, one registry line, one
 config block, one test file — no downstream pipeline changes.**

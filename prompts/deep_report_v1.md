@@ -2,7 +2,7 @@
 Stage: prep (careeros prep <job-id>). Manual, on-demand only — never run
 during `daily`. See skills/prep.md for the full command flow, including how
 this stage's output is cached and reused by skills/apply.md.
-Input: profile.yaml, the Job, its 05_evaluate/<id>.json, + external research.
+Input: profile.yaml, the Job, its 06_evaluate/<id>.json, + external research.
 Output: artifacts/<job-id>/deep_report.md AND artifacts/<job-id>/_context.json
 (the cached "deep-context bundle" that `apply` reuses).
 -->
@@ -16,7 +16,7 @@ one, because it's opt-in: the candidate explicitly asked for it by running
 ## The governing rule for this stage
 
 **Expand the evaluation's reasoning. Never recompute it.** Read
-`05_evaluate/<job-id>.json` and treat its `score`, `confidence`,
+`06_evaluate/<job-id>.json` and treat its `score`, `confidence`,
 `recommendation`, `strengths`, `weaknesses`, and `ats_keywords` as fixed —
 inherit them verbatim into this report's relevant sections. Do not
 re-derive a different score or re-argue the recommendation; that question

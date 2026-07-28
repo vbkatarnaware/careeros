@@ -4,7 +4,67 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
-## [1.7.2] - 2026-07-27
+## [1.8.0] - 2026-07-28
+
+Everything below shipped locally across 1.7.0–1.7.2 but never reached
+GitHub. Before tagging it as one release, a three-pass pre-release audit
+(code, tests/CI, docs) went over the whole tree — it found two genuine
+runtime bugs, a dead dependency, and a real fabrication hole, all fixed
+here alongside the docs it also found stale.
+
+### Fixed — bugs found in the pre-release audit
+
+- **`prep` and `apply` pointed at the wrong stage directory.** Evaluations
+  are written to `06_evaluate/`; `05_` is the gate stage. Four files that
+  ship in this release said `05_evaluate/` — `skills/apply.md`,
+  `skills/prep.md`, and the two active prompts `prompts/deep_report_v1.md`
+  and `prompts/apply_v1.md`. Followed literally, both commands found no
+  evaluation and stopped. Nothing caught it because no test exercises the
+  skill markdown at all.
+- **A corrupt cache file crashed the pipeline.** `Cache.get`
+  (`careeros/cache.py`) read with a bare `json.load()` and no `try/except`;
+  its sibling `budget.load_state` wraps the identical read and is tested for
+  it. A truncated file from an interrupted write now degrades to a cache
+  miss instead of crashing every subsequent run until someone deletes it by
+  hand. `Cache.put` also now writes via a temp file + `os.replace()` so an
+  interrupted write can no longer leave a truncated file in the first place.
+- **A hallucinated skill shipped clean.** `verify_resume_facts`
+  (`careeros/lint.py`) validated bullet numbers, company names, and project
+  names against `profile.yaml` — but never read `resume_json["skills"]`,
+  despite its own docstring listing `skills` in the payload shape it checks.
+  A skill the JD asked for that the candidate has never used rendered
+  without any mechanical check catching it. Now checked the same way
+  `companies`/`projects` already were.
+- **The Playwright-Missing degradation path always skipped in CI.**
+  `test_fetch_via_playwright_returns_none_when_not_installed` relied on a
+  REAL absent import and skipped itself whenever Playwright was installed —
+  and CI (`ci.yml`) always installs the `[apply]` extra, so this test never
+  actually ran there. Fixed by forcing the `ImportError` deterministically
+  (`sys.modules["playwright.sync_api"] = None`) instead of depending on the
+  environment; it now runs, and means something, everywhere.
+- **`careeros --version` had been silently wrong for three releases.**
+  `__version__` reads back the installed package's `dist-info`, generated at
+  `pip install -e .` time — not `pyproject.toml` directly. The installed
+  metadata was still stamped `1.6.0` while `pyproject.toml` said `1.7.2`;
+  nothing had re-run the editable install since the `1.6.0` release. Added
+  a test asserting the two agree, and re-ran the install to fix it for real.
+- A Workday-hosted posting (DBS Bank) returned only 132 characters of page
+  text — literally the word "Loading" plus nav chrome — because
+  `_fetch_via_playwright`'s fixed 1.5s buffer wasn't enough for the SPA to
+  finish rendering, and that got misclassified downstream as "no essay
+  questions" instead of "never saw the real form." One bounded retry
+  (`wait_for_load_state("networkidle", timeout=5000)` as a fallback-only
+  second chance, never the primary wait) fixes it — verified live against
+  the actual posting: 132 characters before, 6,641 after, the real job
+  description. General fix, not Workday-specific; the bug class (a fixed
+  wait too short for client-side rendering) isn't unique to one ATS.
+
+### Removed
+
+- **`apify-client` dropped from core dependencies.** Zero imports anywhere
+  in the package or tests; its own `pyproject.toml` comment pointed at
+  `careeros/providers/legacy/fantastic_jobs_actor.py`, deleted in v1.7.0.
+  Every install pulled it for nothing.
 
 ### Changed
 
@@ -49,6 +109,19 @@ follow [Semantic Versioning](https://semver.org/).
   not today's). Every added field is genuinely optional: an omitted one
   skips its block in the template rather than printing a blank line, so the
   existing call signature keeps working unchanged.
+
+### Docs
+
+The audit's doc pass corrected drift the code changes above (and v1.7.0's
+provider collapse) had left behind: `README.md`'s Status-value list and
+prompt-version references, `AGENT_GUIDE.md`'s dead `token_env`/`tokens_env`
+mention, `skills/daily.md`/`skills/apply.md` instructing an `apify:` block
+and an Apify doctor check that no longer exist, a handful of stale
+identifiers in code comments (`_build_run_input`, `stage_output_path`,
+`_discover_one_provider`, `cli.py` pointing at what's now the `careeros/cli/`
+package), and the website — which still advertised eight removed providers
+and shipped two example commands that now error outright
+(`docs/examples.astro`, `docs/developer-guide.astro`).
 
 ## [1.7.1] - 2026-07-26
 

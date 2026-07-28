@@ -304,7 +304,7 @@ def test_upload_run_uploads_deep_report_only_when_present(tmp_path):
 def test_upload_run_uploads_deep_report_link_and_file_id(tmp_path):
     """P2.10: the Deep Report webViewLink/file id, previously uploaded and
     discarded, must now be captured on the result -- that's what lets
-    cli.py wire it into the Sheet's Deep Report (Drive) column."""
+    cli/sheets_cmds.py wire it into the Sheet's Deep Report (Drive) column."""
     run_json = tmp_path / "run.json"; run_json.write_text("{}")
     summary_md = tmp_path / "summary.md"; summary_md.write_text("# summary")
     artifacts_dir = _make_artifacts(tmp_path, deep_report=True)

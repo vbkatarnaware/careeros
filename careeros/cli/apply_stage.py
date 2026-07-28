@@ -214,6 +214,10 @@ def _apply_prepare(cfg: Config, date: str) -> None:
 
 def _apply_finalize(cfg: Config, date: str) -> None:
     selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
+    if not selected_path.exists():
+        typer.echo("Missing select output — run that stage first.", err=True)
+        raise typer.Exit(1)
+
     with open(selected_path) as f:
         evals = [Eval.from_dict(d) for d in json.load(f)]
 

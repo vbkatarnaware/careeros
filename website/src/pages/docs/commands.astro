@@ -7,12 +7,12 @@ const endUser = [
   { cmd: "careeros start", desc: "Guided onboarding that produces your profile.yaml and a discovery plan. Opens by asking for your CV (optional)." },
   { cmd: "careeros doctor", desc: "Read-only first-run checklist: Python, profile, credentials, Sheets, Drive, Playwright. Never modifies anything." },
   { cmd: "careeros daily", desc: "Run the full daily pipeline. Aliased as careeros scan." },
+  { cmd: "careeros job <job-id>", desc: "Full Apply-tier treatment for one job, any score — resume, cover, report, application answers, auto-published." },
   { cmd: "careeros prep <job-id>", desc: "Generate a deep interview-prep report for one job. Opt-in, never part of the daily run." },
   { cmd: "careeros apply <job-id>", desc: "Draft application answers for one job of any score, using your own browser or pasted questions." },
   { cmd: "careeros publish <job-id>", desc: "Upload one job's artifacts to Drive and patch just that Sheet row." },
   { cmd: "careeros config", desc: "Print the fully resolved configuration, including the discovery quota recommendation." },
   { cmd: "careeros providers", desc: "List every registered discovery provider." },
-  { cmd: "careeros migrate-config", desc: "One-time, idempotent rewrite of a deprecated single-provider key to the providers model." },
   { cmd: "careeros --version", desc: "Print the installed version and exit." },
 ];
 

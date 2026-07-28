@@ -176,6 +176,10 @@ def _artifacts_finalize(cfg: Config, date: str, job_id: str = None) -> None:
     else:
         selected_path = runmeta.stage_dir(cfg.runs_dir, date, "select") / "selected.json"
         jobs_path = runmeta.stage_dir(cfg.runs_dir, date, "normalize") / "jobs.json"
+        if not selected_path.exists() or not jobs_path.exists():
+            typer.echo("Missing select/normalize output — run those stages first.", err=True)
+            raise typer.Exit(1)
+
         with open(selected_path) as f:
             evals = [Eval.from_dict(d) for d in json.load(f)]
         with open(jobs_path) as f:

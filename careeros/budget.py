@@ -413,19 +413,24 @@ def check_apify_budget(
 def check_before_run(
     state: dict[str, Any], quota: Optional[int]
 ) -> tuple[bool, Optional[str]]:
-    """Decide whether discovery should proceed. Returns (ok, message).
-    Only PREVENTS when a hard quota is known AND already fully consumed this
-    week — the whole point is to stop before a mid-week 429, never to silently
-    swallow a run when the ceiling is unknown."""
+    """Estimate whether this week's LOCAL counter looks exhausted. Returns
+    (ok, message) — but `ok=False` is advisory only, never a hard skip: the
+    caller (`discover.py`) prints the message as an early warning and still
+    proceeds, because the live API's own response is the authoritative check
+    (a real incident: a rotated-in fresh key was reported "exhausted" by this
+    local, Monday-reset counter alone, which knows nothing about which key is
+    configured). `--ignore-budget` does NOT apply to this weekly guard — it
+    already never hard-skips — only to the separate monthly-spend guard
+    (`check_apify_budget`), which does."""
     if not quota:
         return True, None
     used = int(state.get("records", 0))
     if used >= quota:
         return False, (
-            f"Weekly discovery quota reached: {used}/{quota} records used since"
-            f" {state.get('week_start')}. Skipping discovery to avoid a hard"
-            " rate-limit. Resets Monday, or raise api.weekly_record_quota /"
-            " your plan. (Override: run `discover` with --ignore-budget.)"
+            f"Weekly discovery quota reached (local estimate): {used}/{quota}"
+            f" records used since {state.get('week_start')}. Not skipping —"
+            " verifying against the live API instead. Resets Monday, or raise"
+            " api.weekly_record_quota / your plan if this keeps happening."
         )
     remaining = quota - used
     return True, (

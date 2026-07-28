@@ -71,8 +71,9 @@ _JOB_ID_PROPERTY = "careeros_job_id"
 
 class DriveError(RuntimeError):
     """Any Drive failure (missing optional deps, auth, network, quota,
-    misconfiguration) — callers catch this (broadly; see cli.py's `drive`
-    command) and continue the pipeline with a warning, never a hard stop."""
+    misconfiguration) — callers catch this (broadly; see cli/drive.py's
+    `drive` command) and continue the pipeline with a warning, never a hard
+    stop."""
 
 
 @dataclass
@@ -88,8 +89,9 @@ class JobUploadResult:
     alone. `eval_link`/`deep_report_link`/`answers_link` (P2.10) were
     previously uploaded but discarded by this module — the files existed in
     Drive with no way to find them from the Sheet; capturing them here is
-    what lets `cli.py` wire them into the Sheet's Evaluation (Drive) / Deep
-    Report (Drive) / Application Answers (Drive) columns. `error` is set
+    what lets `cli/sheets_cmds.py` wire them into the Sheet's
+    Evaluation (Drive) / Deep Report (Drive) / Application Answers (Drive)
+    columns. `error` is set
     (and links left blank) when this JOB'S upload failed — callers
     (upload_run/upload_jobs) isolate per-job failures so one bad job never
     aborts the rest of the batch."""
@@ -370,8 +372,8 @@ def upload_run(
     returned dict if NONE of its artifact files exist on disk; that's not a
     Drive failure, just nothing to link for that row. Raises DriveError for
     anything that stops the WHOLE upload (auth, missing deps,
-    misconfiguration) — the caller (cli.py) is responsible for catching that
-    and continuing the pipeline regardless.
+    misconfiguration) — the caller (cli/drive.py) is responsible for
+    catching that and continuing the pipeline regardless.
     """
     root_id = config.drive.get("root_folder_id")
     if not root_id:

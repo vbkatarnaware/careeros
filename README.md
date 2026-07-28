@@ -167,8 +167,7 @@ cheap to re-run (unchanged inputs hit the cache, not the model).
 **Onboarding a new host CLI?** Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) —
 the canonical repo map, the deterministic/reasoning boundary, secrets
 handling, and the Failure Handling Principle every stage follows.
-`CLAUDE.md`/`GEMINI.md`/`AGENTS.md` are thin redirects to it for CLIs that
-auto-load a per-tool file.
+`CLAUDE.md` is a thin redirect to it for CLIs that auto-load a per-tool file.
 
 ## Pipeline
 
@@ -280,6 +279,8 @@ you want just one piece of the full treatment.
 | `careeros publish <job-id>` | Upload one job's current artifacts to Drive/Sheet (if configured) and refresh the local digest — use after `prep`/`apply <job-id>` so the result shows up without a full `daily` run |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
+| `careeros sheets migrate` | Apply the current header/formatting/dropdown pass to an existing Sheet right now, instead of waiting for the next `daily` run |
+| `careeros backfill-drive` | Advanced: add Drive links to Apply-tier Sheet rows that predate Drive automation. Idempotent, defaults to `--dry-run` |
 | `careeros --version` | Print the installed version and exit |
 
 `careeros --help` groups these by purpose (Setup, Daily, Per-job, Advanced)
@@ -345,8 +346,9 @@ That installs the `careeros` CLI plus the default REST provider's dependency
    opens by asking you to paste your CV (optional; `skip` to answer
    questions instead), then extracts your facts into `.careeros/profile.yaml`,
    asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
-   Custom quota), then asks how many jobs per day you want from each source,
-   explained in plain English against your own search preferences (e.g.
+   Custom quota), then asks how many jobs per day you want from Fantastic
+   Jobs (a loop over every enabled source — one today, more if you add them
+   later), explained in plain English against your own search preferences (e.g.
    *"Based on your search preferences (Remote, India, Onsite), CareerOS runs
    3 searches per day. On the Free plan, the recommended total is 71 jobs
    per day — 23 per search."*) — accept it or enter your own number, and asks
@@ -405,9 +407,9 @@ Contact Email · Job ID`
 blank artifact/Drive cells and a `Notes` reason it scored below 4.0. `Status`
 is a dropdown (data validation, not free text) you update by hand as you
 actually apply: `Not Applied` (the default on every new row), `Applied`,
-`Received Call`, `Interview`, `After Interview`, `Ongoing / In Process`,
-`Offer`, `Rejected`. It's yours to track — the pipeline only ever sets the
-default on a NEW row and never overwrites it afterward, exactly like `Notes`.
+`Received Call`, `Interview`, `After Interview`, `Rejected`, `Expired`. It's
+yours to track — the pipeline only ever sets the default on a NEW row and
+never overwrites it afterward, exactly like `Notes`.
 
 Columns are located by header **name**, not position, and any missing column
 is added (deprecated ones removed) automatically — so a Sheet created by an
@@ -652,14 +654,14 @@ pytest careeros/tests/
 
 Unit tests cover the deterministic logic that's genuinely subtle: hard
 constraints (`constraints.py`), two-tier threshold selection, cache-key
-stability, dedupe, the resume-truthfulness verbatim check, both Fantastic
-Jobs providers' source-side-filter/transport/token-rotation wiring, a parity
-test asserting the REST and legacy-actor providers map identical raw
-records to an identical `Job` dict, the Sheets name-keyed read/write and
-additive header migration, the daily-summary render (incl. the local-first
-results digest), Drive artifact upload/backfill/idempotency, and PDF
-rendering — the pure functions most likely to silently regress. They do not
-(yet) cover `normalize.py`; contributions there are welcome. CI
+stability, dedupe, the resume-truthfulness fact-preservation check (numbers,
+company/project names, and skill names all verified against `profile.yaml`
+— see `verify_resume_facts` in `careeros/lint.py`), the Fantastic Jobs
+provider's source-side-filter and transport wiring, the Sheets name-keyed
+read/write and additive header migration, the daily-summary render (incl.
+the local-first results digest), Drive artifact upload/backfill/idempotency,
+and PDF rendering — the pure functions most likely to silently regress. They
+do not (yet) cover `normalize.py`; contributions there are welcome. CI
 (`.github/workflows/ci.yml`) runs the suite on Python 3.11 and 3.12 for
 every push and PR.
 
@@ -671,7 +673,7 @@ it on architecture (host-CLI-driven, not a standalone bot), output format
 (structured JSON, not long markdown reports for every job), and cost model
 (gate before evaluate, cache everything, resume/cover selection built on a
 separate philosophy — see `prompts/voice-dna.md` and the fact-preservation
-rule embedded in `prompts/resume_v2.md`).
+rule embedded in the active resume prompt, `prompts/resume_v4.md`).
 
 ## License
 

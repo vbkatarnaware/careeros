@@ -16,13 +16,16 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
   <p>
     The <code>providers</code> block controls which sources are enabled and the
     order they run in. Deduplication keeps the first occurrence of a role, so
-    list your most-trusted source first. Three free-and-direct core sources are
-    on by default; the paid Apify-backed sources ship disabled.
+    list your most-trusted source first. As of v1.7, discovery runs on a single
+    source — Fantastic Jobs, free and direct, no signup beyond an API key. Seven
+    other sources shipped through v1.6 and were removed after two weeks of live
+    evidence; see the project's <code>providers/README.md</code> "Evaluated and
+    removed" section if you're curious, or want to add your own provider back.
   </p>
   <CommandBlock
     client:visible
     label=".careeros/config.yaml"
-    code={`providers:\n  fantastic-jobs: { enabled: true }     # core — your main source\n  remoteok: { enabled: true }           # core — free, no signup\n  we-work-remotely: { enabled: true }   # core — free, no signup\n  # paid, opt-in, off by default:\n  naukri: { enabled: false }\n  glassdoor: { enabled: false }\n  ziprecruiter: { enabled: false }\n  indeed: { enabled: false }\n  foundit: { enabled: false }`}
+    code={`providers:\n  fantastic-jobs: { enabled: true }     # your main (and only) source`}
   />
 
   <h2>Thresholds</h2>
@@ -46,7 +49,7 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
   <CommandBlock
     client:visible
     label=".careeros/config.yaml"
-    code={`prompts:\n  gate: v1\n  eval: v2\n  resume: v1\n  cover: v1`}
+    code={`prompts:\n  gate: v1\n  eval: v2\n  resume: v4\n  cover: v2`}
   />
 
   <h2>Credentials</h2>
@@ -59,7 +62,7 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
   <CommandBlock
     client:visible
     label=".careeros/secrets.env"
-    code={`FANTASTIC_API_KEY=...\nAPIFY_TOKEN=...        # only if you enable a paid provider`}
+    code={`FANTASTIC_API_KEY=...  # or RAPIDAPI_KEY, depending on api.transport`}
   />
 
   <h2>Google Sheets and Drive</h2>

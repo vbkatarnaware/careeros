@@ -43,14 +43,16 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
   </p>
   <CommandBlock client:visible label="apply" code={`$ careeros apply 3f2a9c1b`} />
 
-  <h2>Enabling an optional paid source</h2>
+  <h2>Verifying a new provider before trusting it</h2>
   <p>
-    Paid providers are off by default. Turn one on deliberately, and verify its
-    relevance and cost before relying on it.
+    Discovery ships with one source (Fantastic Jobs) today, but the registry is
+    built to take more — see <code>providers/README.md</code>'s "Adding a
+    provider" section. Before wiring one into <code>daily</code>, force it in
+    isolation and inspect its real output shape.
   </p>
   <CommandBlock
     client:visible
     label="verify a provider"
-    code={`$ careeros discover --provider glassdoor --dry-run --limit 3   # shape check\n$ careeros discover --provider glassdoor --limit 30            # real cost check`}
+    code={`$ careeros discover --provider my-provider --dry-run --limit 3   # shape check\n$ careeros discover --provider my-provider --limit 30            # real cost check`}
   />
 </DocsLayout>

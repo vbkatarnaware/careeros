@@ -2,13 +2,13 @@
 
 Detects the ATS and drafts answers to the actual application questions, for
 ONE job, on demand. This is the manual counterpart to the automatic
-Apply-tier batch that already ran inside `daily` (see skills/daily.md step
-8a) — use this skill for a job that scored below `threshold` (the batch
+Apply-tier batch that already ran inside `daily` (see skills/daily.md Step
+9) — use this skill for a job that scored below `threshold` (the batch
 only covers Apply-tier, >= threshold, jobs) or one the batch marked with
 any non-"✅ Generated" status in the Sheet — 🔒 Login Required, ❌ Closed,
-⚙️ Playwright Missing, 📄 No Essay Questions, or 🌐 Network Error (its form
-wasn't readable by the background fetch, most often because it's
-login-gated).
+⚙️ Playwright Missing, 📄 No Essay Questions, 🌐 Network Error, or 🛡️
+Bot-Blocked (its form wasn't readable by the background fetch, most often
+because it's login-gated or behind a bot-detection challenge).
 
 Unlike the batch stage (which reads the form in an invisible background
 browser — see careeros/apply/browser.py), this skill can use the
@@ -19,7 +19,7 @@ session to even show its questions.
 ## 1. Locate the job
 
 Find `{job-id}`'s Job record (any run's `02_normalize/jobs.json`) and its
-evaluation (`05_evaluate/{job-id}.json`). If either is missing, tell the
+evaluation (`06_evaluate/{job-id}.json`). If either is missing, tell the
 candidate and stop.
 
 ## 2. Report the detected ATS
@@ -87,10 +87,11 @@ careeros publish {job-id} --date {date the job was discovered}
 
 Run this automatically as the last step, without asking — the candidate
 should never have to remember a separate command to get a finished
-answers file into Drive and their Sheet. Uploads `answers.md` (rendered to
-PDF if the optional `[pdf]` extra is installed) to Drive and fills in that
-row's Application Answers (Drive) cell — replacing whatever status label it
-showed before (e.g. "🔒 Login Required"). Requires `drive.enabled: true`;
+answers file into Drive and their Sheet. Uploads `answers.md` (always as
+Markdown — unlike Resume/Cover, Application Answers is never rendered to
+PDF) to Drive and fills in that row's Application Answers (Drive) cell —
+replacing whatever status label it showed before (e.g. "🔒 Login
+Required"). Requires `drive.enabled: true`;
 if Drive isn't configured (the only case where this step is skipped), tell
 the candidate the answers file's local path instead.
 

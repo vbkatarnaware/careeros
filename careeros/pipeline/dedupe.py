@@ -110,9 +110,9 @@ def dedupe_against_history(
 ) -> tuple[list[Job], list[Job]]:
     """Returns (unique, dropped) after filtering out ids already in seen.jsonl.
     Caller is responsible for appending the surviving `unique` jobs back to
-    seen.jsonl once the run completes (see cli.py's dedupe command) — this
-    function only reads, so it stays safe to call repeatedly (e.g. for a
-    dry-run) without mutating state.
+    seen.jsonl once the run completes (see careeros/cli/pipeline.py's dedupe
+    command) — this function only reads, so it stays safe to call repeatedly
+    (e.g. for a dry-run) without mutating state.
     """
     seen_ids = load_seen_ids(seen_path)
     unique: list[Job] = []

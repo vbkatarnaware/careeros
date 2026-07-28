@@ -60,3 +60,52 @@ def test_cache_put_then_get_roundtrips(tmp_path):
     value = {"score": 4.2, "recommendation": "apply"}
     cache.put("evaluate", "key1", value)
     assert cache.get("evaluate", "key1") == value
+
+
+def test_cache_get_tolerates_truncated_json_as_a_miss(tmp_path):
+    """Regression: a process killed mid-write (before `put`'s atomic
+    replace) used to leave a truncated file that `get` read with a bare
+    `json.load` and no try/except -- crashing every subsequent run until a
+    human found and deleted it by hand. A corrupt cache entry must degrade
+    to "run the AI stage again", exactly like a plain cache miss, never to
+    an unhandled exception."""
+    cache = Cache(tmp_path)
+    path = cache._path("evaluate", "key1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"score": 4.2, "recommen')  # truncated mid-value
+    assert cache.get("evaluate", "key1") is None
+
+
+def test_cache_get_tolerates_empty_file_as_a_miss(tmp_path):
+    cache = Cache(tmp_path)
+    path = cache._path("evaluate", "key1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("")
+    assert cache.get("evaluate", "key1") is None
+
+
+def test_cache_put_does_not_leave_a_temp_file_behind(tmp_path):
+    """The atomic-write mechanism (temp file + os.replace) must not leak its
+    own scratch file into the cache directory on the success path."""
+    cache = Cache(tmp_path)
+    cache.put("evaluate", "key1", {"score": 4.2})
+    stage_dir = tmp_path / "evaluate"
+    assert [p.name for p in stage_dir.iterdir()] == ["key1.json"]
+
+
+def test_cache_put_cleans_up_temp_file_on_write_failure(tmp_path, monkeypatch):
+    """A failure partway through the write (e.g. disk full, a TypeError from
+    a non-serializable value) must not leave a stray .tmp file behind, and
+    must not corrupt any pre-existing entry at the real path -- it should
+    raise, since a failed write is a real bug the caller needs to see
+    (unlike a corrupt READ, which is always safe to treat as a miss)."""
+    cache = Cache(tmp_path)
+    import pytest
+
+    with pytest.raises(TypeError):
+        cache.put("evaluate", "key1", {"bad": object()})  # not JSON-serializable
+
+    stage_dir = tmp_path / "evaluate"
+    leftover = list(stage_dir.iterdir()) if stage_dir.exists() else []
+    assert leftover == [], f"temp file(s) leaked: {leftover}"
+    assert cache.get("evaluate", "key1") is None

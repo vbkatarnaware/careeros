@@ -5,8 +5,8 @@ folder per stage. run.json is a running ledger of what happened: counts in/out
 of each stage, timings, which prompt versions ran, and cache hit/miss counts.
 It is the free debug dashboard and KPI log this architecture is built around.
 
-Stages are resumable by construction: `stage_output_path` always points at
-the same file for a given (run_dir, stage), so re-running `daily` after a
+Stages are resumable by construction: `stage_dir` always points at the same
+folder for a given (run_dir, date, stage), so re-running `daily` after a
 partial failure just finds prior stages' outputs already on disk and skips
 straight to the first missing one.
 """

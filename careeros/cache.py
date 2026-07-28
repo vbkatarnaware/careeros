@@ -17,6 +17,8 @@ again," which is always safe.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -46,14 +48,37 @@ class Cache:
         return self.cache_dir / stage / f"{key}.json"
 
     def get(self, stage: str, key: str) -> Optional[dict]:
+        """A corrupt or truncated cache file (e.g. from a process killed
+        mid-write, before `put`'s atomic replace below existed) is treated as
+        a miss, not a crash — same tolerance as `budget.load_state`'s
+        equivalent read. A cache miss just means "run the AI stage again,"
+        which is always safe; a raised exception here would take the whole
+        pipeline down over a file that only ever holds a re-computable
+        result."""
         path = self._path(stage, key)
         if not path.exists():
             return None
-        with open(path) as f:
-            return json.load(f)
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def put(self, stage: str, key: str, value: dict) -> None:
+        """Writes via a temp file + atomic `os.replace` so a process killed
+        mid-write can never leave a half-written, corrupt cache entry behind
+        for `get` to trip over later — the failure mode `get` above is
+        tolerant of, but that this avoids creating in the first place."""
         path = self._path(stage, key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(value, f, indent=2, sort_keys=True)
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(value, f, indent=2, sort_keys=True)
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise

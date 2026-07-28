@@ -224,10 +224,10 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
         )
         return result
 
-    # "none": unmetered (RemoteOK, We Work Remotely). Previously had no
-    # try/except at all — a network/timeout ProviderError from one of these
-    # would silently abort the WHOLE multi-provider run, the exact same bug
-    # class fixed for the weekly/monthly branches earlier. Now consistent.
+    # "none": an unmetered free provider. Previously had no try/except at
+    # all — a network/timeout ProviderError from one of these would silently
+    # abort the WHOLE multi-provider run, the exact same bug class fixed for
+    # the weekly/monthly branches earlier. Now consistent.
     try:
         result = p.fetch(cfg, limit=plan.effective_limit, search=search, query=None)
     except ProviderError as e:
@@ -271,7 +271,10 @@ def discover(
         "", help="Manual single-query override — bypasses profile-driven segmentation"),
     dry_run: bool = typer.Option(False, help="Fetch and print, don't write raw.json"),
     ignore_budget: bool = typer.Option(
-        False, "--ignore-budget", help="Bypass every provider's budget/quota guard for this run"),
+        False, "--ignore-budget", help="Bypass a provider's monthly spend-budget guard for this "
+                    "run (the 'monthly' capability — see budget.guard_for). Fantastic Jobs' "
+                    "weekly quota guard never hard-skips regardless of this flag; the live API's "
+                    "own response is what's authoritative there"),
 ):
     """[dev] Discover: run every enabled provider (config.providers, IN
     CONFIG ORDER — dedupe keeps the FIRST occurrence of a duplicate role, so
@@ -295,8 +298,8 @@ def discover(
     record quota (Fantastic Jobs) gets that guard (unchanged — the segmented
     per-work-mode query plan, P2.8's quota-aware default limit, everything);
     one declaring a monthly USD budget gets the
-    rolling-month soft guard; an unmetered free provider (RemoteOK, We Work
-    Remotely) gets none. A provider that's ENABLED but can't run this call
+    rolling-month soft guard; an unmetered free provider gets none. A
+    provider that's ENABLED but can't run this call
     (failed `validate()`, its guard says stop, or a hard fetch error) is
     recorded as `skipped` with a reason — never silently dropped, and never
     aborts the rest of the run — and the run continues with whatever else is

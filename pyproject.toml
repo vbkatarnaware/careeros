@@ -1,6 +1,6 @@
 [project]
 name = "careeros"
-version = "1.7.2"
+version = "1.8.0"
 description = "An AI-powered, deterministic job discovery and recommendation engine. Deterministic where possible, AI only where reasoning adds value."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,8 +9,7 @@ dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
     "jsonschema>=4.20",
-    "requests>=2.31",       # default provider: careeros/providers/fantastic_jobs.py (REST)
-    "apify-client>=3.0,<4", # legacy provider: careeros/providers/legacy/fantastic_jobs_actor.py
+    "requests>=2.31",       # the fantastic-jobs provider: careeros/providers/fantastic_jobs.py (REST)
     "gspread>=6.0",
     "google-auth>=2.28",
 ]

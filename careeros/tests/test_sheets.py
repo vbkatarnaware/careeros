@@ -147,7 +147,7 @@ def test_job_to_row_drive_links_blank_by_default():
 def test_job_to_row_answers_link_accepts_manual_required_label():
     """answers_drive_link may be the literal manual-required status string
     rather than a URL -- job_to_row just places whatever it's given; the
-    caller (cli.py sheets_append) decides which to pass."""
+    caller (cli/sheets_cmds.py's sheets_append) decides which to pass."""
     row = job_to_row("2026-07-08", make_job(id="job-1"), make_eval(),
                      answers_drive_link="Manual questions required")
     assert row[SHEET_HEADERS.index("Application Answers (Drive)")] == "Manual questions required"

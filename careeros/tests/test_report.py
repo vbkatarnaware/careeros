@@ -188,19 +188,19 @@ def test_discovery_kpi_provider_table_shows_duration_and_status_per_provider():
     jobs/cost — this had zero direct test coverage before."""
     stats = {
         "providers": [
-            {"provider": "remoteok", "records": 42, "requests": 1,
+            {"provider": "stub-free-source", "records": 42, "requests": 1,
              "cost_usd": 0.0, "seconds": 1.23, "skipped": False},
-            {"provider": "glassdoor", "records": 0, "requests": 0,
+            {"provider": "stub-paid-source", "records": 0, "requests": 0,
              "cost_usd": 0.0, "seconds": 0.0, "skipped": True,
-             "skip_reason": "monthly Apify budget exhausted"},
+             "skip_reason": "monthly spend budget exhausted"},
         ],
         "merged_total": 42,
     }
     md = render_summary("2026-07-08", {"totals": {"discovered": 42, "deduped": 40}},
                          [], [], {}, threshold=4.0, discovery_stats=stats)
     assert "| Provider | Records | Requests | Cost | Time | Status |" in md
-    assert "| remoteok | 42 | 1 | $0.0000 | 1.2s | ran |" in md
-    assert "| glassdoor | 0 | 0 | $0.0000 | 0.0s | skipped: monthly Apify budget exhausted |" in md
+    assert "| stub-free-source | 42 | 1 | $0.0000 | 1.2s | ran |" in md
+    assert "| stub-paid-source | 0 | 0 | $0.0000 | 0.0s | skipped: monthly spend budget exhausted |" in md
     assert "**Merged total** | **42**" in md
     assert "**After dedupe** | **40**" in md
 
@@ -216,7 +216,7 @@ def test_discovery_kpi_provider_table_shows_live_quota_when_present():
             {"provider": "fantastic-jobs", "records": 72, "requests": 6,
              "cost_usd": 0.0, "seconds": 4.6, "skipped": False,
              "live_quota": {"requests_remaining": "94", "jobs_remaining": "428"}},
-            {"provider": "remoteok", "records": 42, "requests": 1,
+            {"provider": "stub-free-source", "records": 42, "requests": 1,
              "cost_usd": 0.0, "seconds": 1.23, "skipped": False,
              "live_quota": None},
         ],
@@ -225,4 +225,4 @@ def test_discovery_kpi_provider_table_shows_live_quota_when_present():
     md = render_summary("2026-07-12", {"totals": {"discovered": 114}},
                          [], [], {}, threshold=4.0, discovery_stats=stats)
     assert "| fantastic-jobs | 72 | 6 | $0.0000 | 4.6s | ran (428 jobs left, live) |" in md
-    assert "| remoteok | 42 | 1 | $0.0000 | 1.2s | ran |" in md
+    assert "| stub-free-source | 42 | 1 | $0.0000 | 1.2s | ran |" in md

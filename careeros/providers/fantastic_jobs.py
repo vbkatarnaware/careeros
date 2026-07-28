@@ -123,9 +123,9 @@ def _base_url_and_headers(api_cfg: dict[str, Any]) -> tuple[str, dict[str, str]]
 
 
 def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[str, Any]:
-    """Mirrors the legacy actor's `_build_run_input`, mapped onto the
-    official API's own param names (per developer.fantastic.jobs's
-    /api/new-jobs reference)."""
+    """Maps `pipeline/queryplan.py`'s neutral spec keys onto the official
+    API's own param names (per developer.fantastic.jobs's /api/new-jobs
+    reference)."""
     title_search = [search] if search else list(api_cfg.get("title_search", []) or [])
     location_search = list(api_cfg.get("location_search", []) or [])
     title_exclusion = list(api_cfg.get("title_exclusion_search", []) or [])

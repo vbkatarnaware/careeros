@@ -265,8 +265,8 @@ def render_resume_pdf(profile: Profile, tailoring: dict) -> bytes | None:
             if pdf_page_count(pdf_bytes) == 1:
                 return pdf_bytes
         # No tier fit on one page — return the most compact attempt anyway;
-        # cli.py's finalize-time ">1 page" gate is the true last resort and
-        # will report it so the resume.json can be trimmed by hand.
+        # cli/artifacts.py's finalize-time ">1 page" gate is the true last
+        # resort and will report it so the resume.json can be trimmed by hand.
         return last_pdf_bytes
     except Exception:
         return None

@@ -128,7 +128,8 @@ def test_dedupe_against_history_drops_previously_seen(tmp_path):
 
 def test_dedupe_against_history_is_read_only(tmp_path):
     """Calling it twice (e.g. a dry-run) must not mutate seen.jsonl itself —
-    only cli.py's explicit append_seen_ids call after a real run does that."""
+    only cli/pipeline.py's explicit append_seen_ids call after a real run
+    does that."""
     seen_path = tmp_path / "seen.jsonl"
     append_seen_ids(seen_path, [make_job(id="a")], "2026-07-07")
     dedupe_against_history([make_job(id="b")], seen_path)

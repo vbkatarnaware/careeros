@@ -1,10 +1,10 @@
-"""End-to-end tests for `discover`'s v1.2 multi-provider loop
-(`_discover_one_provider` in cli.py) — the generic, capability-driven
-orchestration that replaced the old single-provider body. Fake providers
-replace real network/Apify calls (registered into the real registry via
-monkeypatch.setitem, matching this repo's provider-pluggable design and the
-pattern in test_discover_quota_aware_limit.py), so nothing here makes a real
-HTTP/Apify call.
+"""End-to-end tests for `discover`'s multi-provider loop
+(`_preflight_provider`/`_fetch_provider` in careeros/cli/discover.py) — the
+generic, capability-driven orchestration that replaced the old
+single-provider body. Fake providers replace real network calls (registered
+into the real registry via monkeypatch.setitem, matching this repo's
+provider-pluggable design and the pattern in
+test_discover_quota_aware_limit.py), so nothing here makes a real HTTP call.
 
 Covers the concrete guarantees this redesign promises:
 - multiple providers run and merge into one raw.json, in CONFIG ORDER;
@@ -31,10 +31,10 @@ runner = CliRunner()
 
 
 class _FakeProvider:
-    """A minimal fake conforming to the v1.2 3-method contract. No
+    """A minimal fake conforming to the 3-method provider contract. No
     "plan"/"max_monthly_budget_usd" keys in its own config block by default
-    -> budget.guard_for resolves it to "none" (unmetered), matching
-    RemoteOK/We Work Remotely's real shape."""
+    -> budget.guard_for resolves it to "none" (unmetered) — an unmetered
+    free source's real shape."""
 
     def __init__(self, provider_id: str, items: list[dict], *, validate_errors: list[str] | None = None,
                  fetch_error: Exception | None = None):
@@ -184,8 +184,8 @@ def test_ignore_budget_flag_overrides_monthly_guard(tmp_path, monkeypatch):
 
 
 def test_hard_provider_error_skips_that_provider_and_run_continues(tmp_path, monkeypatch):
-    """A HARD failure from the actor/account itself (e.g. every rotated Apify
-    token exhausted or out of balance) must be caught per-provider inside the
+    """A HARD failure from the provider's own account (e.g. every credential
+    exhausted or out of balance) must be caught per-provider inside the
     "monthly" capability branch and turned into a skip — NOT let escape to
     discover()'s command-level handler, which would abort the whole
     multi-provider run and never even attempt the providers listed after it.
@@ -425,9 +425,9 @@ def test_max_workers_1_forces_serial_and_still_merges_correctly(tmp_path, monkey
 
 
 def test_multiple_monthly_providers_concurrent_spend_all_recorded_no_lost_update(tmp_path, monkeypatch):
-    """Three monthly-capability (Apify-style) providers, each costing real
-    money, fetched CONCURRENTLY — bookkeeping happens serially afterward
-    (see _record_provider_consumption), so all three spends must land in
+    """Three metered, monthly-capability providers, each costing real money,
+    fetched CONCURRENTLY — bookkeeping happens serially afterward (see
+    _record_provider_consumption), so all three spends must land in
     apify_budget.json with none lost to a write race."""
 
     class _PaidFakeProvider(_FakeProvider):

@@ -34,7 +34,7 @@ Level-2 deep report just to answer a couple of application questions.
 Every answer must be built from:
 - `profile.yaml` facts (verbatim bullets, reframed only, never rewritten
   into an unbacked claim),
-- `05_evaluate/<job-id>.json` (strengths, fit_paragraph, company_summary),
+- `06_evaluate/<job-id>.json` (strengths, fit_paragraph, company_summary),
 - the cached deep-context, if present.
 
 **Never fabricate experience.** If a question asks about something the

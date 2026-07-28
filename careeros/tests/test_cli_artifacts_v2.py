@@ -168,10 +168,13 @@ def test_finalize_rejects_a_resume_that_overflows_one_page(tmp_path, monkeypatch
         ["This is a very long summary sentence padded out with extra words to take up space."] * 40
     )
     huge_bullet = "Shipped widget X, growing revenue 40%. " + (
-        "Extra padding detail repeated to make this one bullet very long indeed. " * 8
+        "Extra padding detail repeated to make this one bullet very long indeed. " * 40
     )
+    # Items must be a real profile.yaml skill (the fixture profile only has
+    # "SQL") now that verify_resume_facts also rejects fabricated skills --
+    # only the category label is free text, so padding lives there.
     huge_skills = [
-        {"category": f"Category {i}", "items": [f"Skill Item Number {i}-{j} With Extra Words" for j in range(12)]}
+        {"category": f"Category Number {i} With Extra Padding Words", "items": ["SQL"] * 12}
         for i in range(20)
     ]
     _write_resume_json(

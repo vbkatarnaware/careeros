@@ -5,8 +5,8 @@ nothing. Each test chdirs into a fresh tmp_path since Config's paths are
 cwd-relative (same pattern as test_doctor.py).
 
 v1.2: raw.json's shape changed to `{"providers": [...], "items": {name:
-[...]}, "meta": {name: {...}}}` (see `discover`/`_discover_one_provider` in
-cli.py) — `_write_raw` below matches that shape."""
+[...]}, "meta": {name: {...}}}` (see `discover` in
+careeros/cli/discover.py) — `_write_raw` below matches that shape."""
 
 from __future__ import annotations
 
@@ -120,23 +120,27 @@ def test_no_request_record_stats_for_non_fantastic_jobs_provider(tmp_path, monke
 
 
 def test_providers_table_lists_every_provider_that_ran(tmp_path, monkeypatch):
-    """v1.2 revision #6: the new per-provider discovery-summary table."""
+    """The per-provider discovery-summary table, covered here against a
+    hypothetical multi-provider run (stub names, not any currently-shipped
+    provider — see careeros/providers/README.md's "Evaluated and removed"
+    for why only fantastic-jobs actually ships today) so this reporting
+    logic stays exercised for whenever a second source returns."""
     monkeypatch.chdir(tmp_path)
     cfg = _cfg()
     _write_raw(
         cfg, "2026-07-08",
-        providers=["fantastic-jobs", "remoteok", "ziprecruiter"],
-        items={"fantastic-jobs": [{"a": 1}] * 3, "remoteok": [{"a": 1}] * 2, "ziprecruiter": []},
+        providers=["fantastic-jobs", "stub-free-source", "stub-paid-source"],
+        items={"fantastic-jobs": [{"a": 1}] * 3, "stub-free-source": [{"a": 1}] * 2, "stub-paid-source": []},
         meta={
             "fantastic-jobs": {"requests": 2, "records": 3, "cost_usd": 0.0, "seconds": 1.2},
-            "remoteok": {"requests": 1, "records": 2, "cost_usd": 0.0, "seconds": 0.5},
-            "ziprecruiter": {"skipped": True, "skip_reason": "monthly Apify budget exhausted"},
+            "stub-free-source": {"requests": 1, "records": 2, "cost_usd": 0.0, "seconds": 0.5},
+            "stub-paid-source": {"skipped": True, "skip_reason": "monthly spend budget exhausted"},
         },
     )
     stats = _build_discovery_stats(cfg, "2026-07-08")
     by_name = {p["provider"]: p for p in stats["providers"]}
     assert by_name["fantastic-jobs"]["records"] == 3
-    assert by_name["remoteok"]["records"] == 2
-    assert by_name["ziprecruiter"]["skipped"] is True
-    assert by_name["ziprecruiter"]["skip_reason"] == "monthly Apify budget exhausted"
+    assert by_name["stub-free-source"]["records"] == 2
+    assert by_name["stub-paid-source"]["skipped"] is True
+    assert by_name["stub-paid-source"]["skip_reason"] == "monthly spend budget exhausted"
     assert stats["merged_total"] == 5

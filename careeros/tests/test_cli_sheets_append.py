@@ -1,10 +1,11 @@
-"""Tests for careeros/cli/'s `sheets append` command (P2.10 wiring): joins
-drive_links.json + apply_status.json into the new Drive-link Sheet columns,
-including each of the specific status labels (see cli.py's `_STATUS_LABELS`)
-for an Apply-tier job whose application form wasn't automatically readable.
-sheets.py's own append_rows/job_to_row are exercised elsewhere
-(test_sheets.py) -- this file is only about the JOIN logic cli.py performs
-before calling them."""
+"""Tests for careeros/cli/sheets_cmds.py's `sheets append` command (P2.10
+wiring): joins drive_links.json + apply_status.json into the new Drive-link
+Sheet columns, including each of the specific status labels (see
+careeros/cli/apply_stage.py's `_STATUS_LABELS`) for an Apply-tier job whose
+application form wasn't automatically readable. sheets.py's own
+append_rows/job_to_row are exercised elsewhere (test_sheets.py) -- this file
+is only about the JOIN logic cli/sheets_cmds.py performs before calling
+them."""
 
 from __future__ import annotations
 

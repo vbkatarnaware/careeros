@@ -35,6 +35,22 @@ def test_dunder_version_matches_installed_package_metadata():
     assert __version__ == pkg_version("careeros")
 
 
+def test_pyproject_version_matches_installed_metadata():
+    """The "single source of truth" claim in this file's own module
+    docstring only holds if the installed package's dist-info was actually
+    regenerated after the last version bump -- an editable install does NOT
+    auto-refresh its recorded version on every source edit. This catches the
+    real mistake a release makes: bumping pyproject.toml's `version` without
+    re-running `pip install -e .`, which would ship a `--version` that
+    silently reports the previous release."""
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).parent.parent.parent / "pyproject.toml"
+    declared_version = tomllib.loads(pyproject.read_text())["project"]["version"]
+    assert __version__ == declared_version
+
+
 def test_no_args_still_shows_help_not_version():
     """Adding the --version eager callback must not change the pre-existing
     no_args_is_help behavior."""
