@@ -128,12 +128,20 @@ def test_salary_at_or_above_floor_passes():
     assert evaluate_constraints(job, profile, FX_RATES).passed
 
 
-def test_salary_margin_gives_benefit_of_doubt_near_floor():
-    """SALARY_REJECT_MARGIN=0.9 means a salary at 95% of floor should NOT
-    reject (only confidently-below-floor amounts do)."""
+def test_salary_margin_gives_benefit_of_doubt_near_floor_ON_CONVERTED_AMOUNTS():
+    """SALARY_REJECT_MARGIN=0.9 means a CONVERTED salary at 95% of floor
+    should NOT reject — the margin absorbs FX approximation error.
+
+    v2.1 narrowed this: it now applies only when a currency conversion
+    actually happened. Previously it also applied to same-currency amounts,
+    which silently lowered a stated floor by 10% (a 15 LPA floor rejected
+    only below 13.5) — see `test_inr_salary_just_below_floor_is_rejected_exactly`
+    below for the same-currency case, which is now exact."""
     job = make_job(
         remote=True,
-        salary=Salary(min=1_425_000, max=1_425_000, currency="INR", unit="year"),  # 95% of 1.5M floor
+        # ~17,168 USD * 83 = ~14.25 LPA = 95% of the 15 LPA floor. Converted,
+        # so the FX margin applies and this must pass.
+        salary=Salary(min=17_168, max=17_168, currency="USD", unit="year"),
     )
     profile = make_profile()
     assert evaluate_constraints(job, profile, FX_RATES).passed
@@ -160,3 +168,42 @@ def test_both_location_and_salary_can_fail_together():
     result = evaluate_constraints(job, profile, FX_RATES)
     assert not result.passed
     assert len(result.reasons) == 2
+
+
+# ── same-currency salaries compare EXACTLY against the floor (v2.1) ──────
+# The 0.9 margin exists only to absorb FX approximation. Applying it to an
+# INR-vs-INR comparison silently lowered a stated 12 LPA floor to 10.8.
+
+def _sal(minv, cur="INR"):
+    from careeros.models import Salary
+    return Salary(min=minv, max=minv, currency=cur, unit="year")
+
+
+def test_inr_salary_just_below_floor_is_rejected_exactly():
+    profile = make_profile(comp={"floor_lpa": 12, "currency": "INR"})
+    job = make_job(remote=True, salary=_sal(11_00_000))  # 11 LPA
+    result = evaluate_constraints(job, profile, FX_RATES)
+    assert not result.passed
+    assert "below floor 12" in result.reasons[0]
+
+
+def test_inr_salary_exactly_at_floor_passes():
+    profile = make_profile(comp={"floor_lpa": 12, "currency": "INR"})
+    job = make_job(remote=True, salary=_sal(12_00_000))
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_foreign_currency_salary_still_gets_the_fx_margin():
+    """A converted salary keeps the benefit of the doubt — the margin's
+    actual purpose."""
+    profile = make_profile(comp={"floor_lpa": 12, "currency": "INR"})
+    # 13,500 USD * 83 = ~11.2 LPA. Below 12, but within the 0.9 FX margin
+    # (10.8), so it must NOT be rejected on an approximate conversion.
+    job = make_job(remote=True, salary=_sal(13_500, cur="USD"))
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_foreign_currency_clearly_below_floor_is_still_rejected():
+    profile = make_profile(comp={"floor_lpa": 12, "currency": "INR"})
+    job = make_job(remote=True, salary=_sal(5_000, cur="USD"))  # ~4.2 LPA
+    assert not evaluate_constraints(job, profile, FX_RATES).passed

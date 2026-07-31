@@ -31,10 +31,21 @@ from dataclasses import dataclass
 
 from careeros.models import Job, Profile
 
-# Fraction of the floor a computed salary must fall UNDER to trigger a reject.
-# 0.9 = only reject when clearly below floor, absorbing FX approximation so a
-# borderline conversion is given the benefit of the doubt (passes to AI).
+# Fraction of the floor a CONVERTED salary must fall UNDER to trigger a
+# reject. 0.9 = only reject when clearly below floor, absorbing FX
+# approximation so a borderline conversion is given the benefit of the doubt
+# (passes to AI).
 SALARY_REJECT_MARGIN = 0.9
+
+# v2.1: the margin above exists purely to absorb FX approximation error (see
+# `fx_rates` in config.yaml — those are hand-maintained approximate rates).
+# When a posting is ALREADY denominated in the candidate's own comp currency,
+# no conversion happened and there is no approximation to absorb, so applying
+# the margin there just silently lowers the floor the candidate actually set:
+# a stated floor of 12 LPA was rejecting only below 10.8 LPA, letting an 11
+# LPA posting through as if it cleared the bar. Same-currency salaries are
+# therefore compared against the floor EXACTLY.
+SALARY_EXACT_MARGIN = 1.0
 
 _PERIODS_PER_YEAR = {"year": 1, "month": 12, "week": 52, "day": 260, "hour": 2080}
 
@@ -96,7 +107,11 @@ def evaluate_constraints(job: Job, profile: Profile, fx_rates: dict[str, float])
         annual = annual_inr(job.salary, fx_rates)
         if annual is not None:
             floor_inr = float(floor_lpa) * 100_000  # LPA -> absolute INR
-            if annual < floor_inr * SALARY_REJECT_MARGIN:
+            base_currency = ((profile.comp or {}).get("currency") or "INR").upper()
+            job_currency = ((job.salary.currency if job.salary else None) or base_currency).upper()
+            # No conversion happened -> no FX error to absorb -> exact compare.
+            margin = SALARY_EXACT_MARGIN if job_currency == base_currency else SALARY_REJECT_MARGIN
+            if annual < floor_inr * margin:
                 reasons.append(
                     f"salary ~INR {annual/100_000:.1f} LPA is below floor {floor_lpa} LPA"
                 )
