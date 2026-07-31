@@ -66,8 +66,7 @@ def _run_and_capture_rows(cfg, date):
         captured["rows"] = rows
 
     with patch("careeros.cli.sheets_cmds._config", return_value=cfg), \
-         patch("careeros.cli.sheets_mod.append_rows", side_effect=fake_append_rows), \
-         patch("careeros.cli.sheets_cmds.append_seen_ids"):
+         patch("careeros.cli.sheets_mod.append_rows", side_effect=fake_append_rows):
         sheets_append(date=date)
     return captured["rows"]
 

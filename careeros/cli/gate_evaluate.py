@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from careeros import runmeta
+from careeros import calibration, runmeta
 from careeros.cache import Cache, eval_cache_key
 from careeros.cli import app
 from careeros.cli._shared import _config, _load_profile, _today
@@ -216,8 +216,31 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
         with open(input_path) as f:
             expected_ids = {e["job"]["id"] for e in json.load(f)}
 
-    all_records = []
-    record_paths: dict[int, Path] = {}
+    # v2.0: today's-relevant-ids, so a same-date re-run's stale leftovers get
+    # ignored rather than silently folded back in. Found live 2026-07-31: a
+    # second `discover`+`normalize` call for the same date overwrote
+    # 02_normalize/jobs.json, but 06_evaluate/ still held eval files from the
+    # first attempt whose ids no longer existed anywhere in the current run
+    # -- the old blanket `glob("*.json")` treated those as legitimate cache
+    # hits, so `record_stage` reported 39 evaluations against 31 files on
+    # disk and the count drifted every time --finalize re-ran. "Relevant"
+    # means: today's gate kept it. Anything else in the stage dir is a
+    # leftover from an earlier attempt at this same date and must be
+    # ignored entirely -- not counted, not re-cached, not judged by
+    # calibration.
+    gate_path = runmeta.stage_dir(cfg.runs_dir, date, "gate") / "gated.json"
+    relevant_ids = set(expected_ids)
+    if gate_path.exists():
+        with open(gate_path) as f:
+            relevant_ids |= {r["id"] for r in json.load(f) if r.get("keep")}
+
+    # `fresh_records`: written THIS run, from this run's own _input.json.
+    # This is the population calibration judges -- cache hits are already-
+    # accepted prior work and must never be re-judged (re-judging a cache
+    # hit means a batch's calibration verdict depends on what ELSE happened
+    # to be cached that day, which is not reproducible).
+    fresh_records: list[dict] = []
+    fresh_paths: dict[int, Path] = {}
     missing = []
     for job_id in expected_ids:
         out_path = stage_dir / f"{job_id}.json"
@@ -225,30 +248,67 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
             missing.append(job_id)
             continue
         with open(out_path) as f:
-            all_records.append(json.load(f))
-        record_paths[len(all_records) - 1] = out_path
-
-    # Also fold in cache-hit files already written during --prepare, so the
-    # finalize summary reflects the FULL evaluated set for this run, not just
-    # the freshly-generated ones.
-    for path in stage_dir.glob("*.json"):
-        if path.name in ("_input.json",):
-            continue
-        job_id = path.stem
-        if job_id not in expected_ids:
-            with open(path) as f:
-                all_records.append(json.load(f))
-            record_paths[len(all_records) - 1] = path
+            fresh_records.append(json.load(f))
+        fresh_paths[len(fresh_records) - 1] = out_path
 
     if missing:
         typer.echo(f"[evaluate:finalize] Missing output for: {', '.join(missing)}", err=True)
         typer.echo("Agent: write the missing files, then re-run --finalize.")
         raise typer.Exit(1)
 
+    # Legitimate cache hits: written during --prepare for a job this run's
+    # gate kept, but not in _input.json because the cache already had it.
+    cache_hit_records: list[dict] = []
+    cache_hit_paths: dict[int, Path] = {}
+    for path in sorted(stage_dir.glob("*.json")):
+        if path.name.startswith("_"):
+            continue
+        job_id = path.stem
+        if job_id in expected_ids or job_id not in relevant_ids:
+            continue
+        with open(path) as f:
+            cache_hit_records.append(json.load(f))
+        cache_hit_paths[len(cache_hit_records) - 1] = path
+
+    all_records = fresh_records + cache_hit_records
+    record_paths: dict[int, Path] = dict(fresh_paths)
+    for idx, path in cache_hit_paths.items():
+        record_paths[len(fresh_records) + idx] = path
+
     errors = runmeta.validate_stage("eval", all_records)
     if errors:
         typer.echo("[evaluate:finalize] Schema validation FAILED:\n" + "\n".join(errors), err=True)
         raise typer.Exit(1)
+
+    jobs_by_id: dict[str, dict] = {}
+    eligible_path = runmeta.stage_dir(cfg.runs_dir, date, "constraints") / "eligible.json"
+    if eligible_path.exists():
+        with open(eligible_path) as f:
+            jobs_by_id = {j["id"]: j for j in json.load(f)}
+
+    calibration_enabled = cfg.calibration.get("enabled", True)
+    calib_cfg = cfg.calibration
+
+    # ── v2.0 calibration, pass 1: per-record BLOCK checks, PRE-clamp ──
+    # Must run before the clamp below, which deliberately breaks the
+    # arithmetic identity for "skip" records -- checking post-clamp would
+    # make the anti-inflation check fire on the very backstop that exists to
+    # protect the scoring contract.
+    if calibration_enabled and fresh_records:
+        pre_clamp = [
+            calibration.check_arithmetic(
+                fresh_records,
+                tol=calib_cfg.get("arithmetic_tolerance", calibration.DEFAULT_ARITHMETIC_TOLERANCE),
+            ),
+            calibration.check_prose_contradiction(
+                fresh_records,
+                markers=tuple(calib_cfg.get("seniority_markers", calibration.DEFAULT_SENIORITY_MARKERS)),
+                seniority_fit_max=calib_cfg.get("seniority_fit_max_with_marker", 3.5),
+            ),
+        ]
+        blocked = calibration.blocking_findings(pre_clamp)
+        if blocked:
+            _fail_calibration(blocked, date)
 
     # Deterministic scoring-contract clamp (AGENT_GUIDE.md: "green means
     # apply-able"). A "skip" recommendation (deal-breaker or a stated
@@ -275,6 +335,45 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
             f"must never leave an apply-tier score)."
         )
 
+    # ── v2.0 calibration, pass 2: batch checks, POST-clamp, PRE-cache ──
+    # A blocked eval must never be cached — see _fail_calibration, which
+    # exits before cache.put runs below.
+    if calibration_enabled and fresh_records:
+        batch_findings = [
+            calibration.check_rubric_vector_clones(
+                fresh_records, jobs_by_id,
+                min_records=calib_cfg.get("clone_min_records", 4),
+                min_companies=calib_cfg.get("clone_min_companies", 3),
+            ),
+            calibration.check_uniformity(
+                fresh_records, cfg.threshold,
+                min_n=calib_cfg.get("min_batch_n", 10),
+                max_stdev=calib_cfg.get("uniformity_max_stdev", 0.25),
+                min_pass_rate=calib_cfg.get("uniformity_min_pass_rate", 0.90),
+            ),
+            calibration.check_dimension_repetition(
+                fresh_records,
+                min_n=calib_cfg.get("min_batch_n", 10),
+                max_mode_share=calib_cfg.get("dimension_mode_share_warn", 0.60),
+                exempt=tuple(calib_cfg.get("dimension_exempt", ("logistics",))),
+            ),
+        ]
+        blocked = calibration.blocking_findings(batch_findings)
+        if blocked:
+            _fail_calibration(blocked, date)
+
+        all_findings = pre_clamp + batch_findings
+        with open(stage_dir / "_calibration.json", "w") as f:
+            f.write(dumps(calibration.findings_to_dicts(all_findings)))
+        warn_headlines = [
+            f"calibration:{f.code}: {f.headline}"
+            for f in all_findings if f.fired and f.severity == "warn"
+        ]
+        for h in warn_headlines:
+            typer.echo(f"[evaluate:finalize] WARN — {h}")
+    else:
+        warn_headlines = []
+
     profile = _load_profile(cfg)
     prompt_version = cfg.prompts.get("eval", "v1")
     cache = Cache(cfg.cache_dir)
@@ -290,4 +389,24 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
                           count_in=len(expected_ids), count_out=len(all_records),
                           seconds=elapsed, prompt_version=prompt_version,
                           cache_hits=meta.get("cache_hits", 0), cache_misses=meta.get("cache_misses", 0),
-                          estimated_tokens=meta.get("estimated_tokens", 0))
+                          estimated_tokens=meta.get("estimated_tokens", 0),
+                          errors=warn_headlines)
+
+
+def _fail_calibration(blocked: list[calibration.Finding], date: str) -> None:
+    """Shared block-and-exit path for both calibration passes. Never called
+    after cache.put runs, so a blocked eval can never survive re-reasoning
+    as a stale cache hit."""
+    lines = []
+    for finding in blocked:
+        lines.append(f"{finding.headline}:")
+        lines.extend(f"  - {d}" for d in finding.detail)
+    typer.echo("[evaluate:finalize] Calibration FAILED:\n" + "\n".join(lines), err=True)
+    typer.echo(
+        "\nAgent: re-reason ONLY the listed job(s) against prompts/eval_v2.md. "
+        "Do not adjust a number just to satisfy this check -- write the score "
+        "the rubric you already wrote actually implies, or rewrite the rubric "
+        "if the number was wrong. Then re-run "
+        f"`careeros evaluate --finalize --date {date}`."
+    )
+    raise typer.Exit(1)

@@ -152,7 +152,14 @@ quoted back. `careeros verify-resume` checks this deterministically too.
    in the bullet itself. Cap at 3-4 bullets per company (Kaagjaat should
    normally get 2-3, not 1, when included — it has three canonical bullets
    available). Reword each selected bullet toward the JD's keywords,
-   preserving every number/entity/technology it names.
+   preserving every number/entity/technology it names. This is a real step,
+   not an optional pass: found live 2026-07-29, 25 resumes for 25 genuinely
+   different companies carried the exact same QRapid bullets, word for
+   word — `verify-resume` still passed (copying invents nothing), but no
+   actual tailoring happened. If a bullet you're about to write is
+   character-for-character identical to `profile.yaml`'s version, that is
+   the signal you skipped this step — go back and reword it toward this
+   specific JD before moving on.
 
    **Front-load the fact.** A recruiter scans the first few words of a
    bullet before deciding whether to read the rest, so a bullet that opens

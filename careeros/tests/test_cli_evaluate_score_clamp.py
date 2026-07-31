@@ -30,6 +30,13 @@ def _cfg(**overrides) -> Config:
         gate_batch_size=50, description_max_chars=4000,
         goals={}, prompts={"eval": "v2"},
         sheets={}, api={}, fx_rates={}, drive={"enabled": False},
+        # This file tests the score CLAMP specifically, an orthogonal
+        # deterministic step — its fixture rubrics are hand-picked for
+        # narrative clarity ("a genuinely strong fit"), not derived to the
+        # 0.05 precision careeros/calibration.py's arithmetic check expects.
+        # Calibration itself is covered by careeros/tests/test_calibration.py
+        # and careeros/tests/test_cli_evaluate_calibration.py.
+        calibration={"enabled": False},
     )
     defaults.update(overrides)
     return Config(**defaults)

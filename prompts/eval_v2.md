@@ -127,7 +127,17 @@ For each job, write `<job-id>.json`:
 
 Field-specific notes:
 - `strengths`: **exactly 3**, most important first.
-- `weaknesses`: **exactly 2**, most material first.
+- `weaknesses`: **exactly 2**, most material first. **Name the specific
+  concern, not a vague gesture at one.** `careeros evaluate --finalize` runs
+  a deterministic check (v2.0) that BLOCKS the batch when a weakness names a
+  seniority mismatch (e.g. "senior for," "is a stretch," "over-senior") but
+  `seniority_fit` doesn't reflect it (still >= 3.5) — a weakness is the
+  reasoning's audit trail, and a number that disagrees with its own prose
+  means the number wasn't actually derived from the reasoning. If you're
+  tempted to soften a weakness's wording just to dodge this check, don't —
+  a vague weakness is a failed weakness regardless of whether anything
+  mechanical catches it, and it's the reader (the candidate, deciding
+  whether to trust this eval) who loses when you do that.
 - `company_summary` and `fit_paragraph` exist so the daily report needs no
   further AI call — write them as the actual Level-1 report content, not as
   throwaway filler. `fit_paragraph` also becomes the cover letter's spine, so

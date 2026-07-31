@@ -1,0 +1,2280 @@
+{
+  "2026-07-28": {
+    "jobs_by_id": {
+      "0258beec14dd1e265c5c179aa0127f9888276f61": {
+        "company": "XO Health Inc."
+      },
+      "04b167b63ff324ad805d91b67d8499d8f86cc39f": {
+        "company": "BJAK"
+      },
+      "04ee4a7f299b5947f96ef715c7f2be9aba996894": {
+        "company": "HighLevel"
+      },
+      "07229a15a5db3008e8fd323399453922c8bc6e8c": {
+        "company": "Bjak"
+      },
+      "0b6f15f5401c351a7b300bfe4b8580f3813fd630": {
+        "company": "Fynd"
+      },
+      "10bfcac2bb18877d944a0a09083f77e5fc3f4474": {
+        "company": "Kira"
+      },
+      "135e8c7cf5745e1f76bddb0ced3d472b605b0c19": {
+        "company": "Shaadi.com"
+      },
+      "14d5b264bc9e8cdc0b0fc8935709f6e32bd2e393": {
+        "company": "Kira"
+      },
+      "16450db83665ae9bd34542029dcd3972f0edc31c": {
+        "company": "Bizee"
+      },
+      "178356c9700e86a875bc2031fb57336e795bf4fa": {
+        "company": "BJAK"
+      },
+      "19b68d19b137a5512d144dfda1b18bfd7cc6e9b7": {
+        "company": "Pendo.io Japan"
+      },
+      "1c0beea4141797f892a86a5b1c76033ec01f68ab": {
+        "company": "Anand Rathi Share and Stock Brokers Ltd"
+      },
+      "2298898a38a95686d7cc1988a2e1cacddc33d3fd": {
+        "company": "Planful"
+      },
+      "23d331a2e2b5aacb5dd6a06b67f4a173da41df65": {
+        "company": "Swoon"
+      },
+      "27d2daf572f76da05d98c875895d5d7e6b837f3c": {
+        "company": "BJAK"
+      },
+      "2ff209503f8f9bd7d24e549efc2fa33db1116f42": {
+        "company": "Bjak"
+      },
+      "30985e047daaccb2f179fa51e2be785b81a4a03c": {
+        "company": "BJAK"
+      },
+      "33c01bfafde605fc8bd50dd2d9e7ab8d77f4631f": {
+        "company": "Bjak"
+      },
+      "36721477d97ddb63d45f6d1970564c272806558c": {
+        "company": "BJAK"
+      },
+      "37fd05e7756e6b6dfb283d44eda24094393bfb04": {
+        "company": "Bjak"
+      },
+      "3c74f5589f01c38f277dc9f87e9589f9fe18a306": {
+        "company": "ASTIKA SOFTWARE TECHNOLOGIES PRIVATE LIMITED"
+      },
+      "3f55d64714f32a113f17e8a839d05e5d47545b54": {
+        "company": "MyAdvice"
+      },
+      "47654254fc03420b480cfe20cd9523c53d713bd3": {
+        "company": "Rare Club"
+      },
+      "4bf15b9937d00c334ad61afe66b50eeeaf413ca6": {
+        "company": "Netomi"
+      },
+      "4c82f4b4f448fa6861a672b93adb27c12b04b774": {
+        "company": "Bjak"
+      },
+      "4f557b988cabfe63fe90ee597400f4a15d08254a": {
+        "company": "Bjak"
+      },
+      "4f7f4274b6d28bf44b3989abef7d2ed9f9a589be": {
+        "company": "Samsonite"
+      },
+      "54bb10e706d941e19e5eecb94d73ddffa583bb70": {
+        "company": "HighLevel"
+      },
+      "59412384c208ef57a2237fb8248800f6d59c1f80": {
+        "company": "Google"
+      },
+      "5a243014bf6786882c3667caaa0d675bfa810694": {
+        "company": "HighLevel"
+      },
+      "5eaa98a356b888f7f8f2c7973508da800fc4b209": {
+        "company": "IDFC FIRST Bank"
+      },
+      "5f8f613eea38309a8f2f3719f50bc0c9dded8126": {
+        "company": "Samsonite Group APAC & Middle East"
+      },
+      "65c15eda5636a791f8699d3ec5752bc6bfb5a069": {
+        "company": "Tailored Brands, Inc."
+      },
+      "68097f23c59935540be1b7783b73dbd7c65fa74d": {
+        "company": "Ashika Group"
+      },
+      "698b9c5b3ba5df849bab0d82457ac123198a1a1f": {
+        "company": "Bjak"
+      },
+      "6cafc361d0684595c657bac1186fd00210b57925": {
+        "company": "A.P. Moller - Maersk"
+      },
+      "6fc5a2af27d4abf105be98ebd46416f561002c5d": {
+        "company": "Chapter Home"
+      },
+      "7385d62fff9b0429f132b3762e2472ffa522742c": {
+        "company": "Drivetrain"
+      },
+      "7dbbfc85b09a046912d82762c43c5e11107dc0d3": {
+        "company": "Sun Pharmaceutical Industries Ltd"
+      },
+      "7e8af516d14ef7f0d09f542f77c555ddc34e37a9": {
+        "company": "Talkdesk"
+      },
+      "8af009de251c73e31c89055ba6a168ba1e3fb0d0": {
+        "company": "Kotak"
+      },
+      "8f72dae99b0f292f4d74faa96a6a4e41b2013ab9": {
+        "company": "BJAK"
+      },
+      "9072e5800c742b6d7ca0ba6c5a31eec69d0ef9f6": {
+        "company": "JoVE"
+      },
+      "9465ad885ca99370efb8deb29b79aae4320b3002": {
+        "company": "HDFC securities"
+      },
+      "98acb17564b345251c6dc679099753fc2c6b6d35": {
+        "company": "Bjak"
+      },
+      "a012f568bee7b9efbe90eaea548c3bdba60f263c": {
+        "company": "DBS Bank"
+      },
+      "a201939bf9b1233fa023765cf904e077d6390fb6": {
+        "company": "Bjak"
+      },
+      "a248d3af401fc9ca97fdd7ec17b6fca126a31236": {
+        "company": "Cofiato"
+      },
+      "a5b4fddf86b89094af76808108e17784bea80aee": {
+        "company": "Schneider Electric"
+      },
+      "aa4ce7bf9ba1d8d8d26f0a0f90c99649d2c6151f": {
+        "company": "Tailored Brands, Inc."
+      },
+      "b188b1959040b21a5bc4b1835384f4751d7d1d76": {
+        "company": "Future Sportler"
+      },
+      "b6289ea0a35445ad6f4e651d8e35c3a1ed82fcce": {
+        "company": "Alegeus"
+      },
+      "b98444134cd5d267032fbf8c60d133467cb4eda0": {
+        "company": "JioSaavn"
+      },
+      "be105c471ba4dfbd5404115e2ebb2a768b930b1d": {
+        "company": "Trellix"
+      },
+      "bfc1665f5b23b843b633182323cd1fbed00da655": {
+        "company": "Lupin"
+      },
+      "cb6014c28bd1c7c791afefe3512937f6ea93120f": {
+        "company": "Kotak"
+      },
+      "d12e362920d1ae3e20b06992bb21c421299ee83c": {
+        "company": "Bjak"
+      },
+      "e343f39aa8d27d5b1ac955a397c43b096ecdb480": {
+        "company": "Pendo.io Japan"
+      },
+      "e3e9b925cb7e03d850882bbac9a730df23a87df1": {
+        "company": "Park Point W.L.L"
+      },
+      "e430cf228382433f91652b8e3dc2735ba2f6a81a": {
+        "company": "BJAK"
+      },
+      "e6da778fd606c95c2539ae62040fde283e1f0de0": {
+        "company": "Capgemini"
+      },
+      "eb8783eb92be3d76476ab45283738bda9e9f91b7": {
+        "company": "Danaher Corporation"
+      },
+      "eeb9d99133e6348029438e73f4ddffc758653e05": {
+        "company": "Bjak"
+      },
+      "f9ce921172def1e1d4b30076f3b0ea07713c40cd": {
+        "company": "Netomi"
+      },
+      "fdffe49b33d6ff5d8e3debb01af24cbcf4793bab": {
+        "company": "Bjak"
+      }
+    },
+    "records": [
+      {
+        "id": "54bb10e706d941e19e5eecb94d73ddffa583bb70",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.0,
+          "logistics": 4.8,
+          "role_fit": 3.5,
+          "seniority_fit": 3.0,
+          "skills_match": 2.5
+        },
+        "score": 3.2,
+        "weaknesses": [
+          "Candidate lacks background in telecom, SIP, and hardphones",
+          "Staff PM seniority level is a stretch for ~4 years experience"
+        ]
+      },
+      {
+        "id": "0258beec14dd1e265c5c179aa0127f9888276f61",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.7,
+          "logistics": 5.0,
+          "role_fit": 5.0,
+          "seniority_fit": 4.5,
+          "skills_match": 5.0
+        },
+        "score": 4.9,
+        "weaknesses": [
+          "Requires learning US healthcare claims and EDI transaction standards",
+          "Requires balancing complex compliance, pricing, and network dependencies"
+        ]
+      },
+      {
+        "id": "0b6f15f5401c351a7b300bfe4b8580f3813fd630",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.6,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "Requires managing large-scale FMCG client distribution backlogs",
+          "Onsite requirement is less preferred than remote work mode"
+        ]
+      },
+      {
+        "id": "5a243014bf6786882c3667caaa0d675bfa810694",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.8,
+          "role_fit": 4.8,
+          "seniority_fit": 3.0,
+          "skills_match": 4.5
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Staff PM level is a seniority stretch for ~4 years experience",
+          "Requires coordinating monetization workflows across multiple departments"
+        ]
+      },
+      {
+        "id": "be105c471ba4dfbd5404115e2ebb2a768b930b1d",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.0,
+          "logistics": 4.8,
+          "role_fit": 3.2,
+          "seniority_fit": 3.2,
+          "skills_match": 2.0
+        },
+        "score": 2.9,
+        "weaknesses": [
+          "Deep endpoint security (EDR, EPP) domain knowledge is required",
+          "7+ years PM experience is a seniority stretch"
+        ]
+      },
+      {
+        "id": "f9ce921172def1e1d4b30076f3b0ea07713c40cd",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 5.0,
+          "logistics": 4.8,
+          "role_fit": 5.0,
+          "seniority_fit": 4.2,
+          "skills_match": 5.0
+        },
+        "score": 4.8,
+        "weaknesses": [
+          "Requires 5-8 years of experience, slightly above candidate's tenure",
+          "Requires knowledge of CCaaS/agent desk integrations"
+        ]
+      },
+      {
+        "id": "33c01bfafde605fc8bd50dd2d9e7ab8d77f4631f",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.8,
+          "role_fit": 4.9,
+          "seniority_fit": 4.2,
+          "skills_match": 4.7
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires navigating highly complex Southeast Asian regulations from India",
+          "High consequence environment with immediate visibility of transaction errors"
+        ]
+      },
+      {
+        "id": "9465ad885ca99370efb8deb29b79aae4320b3002",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.5,
+          "seniority_fit": 4.8,
+          "skills_match": 4.2
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Requires deep compliance and risk coordination specific to derivatives",
+          "Onsite requirement is less preferred than remote work mode"
+        ]
+      },
+      {
+        "id": "68097f23c59935540be1b7783b73dbd7c65fa74d",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 5.0,
+          "logistics": 4.2,
+          "role_fit": 5.0,
+          "seniority_fit": 4.5,
+          "skills_match": 4.9
+        },
+        "score": 4.8,
+        "weaknesses": [
+          "Onsite requirement is less preferred than remote work mode",
+          "Requires deep knowledge of SEBI mutual fund guidelines"
+        ]
+      },
+      {
+        "id": "4bf15b9937d00c334ad61afe66b50eeeaf413ca6",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 5.0,
+          "logistics": 4.8,
+          "role_fit": 5.0,
+          "seniority_fit": 4.2,
+          "skills_match": 5.0
+        },
+        "score": 4.8,
+        "weaknesses": [
+          "Requires 5-8 years of experience, slightly above candidate's tenure",
+          "Requires knowledge of CCaaS/agent desk integrations"
+        ]
+      },
+      {
+        "id": "135e8c7cf5745e1f76bddb0ced3d472b605b0c19",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.0,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 3.5,
+          "skills_match": 4.8
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "APM title is a minor step-down in seniority compared to PM/Founder",
+          "Consumer match-making domain is adjacent to B2B/fintech background"
+        ]
+      },
+      {
+        "id": "04ee4a7f299b5947f96ef715c7f2be9aba996894",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.2,
+          "logistics": 4.8,
+          "role_fit": 4.2,
+          "seniority_fit": 3.0,
+          "skills_match": 4.0
+        },
+        "score": 4.0,
+        "weaknesses": [
+          "Staff PM level is a seniority stretch for ~4 years experience",
+          "Heavy focus on email-specific delivery and scheduling protocols"
+        ]
+      },
+      {
+        "id": "e3e9b925cb7e03d850882bbac9a730df23a87df1",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.5,
+          "logistics": 4.2,
+          "role_fit": 4.2,
+          "seniority_fit": 4.5,
+          "skills_match": 4.0
+        },
+        "score": 4.1,
+        "weaknesses": [
+          "Facility management/parking domain is a bit specific and operational",
+          "Heavy emphasis on workforce tracking and physical location integrations"
+        ]
+      },
+      {
+        "id": "1c0beea4141797f892a86a5b1c76033ec01f68ab",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Requires heavy interaction with Fund Managers and research notes creation",
+          "Onsite requirement is less preferred than remote work mode"
+        ]
+      },
+      {
+        "id": "b6289ea0a35445ad6f4e651d8e35c3a1ed82fcce",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.8,
+          "role_fit": 4.7,
+          "seniority_fit": 3.8,
+          "skills_match": 4.5
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Requires 6-10 years PM experience which is slightly senior",
+          "Requires navigating healthcare claims domain regulations"
+        ]
+      },
+      {
+        "id": "b98444134cd5d267032fbf8c60d133467cb4eda0",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.5,
+          "logistics": 4.5,
+          "role_fit": 4.2,
+          "seniority_fit": 4.0,
+          "skills_match": 4.0
+        },
+        "score": 4.0,
+        "weaknesses": [
+          "Audio streaming domain is adjacent to candidate's SaaS/fintech core",
+          "Lacks music science / entertainment ecosystem experience"
+        ]
+      },
+      {
+        "id": "9072e5800c742b6d7ca0ba6c5a31eec69d0ef9f6",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.5,
+          "logistics": 4.8,
+          "role_fit": 4.2,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.2,
+        "weaknesses": [
+          "Scientific/academic research domain is new to candidate",
+          "Less transaction/payments systems involvement than previous roles"
+        ]
+      },
+      {
+        "id": "04b167b63ff324ad805d91b67d8499d8f86cc39f",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.8,
+          "role_fit": 4.9,
+          "seniority_fit": 4.2,
+          "skills_match": 4.7
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires navigating highly complex Southeast Asian regulations from India",
+          "High consequence environment with immediate visibility of transaction errors"
+        ]
+      }
+    ]
+  },
+  "2026-07-29": {
+    "jobs_by_id": {
+      "04ee4a7f299b5947f96ef715c7f2be9aba996894": {
+        "company": "HighLevel"
+      },
+      "057333dc344b3fa3b44471cd97b89ff7de6a0e51": {
+        "company": "SUN PHARMA"
+      },
+      "07990eaac5f2d1ae97434544235ea2a2869368e9": {
+        "company": "Kotak"
+      },
+      "132a2c2ce43eb8884db8b6c759ae04fe555eb210": {
+        "company": "iLevelUP"
+      },
+      "139e2a21adc8bd5309cc7a76350a2ef743035a41": {
+        "company": "ClanX"
+      },
+      "1716aff87c9fda7c2857ba0fff6f8e739ac26226": {
+        "company": "Beco"
+      },
+      "1e50f6c0d06fcccce17289f25d631d0688a66b64": {
+        "company": "Honeywell Aerospace"
+      },
+      "213a7c0de609dedda4173c49ca5ffa99b9bef783": {
+        "company": "PayU Payments"
+      },
+      "24aef4e152740f25631081f429501f578de11c8b": {
+        "company": "Microsoft"
+      },
+      "25b969b224cc1c2a040fe80e44bd7b2588b1e2bd": {
+        "company": "Neumo Holdings LLC"
+      },
+      "30552a58f4d77b82850275d6ab15069273b4f635": {
+        "company": "Swym"
+      },
+      "30771d902690edd5a963cac0a07c00a4b5ee58e2": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "33c01bfafde605fc8bd50dd2d9e7ab8d77f4631f": {
+        "company": "Bjak"
+      },
+      "3553181e7aa67b4e3128043d0fc0a2bda5aebda5": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "3b249b2a6b5a3297eb8861b1e3355daa4e555e51": {
+        "company": "Oula"
+      },
+      "4f7f4274b6d28bf44b3989abef7d2ed9f9a589be": {
+        "company": "Samsonite"
+      },
+      "5382ec9dcfbe0df53f7a3d2dbcf0e27f6b733d4a": {
+        "company": "Solenis"
+      },
+      "545cbca5cf4cb410d4d24241d564dc604fc7d39a": {
+        "company": "Benjamin"
+      },
+      "54bb10e706d941e19e5eecb94d73ddffa583bb70": {
+        "company": "HighLevel"
+      },
+      "5a243014bf6786882c3667caaa0d675bfa810694": {
+        "company": "HighLevel"
+      },
+      "5c2cf98edbe88e002e0609a12f73ef756df18762": {
+        "company": "Postmedia Network Inc."
+      },
+      "6374a0cfdf1d902457965973911eab6a4f163584": {
+        "company": "Abbott"
+      },
+      "63ddf7b2498bbe9ea487ee333d455b2f70a139e0": {
+        "company": "IDFC FIRST Bank"
+      },
+      "65d853c53d2eb94cf58284d16c73768ff77d41e6": {
+        "company": "MoneyHero Group (Nasdaq: MNY)"
+      },
+      "6b837605b820f074cb4397745d815321805ad770": {
+        "company": "Monks"
+      },
+      "711f03877173c674c286de5a9e95ba153a1e7fba": {
+        "company": "Thinkscoop Technologies"
+      },
+      "7385d62fff9b0429f132b3762e2472ffa522742c": {
+        "company": "Drivetrain"
+      },
+      "755042fb9a1a76ded5432eeda7ade23856cac208": {
+        "company": "Tria"
+      },
+      "779c0dabf09a597dd6fb664f30d043782146197c": {
+        "company": "RealPage, Inc."
+      },
+      "787f918098b318b56b26282770795727004ddc96": {
+        "company": "VulnCheck"
+      },
+      "7bfbbdba578707c6f8346e5d9547820bbf2fb343": {
+        "company": "Solenis"
+      },
+      "7c28016ccf52be7312ee5e39b329cf617edde704": {
+        "company": "Grab"
+      },
+      "7f1ea963f041b4305cc84b12ecf1ac6b4ab84384": {
+        "company": "Kotak"
+      },
+      "8e78951c7ee447886441dfcc843d8be50abe66a4": {
+        "company": "Fourth"
+      },
+      "9072e5800c742b6d7ca0ba6c5a31eec69d0ef9f6": {
+        "company": "JoVE"
+      },
+      "90de9caa28248afbb2550512b2a02e139bc38b40": {
+        "company": "DBS Bank"
+      },
+      "97280bc60350d9b52ca0aacbb33a973457a3a225": {
+        "company": "IDFC FIRST Bank"
+      },
+      "98acb17564b345251c6dc679099753fc2c6b6d35": {
+        "company": "Bjak"
+      },
+      "a043efd079050dac480170a82c0df53150b627ec": {
+        "company": "L&T Finance"
+      },
+      "a1571ea1cf87210142a4bcbfe467cba5ba92c932": {
+        "company": "Empower"
+      },
+      "ab1fef29eed254e039e00019e877d56f2fdbe62e": {
+        "company": "Motorola Solutions"
+      },
+      "b59b3263b883e13a6c3f7b3d65c161294aeff372": {
+        "company": "Amazon"
+      },
+      "b6289ea0a35445ad6f4e651d8e35c3a1ed82fcce": {
+        "company": "Alegeus"
+      },
+      "bc6e7bcc30be60be62bc91d4ee52c1a8dd6627f8": {
+        "company": "Deepgram"
+      },
+      "bf4607565f05d379af2aaab2fa471e1744b3afbc": {
+        "company": "BJAK"
+      },
+      "c388c0af3f49014e95fe739cc25ddf54d0d9f3be": {
+        "company": "Sidecar Health"
+      },
+      "ca448382700c1a85e48a060b79d1e4a1e32c6a22": {
+        "company": "Verra Mobility"
+      },
+      "cb6014c28bd1c7c791afefe3512937f6ea93120f": {
+        "company": "Kotak"
+      },
+      "cd0df8295f60d4b1a817fd40a747fbc9c2f4edcb": {
+        "company": "Sun Pharmaceutical Industries Ltd"
+      },
+      "d389ef5cf4a4d382c999be73812bdc95aef12609": {
+        "company": "NEAT India"
+      },
+      "d4d250335bb27eceefc60628dc64bc53b315e4c9": {
+        "company": "Base.org Careers Page"
+      },
+      "d69b6e56eb5ac2ee2fdc1cee3ea5e9c9200c5a6d": {
+        "company": "Benjamin"
+      },
+      "d7db99e9a894b518bd81a5db5ecffef35b6343c9": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "d9838a6db3c9bfdc00beadd889aad14ac8139c26": {
+        "company": "Kotak"
+      },
+      "db0ea6e78b46926dd96c695ee1eec928e0bc9add": {
+        "company": "Swym"
+      },
+      "db1f32eea0fa23ac16bbeb67b50dc7d9d28094da": {
+        "company": "InfoTrack US"
+      },
+      "e06c756338386ea71ba8e96b4b34484e0b197593": {
+        "company": "Amazon"
+      },
+      "e510cca823b94799db31ca87642fe84adb36258e": {
+        "company": "Kira"
+      },
+      "eb8783eb92be3d76476ab45283738bda9e9f91b7": {
+        "company": "Danaher Corporation"
+      },
+      "eba86f22a5c9d95b645877cb587909f1e3528a4b": {
+        "company": "Bjak"
+      },
+      "ef71d4d866a4fd2ee4b4828721c8ff75397bfb54": {
+        "company": "BJAK"
+      },
+      "f7beddaead65305969d319735391e38d9ecd3b1f": {
+        "company": "Experian"
+      },
+      "fce6f262a287f5b3352541ac4b2f25d66fb25f89": {
+        "company": "Biz-Tech Analytics"
+      },
+      "fd7f24d74cc3106246ecb1ca36e69e6cf41d098f": {
+        "company": "Benjamin"
+      }
+    },
+    "records": [
+      {
+        "id": "ef71d4d866a4fd2ee4b4828721c8ff75397bfb54",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.9,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.8
+        },
+        "score": 4.8,
+        "weaknesses": [
+          "High consequence transactional neobanking environment",
+          "Requires balancing rapid development with auditability"
+        ]
+      },
+      {
+        "id": "d7db99e9a894b518bd81a5db5ecffef35b6343c9",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Requires 10 years experience which is a significant stretch",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "a043efd079050dac480170a82c0df53150b627ec",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 5.0,
+          "logistics": 4.5,
+          "role_fit": 4.9,
+          "seniority_fit": 4.2,
+          "skills_match": 4.9
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "5-10 years experience expected is a minor stretch",
+          "Coordinating complex voice pipelines requires deep technical management"
+        ]
+      },
+      {
+        "id": "3553181e7aa67b4e3128043d0fc0a2bda5aebda5",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Onsite requirement is less preferred than remote",
+          "Requires coordinating with branch banking operations teams"
+        ]
+      },
+      {
+        "id": "eba86f22a5c9d95b645877cb587909f1e3528a4b",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.7,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires managing ambiguous operational tracks",
+          "High pace of Southeast Asian neobank expansion environment"
+        ]
+      },
+      {
+        "id": "d9838a6db3c9bfdc00beadd889aad14ac8139c26",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Onsite requirement is less preferred than remote",
+          "Requires coordinating with branch banking operations teams"
+        ]
+      },
+      {
+        "id": "98acb17564b345251c6dc679099753fc2c6b6d35",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.7,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires managing multiple business tracks simultaneously",
+          "Requires navigating complex regional regulatory landscapes"
+        ]
+      },
+      {
+        "id": "7f1ea963f041b4305cc84b12ecf1ac6b4ab84384",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Requires navigating traditional corporate banking structure",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "63ddf7b2498bbe9ea487ee333d455b2f70a139e0",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Traditional home loan sector focus is operationally heavy",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "755042fb9a1a76ded5432eeda7ade23856cac208",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires adapting to a high-speed early-stage web3/crypto developer environment",
+          "Requires navigating emerging decentralized identity standards"
+        ]
+      },
+      {
+        "id": "057333dc344b3fa3b44471cd97b89ff7de6a0e51",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.0
+        },
+        "score": 4.1,
+        "weaknesses": [
+          "Pharma digital transformation is adjacent to core Fintech/SaaS",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "bf4607565f05d379af2aaab2fa471e1744b3afbc",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.7,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires managing ambiguous timelines and operational tracks",
+          "Requires coordinating cross-functional remote teams"
+        ]
+      },
+      {
+        "id": "07990eaac5f2d1ae97434544235ea2a2869368e9",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Requires 10 years experience which is a significant stretch",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "db0ea6e78b46926dd96c695ee1eec928e0bc9add",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires managing partnerships with third-party app stores",
+          "Requires navigating merchant adoption pipelines"
+        ]
+      },
+      {
+        "id": "90de9caa28248afbb2550512b2a02e139bc38b40",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.5,
+          "seniority_fit": 4.8,
+          "skills_match": 4.2
+        },
+        "score": 4.3,
+        "weaknesses": [
+          "Traditional retail banking compliance overhead",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "711f03877173c674c286de5a9e95ba153a1e7fba",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.2,
+          "skills_match": 4.7
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "5-7 years experience range is slightly senior for candidate",
+          "Requires working with diverse third-party AI integration systems"
+        ]
+      },
+      {
+        "id": "97280bc60350d9b52ca0aacbb33a973457a3a225",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.0,
+          "skills_match": 4.8
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Senior PM title is a slight stretch for ~4 years experience",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "139e2a21adc8bd5309cc7a76350a2ef743035a41",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.2,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "Requires coordinating between remote teams and clients",
+          "Requires managing dynamic consulting and software delivery cycles"
+        ]
+      },
+      {
+        "id": "e510cca823b94799db31ca87642fe84adb36258e",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires working across multiple operational divisions",
+          "Early stage platform requires balancing rapid execution with scalability"
+        ]
+      },
+      {
+        "id": "30552a58f4d77b82850275d6ab15069273b4f635",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.6,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "Requires deep knowledge of Shopify/e-commerce merchant ecosystem",
+          "Requires balancing product growth metrics with operational tasks"
+        ]
+      },
+      {
+        "id": "fce6f262a287f5b3352541ac4b2f25d66fb25f89",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.2,
+          "logistics": 4.2,
+          "role_fit": 4.6,
+          "seniority_fit": 4.8,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Associate title is slightly junior",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "30771d902690edd5a963cac0a07c00a4b5ee58e2",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Requires managing affluent client interfaces",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "213a7c0de609dedda4173c49ca5ffa99b9bef783",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.4,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "APM title is a minor seniority step-down",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "a1571ea1cf87210142a4bcbfe467cba5ba92c932",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Requires coordination across distributed engineering teams",
+          "Requires managing scaling challenges of modern wealth platforms"
+        ]
+      },
+      {
+        "id": "cd0df8295f60d4b1a817fd40a747fbc9c2f4edcb",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.0
+        },
+        "score": 4.1,
+        "weaknesses": [
+          "Pharmaceutical digital marketing domain is adjacent to fintech/SaaS core",
+          "Onsite requirement is less preferred than remote"
+        ]
+      }
+    ]
+  },
+  "2026-07-30": {
+    "jobs_by_id": {
+      "00eec490ec4e2d972ce64a4be683ccdac5a7235c": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "04ee4a7f299b5947f96ef715c7f2be9aba996894": {
+        "company": "HighLevel"
+      },
+      "0550f75b0871ad8954522525a1bbd5f55696548d": {
+        "company": "RAKT"
+      },
+      "07990eaac5f2d1ae97434544235ea2a2869368e9": {
+        "company": "Kotak"
+      },
+      "0b83a4dd74f8783a280b1ca7de116581e0da0f89": {
+        "company": "1inch"
+      },
+      "0f34109a9b79ba7d3796286f62dcb02c21f898ad": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "135e8c7cf5745e1f76bddb0ced3d472b605b0c19": {
+        "company": "Shaadi.com"
+      },
+      "13b98292c40a14e694cfcf91cb3f877c8291d02a": {
+        "company": "Omnisend"
+      },
+      "1a575aea87d3ce6f00c1d0b4717e06719549649d": {
+        "company": "Multiplier Technologies Private Limited"
+      },
+      "1b624fc42f854ec63b8cb422c58126040025f5fc": {
+        "company": "Services et syst\u00e8mes de compression Ingersoll Rand"
+      },
+      "222019f6cbeb92ac6df6ce4fd7506a9d1a435199": {
+        "company": "Empower"
+      },
+      "2277f419521b40448729f54017db3433fbb475bb": {
+        "company": "Adler & Pfau India"
+      },
+      "30552a58f4d77b82850275d6ab15069273b4f635": {
+        "company": "Swym"
+      },
+      "3139436d81fa732641b9e077ddb4f096c1b9b143": {
+        "company": "Sarvottam Polymers Pvt Ltd."
+      },
+      "33c01bfafde605fc8bd50dd2d9e7ab8d77f4631f": {
+        "company": "Bjak"
+      },
+      "3cfe6fd12955918761f8832d06de84395f0151ea": {
+        "company": "Rithum"
+      },
+      "3e63bd577e3ab35e5249e39e720fd056e0ee6679": {
+        "company": "Rithum LinkedIn Board"
+      },
+      "4d0225497319db3cd7aa91bec9f7ba81cf902388": {
+        "company": "Dragos"
+      },
+      "5630201b30ee0ecc4b21ed7a511b6544fad07f35": {
+        "company": "SUN PHARMA"
+      },
+      "5a243014bf6786882c3667caaa0d675bfa810694": {
+        "company": "HighLevel"
+      },
+      "5ae285fc50b3c3bf6ca44275965ad300a180f456": {
+        "company": "The Mill Adventure LTD"
+      },
+      "5ca834261bc0ff145caf4be7cd0d7c53943e74c7": {
+        "company": "FourKites"
+      },
+      "5d33127d2a9d0ba0e54864e8e61358cad9b52137": {
+        "company": "Ciena"
+      },
+      "610dabb47fcc17a9a3cee9749b197ef4733a4382": {
+        "company": "Kotak"
+      },
+      "6374a0cfdf1d902457965973911eab6a4f163584": {
+        "company": "Abbott"
+      },
+      "644b0a7e9970cc8c4e29e9cf56c94329cdd166a1": {
+        "company": "Nexshift.ai"
+      },
+      "6eb057df7f518bb2f3e76d58c4ceaf195404e1b5": {
+        "company": "QuickSync"
+      },
+      "711f03877173c674c286de5a9e95ba153a1e7fba": {
+        "company": "Thinkscoop Technologies"
+      },
+      "7385d62fff9b0429f132b3762e2472ffa522742c": {
+        "company": "Drivetrain"
+      },
+      "755042fb9a1a76ded5432eeda7ade23856cac208": {
+        "company": "Tria"
+      },
+      "76508ee60864bb9af634288bbda3ade81854f1dd": {
+        "company": "Coupa"
+      },
+      "7731f34054da6b26b6a84766f2caad063eeaf3e8": {
+        "company": "Lexsi Labs"
+      },
+      "7f1ea963f041b4305cc84b12ecf1ac6b4ab84384": {
+        "company": "Kotak"
+      },
+      "87d1d36ab3da2528783380c23c01352b7c4060e8": {
+        "company": "IDFC FIRST Bank"
+      },
+      "8abe5a2039ba2c6b994a84949f5391ecfe2a7290": {
+        "company": "Appspace"
+      },
+      "8e8c0632f9d9ab2d5aaa430956ddc436f6909d99": {
+        "company": "HR+ | Fractional CHRO & HR Advisory"
+      },
+      "9072e5800c742b6d7ca0ba6c5a31eec69d0ef9f6": {
+        "company": "JoVE"
+      },
+      "90de9caa28248afbb2550512b2a02e139bc38b40": {
+        "company": "DBS Bank"
+      },
+      "937387ea8e98876c52edc08455d1a15746499a6c": {
+        "company": "Scalixity"
+      },
+      "98acb17564b345251c6dc679099753fc2c6b6d35": {
+        "company": "Bjak"
+      },
+      "9977f078af3e330ca4ec2f802889402436aa7394": {
+        "company": "EY"
+      },
+      "9e6f1baf845d12c85e02c2392a2195b5b1768a1f": {
+        "company": "Cisco"
+      },
+      "9f15f10b391f1d07941e2ba155cffaa6b15e1a9b": {
+        "company": "Empower Pharmacy"
+      },
+      "9f7e97226349704ac5d1fad04bdb7b2e849042e5": {
+        "company": "Binance"
+      },
+      "a1571ea1cf87210142a4bcbfe467cba5ba92c932": {
+        "company": "Empower"
+      },
+      "a8b23a67680f30d22e24b2f3c948165aff1eee3c": {
+        "company": "ServiceNow"
+      },
+      "adc27478e9f8f8e3e9e2c1891bfe21e96944fc63": {
+        "company": "1inch"
+      },
+      "b5a98ab98e6726f4d308ac9c37327f0558369c9c": {
+        "company": "1inch"
+      },
+      "b5e2bdca2309e89f3af22dc28d070ee7acaadf6e": {
+        "company": "Raise Financial Services"
+      },
+      "b838264a364cf1a0c41dc56300a1e23edad2f051": {
+        "company": "ServiceNow"
+      },
+      "c3d4b7994db4db30f0996b143a40174da967e0ec": {
+        "company": "NMI"
+      },
+      "c81c5b86ecc36ebba3c2f13e2d22a246971f0075": {
+        "company": "Kyivstar"
+      },
+      "c97780b4b53c3fac3b860d11d9c93657c2abc409": {
+        "company": "IDFC FIRST Bank"
+      },
+      "cabe305b97a0185f9e1ed842978ae2c7612a3b57": {
+        "company": "Ignition AI"
+      },
+      "cbf2ac47c927c5d8b36acf52fae0ae5a78b7a3ea": {
+        "company": "Apollo Finvest"
+      },
+      "cdbe508e0ee535d99e7abace98fcbb5936086efb": {
+        "company": "1inch"
+      },
+      "d0a9a03b283fbe52be41335fdf63afd9ea2d2886": {
+        "company": "Aristo Pharmaceuticals Pvt. Ltd."
+      },
+      "d5d609d28258da1ecc4a019a19680eb9be2770d1": {
+        "company": "EY"
+      },
+      "d88d635db8820d7ec52aa8222f9187c0694c6853": {
+        "company": "Ciena"
+      },
+      "d9838a6db3c9bfdc00beadd889aad14ac8139c26": {
+        "company": "Kotak"
+      },
+      "db0ea6e78b46926dd96c695ee1eec928e0bc9add": {
+        "company": "Swym"
+      },
+      "e06c756338386ea71ba8e96b4b34484e0b197593": {
+        "company": "Amazon"
+      },
+      "e1a892a1fa113a134f0d2d320ecd38cbdc80c245": {
+        "company": "Aggreko"
+      },
+      "eba86f22a5c9d95b645877cb587909f1e3528a4b": {
+        "company": "Bjak"
+      },
+      "ee92b82adfc9d9c8710b60c9ff3b01f2c55a776b": {
+        "company": "Vontier"
+      },
+      "fb40d987e7e44b2fb70b00ab9b0e23062a6076bf": {
+        "company": "Yuno"
+      },
+      "fb446e2e53848759c48dc6f0e8760bea5af89523": {
+        "company": "Kotak"
+      }
+    },
+    "records": [
+      {
+        "id": "0f34109a9b79ba7d3796286f62dcb02c21f898ad",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Traditional retail banking compliance overhead",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "fb446e2e53848759c48dc6f0e8760bea5af89523",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Traditional retail banking compliance overhead",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "937387ea8e98876c52edc08455d1a15746499a6c",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.0,
+          "logistics": 4.8,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Early-stage agency setup requires managing client deliverables",
+          "Mix of product management and project coordinator tasks"
+        ]
+      },
+      {
+        "id": "b5e2bdca2309e89f3af22dc28d070ee7acaadf6e",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "Stock broking compliance and real-time execution risks",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "a8b23a67680f30d22e24b2f3c948165aff1eee3c",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 3.8,
+          "skills_match": 4.6
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Principal PM role is senior for candidate's tenure",
+          "Requires coordinating with complex internal platform teams"
+        ]
+      },
+      {
+        "id": "d5d609d28258da1ecc4a019a19680eb9be2770d1",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Consulting environment involves client-delivery pressures",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "ee92b82adfc9d9c8710b60c9ff3b01f2c55a776b",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 3.8,
+          "logistics": 4.2,
+          "role_fit": 4.5,
+          "seniority_fit": 4.5,
+          "skills_match": 4.0
+        },
+        "score": 4.1,
+        "weaknesses": [
+          "Requires specific EV or smart grid sector experience which is a minor gap",
+          "Requires navigating outcome-linked commercial models"
+        ]
+      },
+      {
+        "id": "76508ee60864bb9af634288bbda3ade81854f1dd",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.2,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 3.8,
+          "skills_match": 4.5
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Principal PM title is a seniority stretch",
+          "Spend management domain is new to candidate"
+        ]
+      },
+      {
+        "id": "1a575aea87d3ce6f00c1d0b4717e06719549649d",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 5.0,
+          "role_fit": 4.8,
+          "seniority_fit": 3.8,
+          "skills_match": 4.5
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Principal PM role is senior for candidate's tenure",
+          "Managing global payroll and entity setups involves complex regulations"
+        ]
+      },
+      {
+        "id": "610dabb47fcc17a9a3cee9749b197ef4733a4382",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Traditional corporate banking compliance overhead",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "87d1d36ab3da2528783380c23c01352b7c4060e8",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.0,
+          "skills_match": 4.8
+        },
+        "score": 4.5,
+        "weaknesses": [
+          "Senior PM title is a slight stretch for candidate's tenure",
+          "Coordinating complex risk and compliance controls in banking"
+        ]
+      },
+      {
+        "id": "00eec490ec4e2d972ce64a4be683ccdac5a7235c",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.2
+        },
+        "score": 4.4,
+        "weaknesses": [
+          "Traditional corporate banking compliance overhead",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "2277f419521b40448729f54017db3433fbb475bb",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.8,
+          "skills_match": 4.5
+        },
+        "score": 4.7,
+        "weaknesses": [
+          "Early-stage startup involves high operational ambiguity",
+          "Onsite requirement is less preferred than remote"
+        ]
+      },
+      {
+        "id": "c97780b4b53c3fac3b860d11d9c93657c2abc409",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.8,
+          "logistics": 4.2,
+          "role_fit": 4.8,
+          "seniority_fit": 4.5,
+          "skills_match": 4.5
+        },
+        "score": 4.6,
+        "weaknesses": [
+          "Traditional corporate banking compliance structures",
+          "Onsite requirement is less preferred than remote"
+        ]
+      }
+    ]
+  },
+  "2026-07-31": {
+    "jobs_by_id": {
+      "00eec490ec4e2d972ce64a4be683ccdac5a7235c": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "01ec29de02ecb6e900dc88cf245b0e2c10c36aad": {
+        "company": "BECU"
+      },
+      "04b167b63ff324ad805d91b67d8499d8f86cc39f": {
+        "company": "BJAK"
+      },
+      "04ee4a7f299b5947f96ef715c7f2be9aba996894": {
+        "company": "HighLevel"
+      },
+      "0550f75b0871ad8954522525a1bbd5f55696548d": {
+        "company": "RAKT"
+      },
+      "05f85d62fb32df547d13a08078c39864ecb596e6": {
+        "company": "AU SMALL FINANCE BANK"
+      },
+      "07990eaac5f2d1ae97434544235ea2a2869368e9": {
+        "company": "Kotak"
+      },
+      "099d8aedb430a7185cfd58779752e9209b20f968": {
+        "company": "TELUS Digital"
+      },
+      "09d105b7cb41c1a2b262a958865f3e8bb54c89de": {
+        "company": "Lato Jobs"
+      },
+      "0f34109a9b79ba7d3796286f62dcb02c21f898ad": {
+        "company": "Kotak Mahindra Bank"
+      },
+      "135e8c7cf5745e1f76bddb0ced3d472b605b0c19": {
+        "company": "Shaadi.com"
+      },
+      "1a575aea87d3ce6f00c1d0b4717e06719549649d": {
+        "company": "Multiplier Technologies Private Limited"
+      },
+      "1fc9429ddd680694f26c1c7b4ab7fe63011d0934": {
+        "company": "TELUS Digital"
+      },
+      "203ca9daf795b626590ec61e8c2bc99d2a0dd778": {
+        "company": "BJAK"
+      },
+      "213a7c0de609dedda4173c49ca5ffa99b9bef783": {
+        "company": "PayU Payments"
+      },
+      "30552a58f4d77b82850275d6ab15069273b4f635": {
+        "company": "Swym"
+      },
+      "3139436d81fa732641b9e077ddb4f096c1b9b143": {
+        "company": "Sarvottam Polymers Pvt Ltd."
+      },
+      "32a278068f2f4ddab5c8d6c6ef3b18cedd030bf6": {
+        "company": "BECU"
+      },
+      "33c01bfafde605fc8bd50dd2d9e7ab8d77f4631f": {
+        "company": "Bjak"
+      },
+      "343140eb5c38c056adfb976391348ce983c211b4": {
+        "company": "appflame"
+      },
+      "383795ed1cc64ceea91ee5a739b3b64768143baa": {
+        "company": "Alpaca"
+      },
+      "4802a5731ff2771b0836b0cc681095ca58d075c3": {
+        "company": "BECU"
+      },
+      "4f59444ee495407a88b0cf55662b7e4650c8d683": {
+        "company": "Binance"
+      },
+      "5630201b30ee0ecc4b21ed7a511b6544fad07f35": {
+        "company": "SUN PHARMA"
+      },
+      "5a243014bf6786882c3667caaa0d675bfa810694": {
+        "company": "HighLevel"
+      },
+      "5a346335fba9110c386d847a4562e98b94abf3f5": {
+        "company": "BECU"
+      },
+      "5b255d9a1a134f7efd46b3cef465105311bbe1a3": {
+        "company": "Havas Life Mumbai"
+      },
+      "610dabb47fcc17a9a3cee9749b197ef4733a4382": {
+        "company": "Kotak"
+      },
+      "6374a0cfdf1d902457965973911eab6a4f163584": {
+        "company": "Abbott"
+      },
+      "644b0a7e9970cc8c4e29e9cf56c94329cdd166a1": {
+        "company": "Nexshift.ai"
+      },
+      "6b0bf19fa0d92ae42442d99a2da434e25ae8b0d5": {
+        "company": "NeoGrowth Credit Pvt. Ltd."
+      },
+      "6c5fdd5bbabc2d85280446564ab5811467278f25": {
+        "company": "DBSync Inc"
+      },
+      "6e73c94debc81a623a9f342f3fb4896f3cb9fada": {
+        "company": "Xplor Technologies"
+      },
+      "6eb057df7f518bb2f3e76d58c4ceaf195404e1b5": {
+        "company": "QuickSync"
+      },
+      "72d4e59f4eca50fb26367c8229f631a677913608": {
+        "company": "United Tech"
+      },
+      "7385d62fff9b0429f132b3762e2472ffa522742c": {
+        "company": "Drivetrain"
+      },
+      "755042fb9a1a76ded5432eeda7ade23856cac208": {
+        "company": "Tria"
+      },
+      "7653d4219cf845820cbebd0fa9faed18aa3ece47": {
+        "company": "BJAK"
+      },
+      "7731f34054da6b26b6a84766f2caad063eeaf3e8": {
+        "company": "Lexsi Labs"
+      },
+      "77ee95fa534bed7a0501ebd87c7b95cf7c516024": {
+        "company": "BECU"
+      },
+      "79d4391d295af2deda6093a10ae5c612f2c18d46": {
+        "company": "Coupa Software, Inc."
+      },
+      "7f1ea963f041b4305cc84b12ecf1ac6b4ab84384": {
+        "company": "Kotak"
+      },
+      "87d1d36ab3da2528783380c23c01352b7c4060e8": {
+        "company": "IDFC FIRST Bank"
+      },
+      "88efe4de0ad92a31d42721a35f02d450bda58bc3": {
+        "company": "EY"
+      },
+      "8bb8ac00992bab11f4b2d025546c275292eb1312": {
+        "company": "Servify"
+      },
+      "8bfd2fc01868116f687ae2d63ade0d68d0f45da1": {
+        "company": "DBS Bank"
+      },
+      "9072e5800c742b6d7ca0ba6c5a31eec69d0ef9f6": {
+        "company": "JoVE"
+      },
+      "90de9caa28248afbb2550512b2a02e139bc38b40": {
+        "company": "DBS Bank"
+      },
+      "937387ea8e98876c52edc08455d1a15746499a6c": {
+        "company": "Scalixity"
+      },
+      "98acb17564b345251c6dc679099753fc2c6b6d35": {
+        "company": "Bjak"
+      },
+      "9977f078af3e330ca4ec2f802889402436aa7394": {
+        "company": "EY"
+      },
+      "9b244f1e19fa122598e7bb574b4f449a281e911d": {
+        "company": "Empower"
+      },
+      "a1571ea1cf87210142a4bcbfe467cba5ba92c932": {
+        "company": "Empower"
+      },
+      "a8b23a67680f30d22e24b2f3c948165aff1eee3c": {
+        "company": "ServiceNow"
+      },
+      "b3919a6bb901082c2c1f9e3cd456f1a188aaa03d": {
+        "company": "Armada"
+      },
+      "b6289ea0a35445ad6f4e651d8e35c3a1ed82fcce": {
+        "company": "Alegeus"
+      },
+      "bf4607565f05d379af2aaab2fa471e1744b3afbc": {
+        "company": "BJAK"
+      },
+      "c5d209539f10b2c59d88817fea4ced567245927c": {
+        "company": "Unit4"
+      },
+      "c97780b4b53c3fac3b860d11d9c93657c2abc409": {
+        "company": "IDFC FIRST Bank"
+      },
+      "c9e56e332aca21442470e214956bed7b665ed6f7": {
+        "company": "Bjak"
+      },
+      "cabe305b97a0185f9e1ed842978ae2c7612a3b57": {
+        "company": "Ignition AI"
+      },
+      "cb37cbc5eeb2f0fe12bce7d7a4885af752125e68": {
+        "company": "Sundayy"
+      },
+      "cd0df8295f60d4b1a817fd40a747fbc9c2f4edcb": {
+        "company": "Sun Pharmaceutical Industries Ltd"
+      },
+      "d0a9a03b283fbe52be41335fdf63afd9ea2d2886": {
+        "company": "Aristo Pharmaceuticals Pvt. Ltd."
+      },
+      "d279d1963a2b4e1a8972c0f6dd3d0d24af56ceab": {
+        "company": "Flight Centre"
+      },
+      "d30daf35974294407cdd6253bbc91af466369b0a": {
+        "company": "KeyStone Software LLC"
+      },
+      "d5128074515dd997c6b47ee2df6f69fa274bb035": {
+        "company": "BECU"
+      },
+      "d9838a6db3c9bfdc00beadd889aad14ac8139c26": {
+        "company": "Kotak"
+      },
+      "db0ea6e78b46926dd96c695ee1eec928e0bc9add": {
+        "company": "Swym"
+      },
+      "dd948abb7691bed9ebf0452a65f3d97aae8549fd": {
+        "company": "Civica"
+      },
+      "df890b910c085bba897e5770cd138e9367dc2497": {
+        "company": "IXOPAY"
+      },
+      "e06c756338386ea71ba8e96b4b34484e0b197593": {
+        "company": "Amazon"
+      },
+      "e1a892a1fa113a134f0d2d320ecd38cbdc80c245": {
+        "company": "Aggreko"
+      },
+      "e510cca823b94799db31ca87642fe84adb36258e": {
+        "company": "Kira"
+      },
+      "e6319e21f08419505f3c33cfb2f65b23b0e7eca5": {
+        "company": "Everway"
+      },
+      "e7486537438e39c524b27fe02d217c4d1d7fd81a": {
+        "company": "Bjak"
+      },
+      "eba86f22a5c9d95b645877cb587909f1e3528a4b": {
+        "company": "Bjak"
+      },
+      "ee92b82adfc9d9c8710b60c9ff3b01f2c55a776b": {
+        "company": "Vontier"
+      },
+      "ef71d4d866a4fd2ee4b4828721c8ff75397bfb54": {
+        "company": "BJAK"
+      },
+      "f2a3ea4e39c69088b526bd06d7e23cd14bcfd373": {
+        "company": "Caspar Health"
+      },
+      "f628a723b9c8845bda89f27a466a4b7f8edb0a39": {
+        "company": "NMDCON"
+      },
+      "fa98dae3cbdf3a1ffe4eaeab101bff821707dee9": {
+        "company": "Caspar Health"
+      },
+      "fb446e2e53848759c48dc6f0e8760bea5af89523": {
+        "company": "Kotak"
+      },
+      "fb92dfeb7a59d3a36f5c8ab6ba936f2251783e05": {
+        "company": "BECU"
+      },
+      "fd7c0a8317c3c503fd55d23ca97df80135c5b9d8": {
+        "company": "Bjak"
+      },
+      "ff5f3ac3b12e46959d09fe2dc85085f93d438c2d": {
+        "company": "ideaForge"
+      }
+    },
+    "records": [
+      {
+        "id": "6c5fdd5bbabc2d85280446564ab5811467278f25",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.8,
+          "logistics": 4.3,
+          "role_fit": 1.7,
+          "seniority_fit": 1.8,
+          "skills_match": 1.8
+        },
+        "score": 2.2,
+        "weaknesses": [
+          "This is a product-marketing role (campaigns, partnerships, events, lead-gen), not product management, and the candidate's real track record is building product, not running marketing campaigns",
+          "JD requires 5+ years specifically in marketing; the candidate has no formal marketing-track experience"
+        ]
+      },
+      {
+        "id": "8d47d93bc4de623acbd2be91806076f85f70a2be",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.0,
+          "logistics": 1.5,
+          "role_fit": 3.7,
+          "seniority_fit": 4.0,
+          "skills_match": 3.6
+        },
+        "score": 3.4,
+        "weaknesses": [
+          "Role is explicitly scoped to Eastern Time Zone US/Canada or Europe candidates; India isn't a listed eligible location",
+          "No direct webshop/loyalty-program or gaming-industry experience"
+        ]
+      },
+      {
+        "id": "8abe5a2039ba2c6b994a84949f5391ecfe2a7290",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.0,
+          "logistics": 2.5,
+          "role_fit": 2.0,
+          "seniority_fit": 2.0,
+          "skills_match": 2.0
+        },
+        "score": 2.0,
+        "weaknesses": [
+          "JD requires 7+ years of enterprise SaaS PM experience with platform-architecture-level technical judgment, a significant step above the candidate's ~4 years",
+          "No digital-signage market or partner-integration experience, which the JD calls out specifically"
+        ]
+      },
+      {
+        "id": "ffd535ed7df55e281ced9d66f619b38ecb9a671f",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.5,
+          "logistics": 2.0,
+          "role_fit": 2.0,
+          "seniority_fit": 3.0,
+          "skills_match": 1.5
+        },
+        "score": 2.2,
+        "weaknesses": [
+          "No direct mortgage LOS experience (Encompass, Empower, MISMO) that the JD calls a hard, non-negotiable requirement",
+          "JD requires US-based residency with in-person client travel, which a remote-from-India, visa-sponsorship-needing profile can't satisfy"
+        ]
+      },
+      {
+        "id": "f628a723b9c8845bda89f27a466a4b7f8edb0a39",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.8,
+          "logistics": 3.8,
+          "role_fit": 2.3,
+          "seniority_fit": 3.0,
+          "skills_match": 2.0
+        },
+        "score": 2.4,
+        "weaknesses": [
+          "No life-insurance product-filing or regulatory (IRDAI-style) domain background at all",
+          "The JD's substance leans toward traditional insurance product design and channel-partner support rather than the software/digital product building the candidate actually does"
+        ]
+      },
+      {
+        "id": "cb37cbc5eeb2f0fe12bce7d7a4885af752125e68",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.3,
+          "logistics": 2.5,
+          "role_fit": 1.8,
+          "seniority_fit": 1.8,
+          "skills_match": 1.8
+        },
+        "score": 2.1,
+        "weaknesses": [
+          "This is a product-marketing role (positioning, launches, sales enablement), not product management, and the candidate's real track record is building product, not owning GTM narratives",
+          "JD requires 7+ years specifically in product marketing; the candidate has no formal marketing-track record"
+        ]
+      },
+      {
+        "id": "b0550b681095c340c9f56ed1db932c420a1ec758",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.3,
+          "logistics": 0.5,
+          "role_fit": 3.0,
+          "seniority_fit": 2.0,
+          "skills_match": 2.3
+        },
+        "score": 2.1,
+        "weaknesses": [
+          "JD explicitly states sponsorship is not available, which conflicts directly with the candidate's visa-sponsorship requirement, a hard deal-breaker",
+          "Requires 3 years in a leadership/management role the candidate hasn't held"
+        ]
+      },
+      {
+        "id": "f2a3ea4e39c69088b526bd06d7e23cd14bcfd373",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.8,
+          "logistics": 3.0,
+          "role_fit": 4.0,
+          "seniority_fit": 3.5,
+          "skills_match": 3.8
+        },
+        "score": 3.4,
+        "weaknesses": [
+          "The JD requires business-fluent German and English ('verhandlungssicher'); no German fluency is documented in the candidate's profile, a hard, explicitly stated qualification",
+          "No digital-health or clinical-workflow domain background at all"
+        ]
+      },
+      {
+        "id": "1fc9429ddd680694f26c1c7b4ab7fe63011d0934",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.0,
+          "logistics": 2.3,
+          "role_fit": 2.5,
+          "seniority_fit": 2.0,
+          "skills_match": 1.5
+        },
+        "score": 1.9,
+        "weaknesses": [
+          "JD requires at least 2 years specifically in robotics, physical AI, AR/VR, autonomous systems, or data collection at scale; the candidate has none",
+          "No experience with egocentric data quality standards, capture design, or physical-AI-specific technical depth"
+        ]
+      },
+      {
+        "id": "05f85d62fb32df547d13a08078c39864ecb596e6",
+        "recommendation": "apply",
+        "rubric": {
+          "domain": 4.5,
+          "logistics": 4.0,
+          "role_fit": 4.5,
+          "seniority_fit": 4.0,
+          "skills_match": 4.5
+        },
+        "score": 4.3,
+        "weaknesses": [
+          "No explicit seniority/years bar stated in the JD, leaving some uncertainty about the exact scope and level expected",
+          "Salary isn't stated in the posting, so comp fit against the candidate's target range can't be confirmed upfront"
+        ]
+      },
+      {
+        "id": "f6ecd1cd5a447adaffd5851323b18d67b48204fc",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.0,
+          "logistics": 1.3,
+          "role_fit": 4.2,
+          "seniority_fit": 3.3,
+          "skills_match": 4.0
+        },
+        "score": 3.3,
+        "weaknesses": [
+          "JD asks for regular in-person presence in Miami, a real friction point for a remote, India-based candidate",
+          "No insurance-industry domain background"
+        ]
+      },
+      {
+        "id": "ec39a6a70938c4677393dcb183f193674b5a771c",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.3,
+          "logistics": 1.8,
+          "role_fit": 3.0,
+          "seniority_fit": 2.3,
+          "skills_match": 2.8
+        },
+        "score": 2.7,
+        "weaknesses": [
+          "The posting bundles mostly Staff-level roles (Financial Risk, AI Products, Crypto, Margin, Rewards) well above the candidate's ~4 years, with only one Senior-level option (Business Banking)",
+          "No single JD body to evaluate precisely against; the posting is generic across six different roles, so this score carries real uncertainty"
+        ]
+      },
+      {
+        "id": "a31d64f6f36013444b3d390d272e95a722aff4b7",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.5,
+          "logistics": 2.5,
+          "role_fit": 4.2,
+          "seniority_fit": 3.0,
+          "skills_match": 4.3
+        },
+        "score": 3.4,
+        "weaknesses": [
+          "No healthcare / clinical revenue cycle domain background at all",
+          "The role expects providing guidance to other PMs, a people-facing seniority step the candidate hasn't held"
+        ]
+      },
+      {
+        "id": "e6319e21f08419505f3c33cfb2f65b23b0e7eca5",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.5,
+          "logistics": 2.8,
+          "role_fit": 3.5,
+          "seniority_fit": 2.0,
+          "skills_match": 3.0
+        },
+        "score": 2.7,
+        "weaknesses": [
+          "This is a Principal-level role expected to mentor other product managers and engage executive stakeholders, a real step up from the candidate's individual-contributor experience",
+          "No assistive-technology or neurodiverse-workplace domain background at all"
+        ]
+      },
+      {
+        "id": "099d8aedb430a7185cfd58779752e9209b20f968",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.0,
+          "logistics": 2.3,
+          "role_fit": 2.5,
+          "seniority_fit": 2.0,
+          "skills_match": 1.5
+        },
+        "score": 1.9,
+        "weaknesses": [
+          "JD requires at least 2 years specifically in robotics, physical AI, AR/VR, autonomous systems, or data collection at scale; the candidate has none",
+          "No experience with egocentric data quality standards, capture design, or physical-AI-specific technical depth"
+        ]
+      },
+      {
+        "id": "d279d1963a2b4e1a8972c0f6dd3d0d24af56ceab",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.3,
+          "logistics": 3.5,
+          "role_fit": 1.8,
+          "seniority_fit": 1.8,
+          "skills_match": 1.8
+        },
+        "score": 1.9,
+        "weaknesses": [
+          "This is a product-marketing role (positioning, sales enablement, GTM), not product management, and the candidate's real track record is building product, not owning marketing content",
+          "No travel-industry domain background at all"
+        ]
+      },
+      {
+        "id": "ff5f3ac3b12e46959d09fe2dc85085f93d438c2d",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.3,
+          "logistics": 4.0,
+          "role_fit": 2.8,
+          "seniority_fit": 3.8,
+          "skills_match": 2.0
+        },
+        "score": 2.7,
+        "weaknesses": [
+          "No hardware, aerospace, or UAV/drone product experience at all; the candidate's background is entirely software/SaaS",
+          "The preferred engineering degree (Aerospace, Mechanical, Electrical) and hardware technical aptitude don't match the candidate's profile"
+        ]
+      },
+      {
+        "id": "203ca9daf795b626590ec61e8c2bc99d2a0dd778",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.3,
+          "logistics": 3.3,
+          "role_fit": 4.0,
+          "seniority_fit": 3.0,
+          "skills_match": 3.8
+        },
+        "score": 3.6,
+        "weaknesses": [
+          "No experience specifically in remittance, insurance, or wealth/trading verticals, or in the Southeast Asian neobank market",
+          "The JD implies significant existing seniority owning complex technical products; no explicit years stated, but the bar reads high"
+        ]
+      },
+      {
+        "id": "7385d62fff9b0429f132b3762e2472ffa522742c",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.0,
+          "logistics": 4.5,
+          "role_fit": 1.8,
+          "seniority_fit": 1.5,
+          "skills_match": 1.8
+        },
+        "score": 2.2,
+        "weaknesses": [
+          "This is fundamentally a product-marketing role (messaging, positioning, content, demand-gen, pricing, team management), not product management, and the candidate's real experience is building product, not owning brand/GTM messaging",
+          "No formal product-marketing track record; the JD explicitly wants 4+ years specifically in product marketing"
+        ]
+      },
+      {
+        "id": "fd7c0a8317c3c503fd55d23ca97df80135c5b9d8",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.3,
+          "logistics": 3.3,
+          "role_fit": 4.0,
+          "seniority_fit": 3.0,
+          "skills_match": 3.8
+        },
+        "score": 3.6,
+        "weaknesses": [
+          "No experience specifically in remittance, insurance, or wealth/trading verticals, or in the Southeast Asian neobank market",
+          "The JD implies significant existing seniority owning complex technical products; no explicit years stated, but the bar reads high"
+        ]
+      },
+      {
+        "id": "df890b910c085bba897e5770cd138e9367dc2497",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.8,
+          "logistics": 1.5,
+          "role_fit": 4.0,
+          "seniority_fit": 3.3,
+          "skills_match": 3.8
+        },
+        "score": 3.4,
+        "weaknesses": [
+          "No payment-orchestration-platform-level experience; the candidate's payments exposure is a POS/billing integration, shallower than this JD's platform scope",
+          "The role is explicitly based in Germany or the EU, with no confirmation of remote hiring outside that region"
+        ]
+      },
+      {
+        "id": "383795ed1cc64ceea91ee5a739b3b64768143baa",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.5,
+          "logistics": 2.3,
+          "role_fit": 2.0,
+          "seniority_fit": 2.0,
+          "skills_match": 1.8
+        },
+        "score": 2.1,
+        "weaknesses": [
+          "No market-data licensing, exchange-negotiation, or brokerage-infrastructure experience at all",
+          "The role bundles a 'Head of Canada' country-lead scope with the PM role, a combination well outside the candidate's experience"
+        ]
+      },
+      {
+        "id": "72d4e59f4eca50fb26367c8229f631a677913608",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.5,
+          "logistics": 2.8,
+          "role_fit": 3.8,
+          "seniority_fit": 3.5,
+          "skills_match": 3.3
+        },
+        "score": 3.2,
+        "weaknesses": [
+          "No mobile free-to-play gaming or content-platform monetization experience at all",
+          "No confirmation of international remote hiring outside Ukraine/Turkey despite a 'work remotely' option in the JD"
+        ]
+      },
+      {
+        "id": "9b244f1e19fa122598e7bb574b4f449a281e911d",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.5,
+          "logistics": 2.5,
+          "role_fit": 4.0,
+          "seniority_fit": 4.0,
+          "skills_match": 3.8
+        },
+        "score": 3.6,
+        "weaknesses": [
+          "No retirement, investing, or wealth-guidance domain background specifically; the candidate's fintech experience is lending/credit, not investment products",
+          "No explicit confirmation of international-remote hiring or visa sponsorship for a US-based role"
+        ]
+      },
+      {
+        "id": "6e73c94debc81a623a9f342f3fb4896f3cb9fada",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 2.5,
+          "logistics": 1.5,
+          "role_fit": 4.0,
+          "seniority_fit": 3.3,
+          "skills_match": 3.8
+        },
+        "score": 3.3,
+        "weaknesses": [
+          "No direct Direct Debit, Open Banking, or UK/EU payment-rail experience specifically",
+          "The JD states the role requires 'full working rights' for a role fully remote across the UK, a real friction point for a candidate needing visa sponsorship"
+        ]
+      },
+      {
+        "id": "abe77c7ee7de6598fa4bbe2e2daa01b73f8cb4e3",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.0,
+          "logistics": 2.3,
+          "role_fit": 1.5,
+          "seniority_fit": 3.0,
+          "skills_match": 1.0
+        },
+        "score": 1.7,
+        "weaknesses": [
+          "No medical device, respiratory care, or healthcare-regulated product experience, which is an explicit, specific requirement (3+ years)",
+          "No FDA/ISO 13485/MDR regulatory knowledge at all"
+        ]
+      },
+      {
+        "id": "c5d209539f10b2c59d88817fea4ced567245927c",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.8,
+          "logistics": 2.5,
+          "role_fit": 4.0,
+          "seniority_fit": 3.5,
+          "skills_match": 3.3
+        },
+        "score": 3.2,
+        "weaknesses": [
+          "JD asks for 5+ years with a track record of owning a product area end to end; the candidate's formal PM-titled experience is closer to 4",
+          "No HR/HCM/compliance-domain background at all"
+        ]
+      },
+      {
+        "id": "303e23a7d80375570bffce58c4ecb842a88852ee",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 3.2,
+          "logistics": 1.3,
+          "role_fit": 3.0,
+          "seniority_fit": 3.5,
+          "skills_match": 2.8
+        },
+        "score": 2.9,
+        "weaknesses": [
+          "Role requires processor-routing, failover, and fraud-engineering depth (PSP orchestration, chargebacks) well beyond the candidate's actual payments scope to date",
+          "Role is explicitly scoped to US/Canada, preferably West Coast; India isn't an eligible location per the JD"
+        ]
+      },
+      {
+        "id": "8bfd2fc01868116f687ae2d63ade0d68d0f45da1",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 4.3,
+          "logistics": 3.5,
+          "role_fit": 2.3,
+          "seniority_fit": 3.0,
+          "skills_match": 3.3
+        },
+        "score": 3.1,
+        "weaknesses": [
+          "The JD's substance leans heavily toward reporting, portfolio analytics, budgeting, and MIS rather than hands-on product discovery/roadmap/shipping work",
+          "Mumbai onsite is the lowest-priority option in the candidate's stated work-mode ranking, behind any remote alternative"
+        ]
+      },
+      {
+        "id": "5ae285fc50b3c3bf6ca44275965ad300a180f456",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.5,
+          "logistics": 2.5,
+          "role_fit": 2.0,
+          "seniority_fit": 3.5,
+          "skills_match": 2.0
+        },
+        "score": 2.3,
+        "weaknesses": [
+          "No iGaming industry or gambling-regulation experience, which the JD lists as a proven, required background",
+          "No exposure to the specific regulated jurisdictions (Netherlands, Ontario, Sweden) named in the JD"
+        ]
+      },
+      {
+        "id": "216a7cbeb86b66a58ff8dd57a97749813934d8bb",
+        "recommendation": "skip",
+        "rubric": {
+          "domain": 1.8,
+          "logistics": 2.5,
+          "role_fit": 3.5,
+          "seniority_fit": 4.0,
+          "skills_match": 3.3
+        },
+        "score": 3.2,
+        "weaknesses": [
+          "This is a temporary maternity-cover contract (termo incerto, starting ~October), not a permanent role",
+          "No proptech/real-estate-rental domain background"
+        ]
+      }
+    ]
+  }
+}

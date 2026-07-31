@@ -182,6 +182,7 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
 
     if plan.capability == "weekly":
         items: list = []
+        tiers: list[list[str]] = []
         cost = 0.0
         start = time.time()
         for i, query in enumerate(plan.queries):
@@ -204,8 +205,15 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
                 f"limit={effective_limit}): {len(result.items)} items (${result.cost_usd:.4f})"
             )
             items.extend(result.items)
+            # v2.0: tag every item this query returned with its tier NAME
+            # (the segmented plan's own `_work_mode`, e.g. "global_remote" or
+            # the consolidated "onsite" — never a profile.work_mode_priority
+            # entry, see ProviderResult.tiers's docstring). A list, not a
+            # single string, because dedupe unions provenance across
+            # collapsed cross-location duplicates.
+            tiers.extend([work_mode] for _ in result.items)
         return ProviderResult(
-            provider=name, items=items, cost_usd=cost,
+            provider=name, items=items, tiers=tiers, cost_usd=cost,
             requests=plan.http_requests, records=len(items), seconds=time.time() - start,
         )
 
@@ -222,6 +230,9 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
         typer.echo(
             f"[discover] {name}: {len(result.items)} items (${result.cost_usd:.4f}, {result.seconds:.1f}s)"
         )
+        # No segmented query plan for this capability -- every item shares
+        # one implicit "default" tier.
+        result.tiers = [["default"] for _ in result.items]
         return result
 
     # "none": an unmetered free provider. Previously had no try/except at
@@ -234,6 +245,7 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
         typer.echo(f"[discover] {name}: skipped — {e}")
         return ProviderResult.skip(name, str(e))
     typer.echo(f"[discover] {name}: {len(result.items)} items ({result.seconds:.1f}s)")
+    result.tiers = [["default"] for _ in result.items]
     return result
 
 
@@ -400,6 +412,10 @@ def discover(
         f.write(dumps({
             "providers": provider_names,
             "items": {r.provider: r.items for r in results},
+            # v2.0: index-aligned with `items[provider]` — see
+            # ProviderResult.tiers's docstring. Read by `normalize` to set
+            # each Job's `tiers` field.
+            "provenance": {r.provider: r.tiers for r in results},
             "meta": {
                 r.provider: {
                     "cost_usd": r.cost_usd, "requests": r.requests, "records": r.records,

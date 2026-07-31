@@ -179,6 +179,69 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # inside root_folder_id instead of the flat root. Off by default.
         "date_subfolder": False,
     },
+    # v2.0: anti-inflation checks run by `evaluate --finalize` (see
+    # careeros/calibration.py) before an eval batch is cached. Every
+    # threshold below has a code default, so this block only needs an entry
+    # for whatever you're explicitly overriding — see that module's
+    # docstring for why each default is what it is (the forensic
+    # investigation that produced them is worth reading before changing
+    # any of these).
+    # v2.0: the (currently dormant — see careeros/cli/tune.py) query-tuning
+    # loop. `enabled: false` is the honest default: the tuner independently
+    # checks per-tier arming via careeros/pipeline/ledger.py regardless of
+    # this flag, so setting it true doesn't make anything act before there's
+    # enough data — it's a second, explicit switch, not the only one.
+    "tuning": {
+        "enabled": False,
+        # Where the tuner writes its proposed api.* overrides. NEVER
+        # .careeros/config.yaml itself — that file is full of hand-written
+        # comments a yaml.safe_dump would destroy, and an overlay is the
+        # structural guardrail that makes "the tuner can only touch these
+        # three keys" enforced by the code that READS config, not by the
+        # agent that writes it (see TUNING_OVERLAY_ALLOWLIST below).
+        "overlay_path": ".careeros/tuning/overlay.yaml",
+        # Fixed control tier, rotated at most annually by a human — a tuner
+        # that could pick its own control would pick the one that flatters
+        # it. Must be a real tier name from your query plan (see
+        # queryplan.py's build_query_plan), not a profile.work_mode_priority
+        # entry — those can consolidate (e.g. two onsite tiers -> "onsite").
+        "control_tier": "india_remote",
+        # Per-tier arming floors — ALL three must hold before the tuner may
+        # act on that tier. See careeros/pipeline/ledger.py's compute_arming
+        # for the sample-size arithmetic behind these numbers.
+        "min_days": 28,
+        "min_records": 400,
+        "min_events": 8,
+        # How often `careeros tune --check-due` is willing to even LOOK
+        # (cheap, deterministic, zero AI cost) — separate from `cadence_days`
+        # below, which is how often an actual CHANGE may be applied. Looking
+        # weekly is safe; only ACTING needs the longer wait.
+        "check_cadence_days": 7,
+        # Exclusion-list decay: each title_exclusion_search entry is
+        # individually defensible and collectively catastrophic, so entries
+        # are capped and expire unless re-justified by a human.
+        "max_exclusion_entries": 8,
+        "exclusion_sunset_days": 90,
+        # Max relative change to one tier's `tier_limits` entry per cycle.
+        "tier_limit_max_delta_pct": 0.25,
+        # Auto-revert window (completed runs after a change) and burn-in
+        # (runs before ANY revert may fire) — see careeros/pipeline/
+        # tuning.py's check_revert.
+        "revert_window_runs": 10,
+        "revert_burn_in_runs": 5,
+    },
+    "calibration": {
+        "enabled": True,
+        "arithmetic_tolerance": 0.051,
+        "min_batch_n": 10,
+        "clone_min_records": 4,
+        "clone_min_companies": 3,
+        "uniformity_max_stdev": 0.25,
+        "uniformity_min_pass_rate": 0.90,
+        "dimension_mode_share_warn": 0.60,
+        "dimension_exempt": ["logistics"],
+        "seniority_fit_max_with_marker": 3.5,
+    },
 }
 
 
@@ -196,6 +259,8 @@ class Config:
     fx_rates: dict[str, float] = field(default_factory=dict)
     drive: dict[str, Any] = field(default_factory=dict)
     providers: dict[str, Any] = field(default_factory=dict)
+    calibration: dict[str, Any] = field(default_factory=dict)
+    tuning: dict[str, Any] = field(default_factory=dict)
 
     @property
     def careeros_dir(self) -> Path:
@@ -216,6 +281,35 @@ class Config:
     def prompt_path(self, stage: str) -> Path:
         version = self.prompts.get(stage, "v1")
         return Path("prompts") / f"{stage}_{version}.md"
+
+
+# v2.0: the ONLY api.* keys a tuning overlay may ever set — enforced here,
+# at the code that READS config, so this is a guardrail an agent cannot
+# violate by writing a differently-shaped overlay file (unlike every other
+# tuner guardrail, which is a policy in careeros/pipeline/tuning.py that a
+# buggy or malicious proposal COULD in principle bypass). Deliberately
+# excludes anything that defines a tier's IDENTITY (work_arrangement,
+# location_search, endpoint, time_range) — changing one of those means the
+# tier's accumulated ledger history no longer describes the same tier.
+TUNING_OVERLAY_ALLOWLIST = ("title_search", "title_exclusion_search", "tier_limits")
+
+
+def _load_tuning_overlay(overlay_path: Path, allowlist: tuple[str, ...] = TUNING_OVERLAY_ALLOWLIST) -> dict:
+    """Reads the tuning overlay (if present) and returns ONLY its
+    allowlisted `api.*` keys, silently dropping anything else — same
+    silent-drop convention `load_config` already applies to unknown
+    top-level keys in the user's own config.yaml. `careeros tune --status`
+    is where a human-facing warning about a rejected key belongs, not this
+    loader (called from many contexts, including every test in this repo)."""
+    if not overlay_path.exists():
+        return {}
+    with open(overlay_path) as f:
+        raw = yaml.safe_load(f) or {}
+    api_block = raw.get("api")
+    if not isinstance(api_block, dict):
+        return {}
+    filtered = {k: v for k, v in api_block.items() if k in allowlist}
+    return {"api": filtered} if filtered else {}
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -262,6 +356,18 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
             merged["providers"] = resolved_providers
         else:
             merged = _deep_merge(merged, user_cfg)
+
+    # v2.0: the tuning overlay merges LAST, after the user's own config.yaml,
+    # and ONLY its allowlisted api.* keys survive — see
+    # TUNING_OVERLAY_ALLOWLIST. This is what lets the (currently dormant)
+    # tuner change discovery queries without ever touching config.yaml
+    # itself. Precedence: DEFAULT_CONFIG < config.yaml < overlay.
+    tuning_cfg = merged.get("tuning") or DEFAULT_CONFIG["tuning"]
+    overlay_path = Path(tuning_cfg.get("overlay_path", DEFAULT_CONFIG["tuning"]["overlay_path"]))
+    overlay = _load_tuning_overlay(overlay_path)
+    if overlay:
+        merged = _deep_merge(merged, overlay)
+
     return Config(
         threshold=merged["threshold"],
         consider_threshold=merged.get("consider_threshold", 3.5),
@@ -275,6 +381,8 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         fx_rates=merged["fx_rates"],
         drive=merged["drive"],
         providers=merged["providers"],
+        calibration=merged.get("calibration", DEFAULT_CONFIG["calibration"]),
+        tuning=tuning_cfg,
     )
 
 

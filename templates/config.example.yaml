@@ -145,3 +145,43 @@ drive:
   # Optional: group each day's uploads under a YYYY-MM-DD subfolder inside
   # root_folder_id instead of the flat root. Off by default.
   date_subfolder: false
+
+# v2.0: anti-inflation checks `careeros evaluate --finalize` runs before
+# caching an eval batch (careeros/calibration.py) — catches a score that
+# doesn't match its own rubric's weighted average, a rubric vector repeated
+# identically across unrelated companies, and a weakness naming a seniority
+# mismatch the rubric doesn't price in. Every threshold has a sane default;
+# override only what you're deliberately changing.
+calibration:
+  enabled: true
+  arithmetic_tolerance: 0.051
+  min_batch_n: 10
+  clone_min_records: 4
+  clone_min_companies: 3
+  uniformity_max_stdev: 0.25
+  uniformity_min_pass_rate: 0.90
+  dimension_mode_share_warn: 0.60
+  dimension_exempt: ["logistics"]
+  seniority_fit_max_with_marker: 3.5
+
+# v2.0: the query-tuning loop (careeros/pipeline/tuning.py, run via
+# `careeros tune` — see skills/tune.md). SHIPS DORMANT: every sub-command
+# re-checks per-tier arming itself (careeros/pipeline/ledger.py), so
+# `enabled: true` alone doesn't make anything act before a tier has ~4
+# weeks / 400 records / 8 apply-or-consider events of its own history.
+tuning:
+  enabled: false
+  overlay_path: ".careeros/tuning/overlay.yaml"
+  # Fixed control tier, rotated at most annually by a human — must be a
+  # real tier name from your query plan (careeros/pipeline/queryplan.py),
+  # not a profile.work_mode_priority entry (those can consolidate, e.g.
+  # two onsite tiers collapsing into one "onsite" query).
+  control_tier: "india_remote"
+  min_days: 28
+  min_records: 400
+  min_events: 8
+  max_exclusion_entries: 8
+  exclusion_sunset_days: 90
+  tier_limit_max_delta_pct: 0.25
+  revert_window_runs: 10
+  revert_burn_in_runs: 5

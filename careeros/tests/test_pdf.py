@@ -107,6 +107,20 @@ def test_sanitizes_currency_symbols_that_core_fonts_cannot_encode():
     assert _is_valid_pdf(out)
 
 
+def test_sanitizes_zero_width_characters_that_core_fonts_cannot_encode():
+    """Regression: found live 2026-07-29, a company name containing a
+    zero-width non-joiner ("Emp‌ower") silently broke that job's
+    entire cover-letter PDF render (fell through to the fail-soft None
+    path). Zero-width characters are invisible in any rendered form, so
+    dropping them entirely (not substituting a visible fallback) is always
+    the correct behavior."""
+    md = "Dear Emp‌ower team,\n\nZero​width‍chars﻿here."
+    out = render_markdown_to_pdf(md)
+    assert _is_valid_pdf(out)
+    sanitized = pdf_mod._sanitize_for_core_font("a​b‌c‍d﻿e")
+    assert sanitized == "abcde"
+
+
 def test_returns_none_on_genuine_render_exception():
     """Fail-soft contract extends past 'not installed': ANY fpdf2 render
     failure (not just missing chars) must surface as None, not raise -- the

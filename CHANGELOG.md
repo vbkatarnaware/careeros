@@ -4,6 +4,111 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-07-31
+
+Triggered by a real run that looked like a discovery-quality collapse (1
+Apply-tier job from 95 fetched). Forensic comparison of stored eval scores
+against their own rubric's weighted average found the queries hadn't gotten
+worse — two prior "great" days had 13/25 and 13/14 evaluations whose score
+didn't match the rubric that supposedly produced it (a 3x margin over the
+two genuinely honest days' float-rounding noise), one rubric dimension
+repeating the same value across eleven unrelated companies, and a weakness
+naming a seniority mismatch a passing `seniority_fit` didn't reflect. The
+discovery layer itself stayed frozen per `.careeros/ROADMAP.md` — this is
+evidence that *conversion measurement* was broken, not that supply is the
+bottleneck, which is the opposite of what would justify reopening it.
+
+### Added
+
+- **`careeros/calibration.py`** — five deterministic anti-inflation checks
+  wired into `evaluate --finalize`: score-vs-rubric arithmetic (blocks),
+  a rubric vector repeated across unrelated companies (blocks), a
+  seniority weakness the rubric doesn't price in (blocks), score
+  dispersion (warns), and per-dimension repetition (warns, `logistics`
+  exempt by design). Reproduces the forensic finding exactly against the
+  real historical eval batches (see `test_calibration.py`).
+- **Golden set + `careeros calibrate`** (`--check`/`--probe`/`--score`/
+  `--approve`) — an ~18-entry, human-reviewed set of known-correct scores
+  (`.careeros/golden/`, `schemas/golden.schema.json`) for detecting scorer
+  drift between runs/agents/models, sampled deterministically and never
+  auto-sealed without an explicit human `sealed_by: "human"`.
+- **`.careeros/processed.jsonl`** replaces `seen.jsonl` — written
+  unconditionally by `threshold` for every job that reached a terminal
+  decision this run (constraints-rejected, gate-dropped, evaluate-omitted,
+  consider, apply), not just Apply/Consider jobs gated behind
+  `sheets.enabled`. Fixes a real bug: local-mode runs (Sheets disabled)
+  never recorded history at all, so every rejected job re-entered the
+  pipeline and re-burned gate/eval tokens daily (56% same-run duplicates on
+  the triggering run). TTL-aware (`load_processed_ids`), reads the legacy
+  `first_seen` key with zero migration step.
+- **`07_select/omitted.json`** — the 3.0–3.9 score band, previously
+  computed by `partition_evals` and silently discarded.
+- **`Job.seniority`** now populated from the Fantastic Jobs API's real
+  `ai_experience_level` field (confirmed live: only `"0-2"/"2-5"/"5-10"/
+  "10+"` ever appear), mapped conservatively onto the schema's enum
+  (`10+` → `"lead"`, never `"principal"`/`"exec"` from this signal alone)
+  — previously hardcoded to `None`.
+- **Discovery tier provenance** — `Job.tiers`, set from `raw.json`'s new
+  `provenance` field and unioned across cross-location dedupe collapses,
+  so a job's discovery tier survives all the way to the learning ledger.
+  Purely descriptive: excluded from `Job.content_hash()`, never read by
+  gate/evaluate/constraints.
+- **`careeros/pipeline/outcomes.py`** — derives *why* each evaluated job
+  landed where it did via weighted contribution shortfall (`weight *
+  (5 - value)`, not raw argmin, which would over-blame low-weight
+  dimensions like `logistics`), with no eval-schema change. Written to
+  `07_select/outcomes.json`.
+- **`careeros ledger`** — aggregates recent runs into
+  `.careeros/learning/{ledger.md,ledger.jsonl}`: per-tier records, gate-keep
+  rate, constraints-rejection rate, reject-reason histogram, and mean
+  rubric shortfall. Decision metrics (gate-keep/constraints-rejection rate)
+  are kept structurally separate from descriptive ones (eval scores) — the
+  former come from deterministic stages and the gate agent, the latter are
+  reported but never a tuning objective. `.careeros/learning/quarantine.json`
+  excludes the inflated 07-29/07-30 runs (and 07-12's known dedupe-count
+  corruption) from aggregation.
+- **`careeros sheets sync-outcomes`** — reads the Sheet's own `Status`
+  column (Applied/Interview/Rejected/…, the one signal in this pipeline no
+  agent can influence) into `.careeros/learning/outcomes.jsonl`.
+- **`careeros tune`** (`--status`/`--propose`/`--apply`/`--revert`) — the
+  query-tuning loop. **Ships dormant**: refuses to act on any tier until it
+  clears ~4 weeks / 400 records / 8 apply-or-consider events. Writes only
+  to an allowlisted config overlay (`.careeros/tuning/overlay.yaml`,
+  `TUNING_OVERLAY_ALLOWLIST` = `title_search`/`title_exclusion_search`/
+  `tier_limits` only, enforced by `load_config` itself, never
+  `.careeros/config.yaml` directly). Guardrails: one change per cycle
+  across all tiers, a fixed human-chosen control tier, a per-tier record
+  floor, an exclusion list cap with mandatory sunset dates, and every
+  proposal requires non-empty evidence. Auto-revert compares a changed
+  tier against its own baseline AND the control tier (difference-in-
+  differences) over a 10-run window, so a market-wide swing can't be
+  blamed on the one tier that happened to change that cycle; a reverted
+  change is quarantined and never silently re-applied.
+- `AGENTS.md` (Codex's conventional onboarding redirect — `CLAUDE.md`/
+  `GEMINI.md` already existed, this was the missing one).
+- `careeros doctor` now flags unrecognized top-level `config.yaml` keys
+  (previously silently dropped with no warning anywhere — a typo like
+  `calibraton:` just quietly never took effect).
+
+### Fixed
+
+- **Same-date re-run contamination in `evaluate --finalize`.** Re-running
+  discovery for a date already run today left stale eval files in
+  `06_evaluate/` whose ids no longer existed in that run's
+  `02_normalize/jobs.json`; the old blanket file glob folded them back in
+  as if they were legitimate cache hits, so `run.json`'s `count_out` drifted
+  on every re-run of `--finalize`. Now scoped to today's actual gate-kept
+  ids.
+- **`sheets append` crashed (`KeyError`) on a same-date re-run** when a
+  cached Consider/Apply eval's job no longer existed in the current
+  `jobs.json` — now skipped with a warning instead of crashing the whole
+  append.
+- **`dedupe --against-sheet` called the live Sheets API even with
+  `sheets.enabled: false`**, relying on a `RuntimeError` to no-op. Now
+  checks the flag directly.
+- Dedupe drops now carry a `_drop_reason` (`in-run`/`cross-location`/
+  `history`/`sheet`) — previously a flat, unlabeled concatenation.
+
 ## [1.8.0] - 2026-07-28
 
 Everything below shipped locally across 1.7.0–1.7.2 but never reached

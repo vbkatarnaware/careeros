@@ -63,12 +63,62 @@ candidate relies on.
 This is the same boundary as above, stated as a rule for the moment it's
 most tempting to cross it.
 
+**Passing the deterministic checks is necessary, never sufficient.** Found
+live 2026-07-29: a host CLI generated 25 resumes for 25 genuinely different
+companies (ClanX, two different Kotak roles, DBS Bank, and others) and every
+one of them carried the exact same QRapid bullets, character for character.
+Nothing was technically wrong — `verify-resume` passed all 25, because
+copying a bullet verbatim can never invent a number. But `resume_v4.md`'s
+actual instruction is to **reword** each bullet to mirror that specific
+JD's own language; verbatim copying is what you fall back to only when a
+genuine reword isn't possible, not the default. Skipping the reword is the
+same shortcut as the Gate/Evaluate scripting above, wearing a disguise: the
+output has the right shape and passes every mechanical check, but the
+per-job thinking the prompt actually asked for never happened.
+
+> The same applies to every reasoning stage, not just Resume: doing the
+> minimum that satisfies the deterministic checker (schema validation,
+> voice-dna lint, fact-preservation, page-count) is not the same as doing
+> what the prompt for that stage actually asked. Before finalizing any
+> reasoning-stage output, ask "did I actually tailor this to THIS job, or
+> did I take the safest path that would merely pass?" — and if you're
+> not sure, re-read the prompt file again before writing the file.
+
 ## Pipeline stages
 
 Run via the `daily` skill (`skills/daily.md`) — read that file for the
 full step-by-step sequence, exact commands, and what each stage's output
 means. This file states the *rules*; `skills/daily.md` states the
 *steps*.
+
+### Query tuning: an automatic weekly CHECK, but never the same reasoning pass as scoring
+
+v2.0 adds a (dormant-until-armed) query-tuning loop — `careeros/pipeline/
+tuning.py`. Its cheap, deterministic CHECK (`careeros tune --check-due`) runs
+automatically as `skills/daily.md`'s Step 0.5, **before** discovery/gate/
+evaluate for the day — that's deliberate and safe, not an exception to the
+rule below. What must never happen is **the agent turn that scores TODAY'S
+jobs (Gate/Evaluate) also being the turn that decides on a discovery-query
+change.** `--check-due` only ever reads last month's already-written ledger
+(`.careeros/learning/ledger.md`, `careeros/pipeline/ledger.py`) — never
+today's fresh job batch — so there is no reasoning pass to reuse in the
+first place. If it surfaces a pattern, follow `prompts/tune_v1.md`: ask the
+candidate a plain-language question with real numbers BEFORE continuing to
+Step 1, using only last month's aggregated data, never anything from the
+run that's about to happen.
+
+The reason is the same Goodhart risk that motivates the calibration harness
+(`careeros/calibration.py`): if a query tuner could improve its own apparent
+yield by influencing how jobs get scored, it would learn to do that, because
+it is cheaper than actually improving discovery. Structural separations that
+enforce this, so it is never just a policy an agent could ignore under
+pressure: the tuner's decision metrics (gate-keep rate, constraints-rejection
+rate) come from the deterministic constraints stage and the *gate* agent, not
+the eval agent's own score; the config overlay it writes
+(`.careeros/tuning/overlay.yaml`) is merged in by `careeros/config.py`'s
+`load_config` through a hard-coded key allowlist the tuner cannot widen no
+matter what it writes; and it runs on its own command (`careeros tune`), on
+its own cadence (monthly by default), never inside `daily`.
 
 ## Secrets handling
 

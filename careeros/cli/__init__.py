@@ -87,10 +87,12 @@ def _main(
 from careeros.cli import (  # noqa: E402,F401
     apply_stage,
     artifacts,
+    calibrate,
     discover,
     doctor,
     drive,
     gate_evaluate,
+    ledger_cmd,
     lint_verify,
     perjob,
     pipeline,
@@ -98,6 +100,7 @@ from careeros.cli import (  # noqa: E402,F401
     setup,
     sheets_cmds,
     stubs,
+    tune,
 )
 
 # Backward-compatible re-exports: tests (and any external tooling) that did
@@ -120,13 +123,18 @@ from careeros.cli.apply_stage import (  # noqa: E402,F401
     apply,
 )
 from careeros.cli.artifacts import _artifacts_finalize, _artifacts_prepare  # noqa: E402,F401
+from careeros.cli.calibrate import calibrate  # noqa: E402,F401
 from careeros.cli.discover import discover  # noqa: E402,F401
 from careeros.cli.doctor import _CheckStatus, _run_doctor_checks, _run_doctor_live_checks, doctor  # noqa: E402,F401
 from careeros.cli.drive import backfill_drive  # noqa: E402,F401
 from careeros.cli.gate_evaluate import _evaluate_finalize, _evaluate_prepare  # noqa: E402,F401
+from careeros.cli.ledger_cmd import ledger  # noqa: E402,F401
 from careeros.cli.perjob import job, publish  # noqa: E402,F401
 from careeros.cli.pipeline import constraints, dedupe, normalize, threshold  # noqa: E402,F401
 from careeros.cli.reports import _build_discovery_stats, summary  # noqa: E402,F401
 from careeros.cli.setup import config, init, providers  # noqa: E402,F401
-from careeros.cli.sheets_cmds import sheets_append, sheets_migrate, sheets_sync_status  # noqa: E402,F401
+from careeros.cli.sheets_cmds import (  # noqa: E402,F401
+    sheets_append, sheets_migrate, sheets_sync_outcomes, sheets_sync_status,
+)
 from careeros.cli.stubs import daily, prep, scan, start  # noqa: E402,F401
+from careeros.cli.tune import tune  # noqa: E402,F401

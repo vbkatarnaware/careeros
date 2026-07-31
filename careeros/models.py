@@ -61,6 +61,15 @@ class Job:
     contact: Optional[Contact] = None
     company_linkedin: Optional[str] = None
     raw_ref: Optional[str] = None
+    # v2.0: which discovery query tier(s) surfaced this job (e.g.
+    # ["global_remote"]), set at normalize time from raw.json's
+    # "provenance" — see careeros/providers/base.py's ProviderResult.tiers
+    # and careeros/pipeline/dedupe.py's tier-union on collapse. A list (not
+    # a single tier) because a cross-location duplicate can be found by more
+    # than one tier before collapsing to one surviving Job. Purely for the
+    # learning ledger (careeros/pipeline/outcomes.py) — never read by
+    # gate/evaluate/constraints, so it can't influence a fit judgment.
+    tiers: Optional[list[str]] = None
 
     @staticmethod
     def make_id(source: str, company: str, title: str, location: Optional[str]) -> str:

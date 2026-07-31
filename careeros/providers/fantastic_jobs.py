@@ -346,9 +346,7 @@ class FantasticJobsProvider:
             "location": _first_location(raw),
             "remote": _remote_from_arrangement(raw.get("ai_work_arrangement")),
             "employment_type": _first_employment_type(raw.get("ai_employment_type")),
-            # API's own `seniority`/`ai_experience_level` fields are a future
-            # enrichment, not in P2.7's parity scope — matches the actor.
-            "seniority": None,
+            "seniority": _seniority_from_experience_level(raw.get("ai_experience_level")),
             "posted_at": _pick_posted(raw),
             "salary": _salary_from_ai_fields(raw),
             "contact": _contact_from_ai_fields(raw),
@@ -391,6 +389,33 @@ def _first_employment_type(val: Any) -> str | None:
         first = str(val[0]).upper()
         return _EMPLOYMENT_MAP.get(first)
     return None
+
+
+# v2.0: `ai_experience_level` is a YEARS-OF-EXPERIENCE bucket string
+# ("0-2", "2-5", "5-10", "10+" — confirmed against live raw.json across
+# four real runs, 311 items, only these four values ever appeared), not a
+# title-based seniority label. It was previously discarded entirely
+# ("seniority": None hardcoded), which meant every job — including
+# Staff/Principal/Director-titled roles — flowed all the way to the AI
+# gate with no seniority signal to filter on for free, burning gate tokens
+# on jobs a deterministic check could have screened. Mapped onto
+# schemas/job.schema.json's seniority enum with a deliberately CONSERVATIVE
+# top bucket: "10+" maps to "lead", not "principal" or "exec" — this field
+# alone can't distinguish those, and a title-based signal (out of scope
+# here) would be needed to go further up. "intern" is never produced by
+# this mapping; it isn't one of the API's own buckets.
+_EXPERIENCE_LEVEL_TO_SENIORITY: dict[str, str] = {
+    "0-2": "entry",
+    "2-5": "mid",
+    "5-10": "senior",
+    "10+": "lead",
+}
+
+
+def _seniority_from_experience_level(val: Any) -> str | None:
+    if not isinstance(val, str):
+        return None
+    return _EXPERIENCE_LEVEL_TO_SENIORITY.get(val.strip())
 
 
 def _pick_posted(raw: dict[str, Any]) -> str | None:

@@ -11,10 +11,32 @@ import typer
 from careeros import budget
 from careeros.cli import app
 from careeros.cli._shared import _config, _load_profile
-from careeros.config import Config, enabled_providers
+from careeros.config import DEFAULT_CONFIG, Config, enabled_providers
 from careeros.pipeline.queryplan import build_query_plan
 from careeros.providers.base import ProviderError
 from careeros.providers.registry import get as get_provider
+
+
+def _unknown_config_keys(config_path: Path = Path(".careeros/config.yaml")) -> list[str]:
+    """v2.0: `load_config` silently drops any top-level key it doesn't
+    recognize (by design — see careeros/config.py's docstring), which means
+    a typo like `calibraton:` or `tunning:` just quietly never takes effect,
+    with no error anywhere. `load_config` itself is the wrong place to warn
+    (it's called in every test in this repo and shouldn't print), so this
+    check re-reads the raw YAML independently and compares its top-level
+    keys against DEFAULT_CONFIG's — read-only, no network, matches this
+    module's other checks."""
+    if not config_path.exists():
+        return []
+    import yaml
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+    except yaml.YAMLError:
+        return []  # a malformed file is its own problem; not this check's job
+    if not isinstance(raw, dict):
+        return []
+    return sorted(set(raw.keys()) - set(DEFAULT_CONFIG.keys()))
 
 
 def _latest_discovery_meta(cfg: Config) -> tuple[Optional[str], dict[str, dict]]:
@@ -77,6 +99,17 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
                                      "not found — run `careeros init` first"))
         return results  # nothing else is checkable yet
     results.append(_check_result(_CheckStatus.PASS, ".careeros/ scaffolding", str(cfg.careeros_dir)))
+
+    # v2.0: unknown/typo'd top-level config.yaml keys
+    unknown_keys = _unknown_config_keys(cfg.careeros_dir / "config.yaml")
+    if unknown_keys:
+        results.append(_check_result(
+            _CheckStatus.WARN, "config.yaml keys",
+            f"unrecognized top-level key(s), silently ignored: {', '.join(unknown_keys)} "
+            "— check for a typo (e.g. 'calibraton' vs 'calibration')",
+        ))
+    else:
+        results.append(_check_result(_CheckStatus.PASS, "config.yaml keys", "no unrecognized top-level keys"))
 
     # Profile
     if not cfg.profile_path.exists():

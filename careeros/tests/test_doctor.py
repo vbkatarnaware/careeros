@@ -504,3 +504,34 @@ def test_last_run_picks_the_most_recent_of_multiple_run_dates(tmp_path, monkeypa
     status, detail = _status_for(results, "Last run (stub-source-a)")
     assert "99 items" in detail
     assert "2026-07-11" in detail
+
+
+# ── unknown config.yaml keys (v2.0) ──────────────────────────────────────
+
+def test_no_config_yaml_reports_no_unrecognized_keys(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    results = _run_doctor_checks(_cfg())
+    status, detail = _status_for(results, "config.yaml keys")
+    assert status == _CheckStatus.PASS
+
+
+def test_recognized_config_yaml_keys_pass(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    (tmp_path / ".careeros" / "config.yaml").write_text(
+        "threshold: 4.0\ncalibration:\n  enabled: true\ntuning:\n  enabled: false\n"
+    )
+    results = _run_doctor_checks(_cfg())
+    status, detail = _status_for(results, "config.yaml keys")
+    assert status == _CheckStatus.PASS
+
+
+def test_typo_d_top_level_key_warns_with_the_bad_key_named(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _init_careeros_dir(tmp_path, _VALID_PROFILE)
+    (tmp_path / ".careeros" / "config.yaml").write_text("calibraton:\n  enabled: true\n")
+    results = _run_doctor_checks(_cfg())
+    status, detail = _status_for(results, "config.yaml keys")
+    assert status == _CheckStatus.WARN
+    assert "calibraton" in detail

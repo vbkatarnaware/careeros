@@ -33,6 +33,30 @@ nothing. If it reports any FAIL, that's a configuration problem to
 surface via the Failure Handling Principle before Step 1 even starts —
 don't discover it mid-run.
 
+## Step 0.5 — Weekly tuning check (deterministic, automatic, v2.0)
+
+```
+careeros tune --check-due
+```
+
+Cheap and safe to run every single day — most days it's a no-op ("Not due
+yet"). Reads ONLY last month's already-written ledger, never today's fresh
+jobs, so this never overlaps with the reasoning Gate/Evaluate do later in
+this same run (see `AGENT_GUIDE.md`'s query-tuning section for why that
+separation matters).
+
+If it prints `"pattern(s) worth asking the candidate about"`, read
+`.careeros/tuning/pending_flags.json` and follow `prompts/tune_v1.md`: ask
+the candidate about EACH flag in plain language with the real numbers
+(no jargon, no file paths) — a simple yes/no is enough. If they say yes,
+run `careeros tune --propose` with the value they agreed to, citing the
+evidence, then `careeros tune --apply`. If they say no, do nothing further
+— it may surface again next week if the pattern persists, and that's fine.
+
+If it prints `"nothing worth flagging this week"`, say nothing about it at
+all and continue straight to Step 1 — the candidate asked not to be
+bothered on quiet weeks.
+
 ## Step 1 — Discover (deterministic)
 
 ```
@@ -176,7 +200,19 @@ default 3.5):
   passing → a Sheet row only (score + a concise reason), no artifacts, no
   Drive. Gives visibility into near-misses at zero extra AI cost.
 - Anything else (a hard-constraint failure, or score < `consider_threshold`)
-  is omitted from the Sheet entirely.
+  is omitted from the Sheet entirely, but still written to
+  `07_select/omitted.json` (v2.0) — nothing is silently discarded, it's just
+  not artifact/Sheet-worthy.
+
+`threshold` also writes `.careeros/processed.jsonl` (v2.0) unconditionally,
+for every job that reached a terminal decision anywhere this run —
+constraints-rejected, gate-dropped, evaluate-omitted, consider, and apply —
+not just the ones that made it to a Sheet row. This is what tomorrow's
+`dedupe` checks to keep an already-decided job from re-entering the pipeline
+and re-burning gate/eval tokens; it replaces the old `seen.jsonl`, which was
+only ever written from the Sheets step below and only for Apply/Consider
+ids, so a local-only run (Sheets disabled) never got any history tracking at
+all.
 
 ## Step 8 — Artifacts, for each selected job
 
@@ -367,8 +403,9 @@ Sheet, not buried under a growing history (P2.11). Every new Apply/Consider
 row also gets a `Status` dropdown cell defaulted to "Not Applied" — that
 column is the candidate's own to update by hand afterward (Applied,
 Interview, Rejected, ...) and the pipeline never touches it again once set.
-Records both tiers' ids to `.careeros/seen.jsonl` so tomorrow's `dedupe`
-skips them automatically. This also auto-migrates the Sheet schema (removes
+(History tracking for tomorrow's `dedupe` no longer happens here — see Step
+7's `.careeros/processed.jsonl` note; this step only appends rows.) This
+also auto-migrates the Sheet schema (removes
 any leftover deprecated columns, adds new ones, applies header + Score-color
 + Status-dropdown formatting) on every call — see `careeros sheets migrate`
 to run that pass standalone without appending anything (it also sorts a
@@ -401,3 +438,21 @@ resumable: once a failure has been surfaced and resolved per the Failure
 Handling Principle, fix the cause and re-run from that stage, not from the
 beginning. Never mark a step as done in your summary without confirming
 its output file actually exists on disk.
+
+## Related, but NOT part of this sequence (v2.0)
+
+`careeros tune --check-due` (Step 0.5 above) is the one piece of the
+tuning loop that DOES run automatically inside `daily` — it's a cheap,
+read-only check against last month's data. Everything else stays manual
+and separate:
+
+- **`careeros calibrate`** — golden-set drift check (`--check`/`--probe`/
+  `--score`/`--approve`). Weekly, or after any prompt/profile version bump.
+- **`careeros ledger`** — aggregates recent runs' outcomes into
+  `.careeros/learning/ledger.md` on demand (Step 0.5 already refreshes this
+  itself when a check is due, so running it separately is only for
+  glancing at the numbers between checks).
+- **`careeros tune --propose/--apply/--revert`** — the actual query
+  changes. Step 0.5 may prompt you to run these (only after asking the
+  candidate first); nothing here ever calls them on its own. See
+  `skills/tune.md` for the standalone workflow.

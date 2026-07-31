@@ -166,3 +166,44 @@ def test_base_url_and_headers_rapidapi_respects_custom_host(monkeypatch):
     )
     assert base_url == "https://custom.p.rapidapi.com"
     assert headers["X-RapidAPI-Host"] == "custom.p.rapidapi.com"
+
+
+# ── seniority mapping (v2.0): ai_experience_level -> Job.seniority ────────
+# `ai_experience_level` is a years-of-experience bucket ("0-2"/"2-5"/"5-10"/
+# "10+" -- confirmed against live raw.json, these are the only four values
+# the API ever returns), not a title-based label. Previously hardcoded to
+# None entirely, so every job (including Staff/Principal/Director-titled
+# roles) reached the AI gate with no seniority signal to filter on for free.
+
+from careeros.providers.fantastic_jobs import FantasticJobsProvider, _seniority_from_experience_level
+
+
+def test_seniority_from_experience_level_maps_all_four_known_buckets():
+    assert _seniority_from_experience_level("0-2") == "entry"
+    assert _seniority_from_experience_level("2-5") == "mid"
+    assert _seniority_from_experience_level("5-10") == "senior"
+    assert _seniority_from_experience_level("10+") == "lead"
+
+
+def test_seniority_from_experience_level_conservative_on_unknown_or_missing():
+    assert _seniority_from_experience_level(None) is None
+    assert _seniority_from_experience_level("") is None
+    assert _seniority_from_experience_level("some new bucket the API adds later") is None
+    assert _seniority_from_experience_level(42) is None
+
+
+def test_to_job_dict_wires_seniority_from_raw_item():
+    provider = FantasticJobsProvider()
+    raw = {
+        "title": "Staff Product Manager", "url": "https://example.com/job/1",
+        "organization": "Acme", "ai_experience_level": "10+",
+    }
+    job = provider.to_job_dict(raw)
+    assert job["seniority"] == "lead"
+
+
+def test_to_job_dict_seniority_none_when_field_absent():
+    provider = FantasticJobsProvider()
+    raw = {"title": "Product Manager", "url": "https://example.com/job/2", "organization": "Acme"}
+    job = provider.to_job_dict(raw)
+    assert job["seniority"] is None

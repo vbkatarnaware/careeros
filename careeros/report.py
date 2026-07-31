@@ -139,6 +139,24 @@ def _discovery_kpi_block(
     return "\n".join(lines) if lines else "_No discovery data recorded yet._"
 
 
+def _calibration_line(calibration: Optional[list[dict]]) -> str:
+    """v2.0: one line surfacing whether today's evaluate batch passed the
+    anti-inflation checks (careeros/calibration.py). `calibration` is the
+    list of finding dicts written to `06_evaluate/_calibration.json` — a
+    blocking finding can never reach here (evaluate --finalize exits before
+    caching), so this only ever reports WARN-level findings or a clean pass.
+    Deliberately a single line, not a table — this is a status light, not
+    a report; the full numbers live in `_calibration.json` for anyone who
+    wants to look."""
+    if not calibration:
+        return "_Not run this stage._"
+    fired = [f for f in calibration if f.get("fired")]
+    if not fired:
+        return "✅ Clean — all checks passed (see `_calibration.json` for the full run)."
+    codes = ", ".join(f["code"] for f in fired)
+    return f"⚠️ {len(fired)} check(s) flagged: {codes} (see `06_evaluate/_calibration.json`)."
+
+
 def render_summary(
     date: str, manifest: dict,
     apply_evals: list[Eval], consider_evals: list[Eval],
@@ -146,6 +164,7 @@ def render_summary(
     threshold: float = 4.0, consider_threshold: float = 3.5,
     discovery_stats: Optional[dict] = None,
     artifact_links: Optional[dict[str, dict[str, str]]] = None,
+    calibration: Optional[list[dict]] = None,
 ) -> str:
     """Day-level executive summary (P2.6). Same zero-AI philosophy as
     render_daily_report — a pure render of run.json + the day's ALREADY-
@@ -215,6 +234,8 @@ def render_summary(
     else:
         cost_line += " → 0 selected today, so no cost-per-job to report (supply-limited, not a run failure)"
 
+    calibration_line = _calibration_line(calibration)
+
     return f"""# CareerOS Daily Summary — {date}
 
 ## Funnel
@@ -222,6 +243,9 @@ def render_summary(
 
 ## Discovery KPI
 {discovery_kpi}
+
+## Evaluation calibration
+{calibration_line}
 
 ## Apply — score ≥ {threshold:.1f} ({len(selected)})
 {apply_section}

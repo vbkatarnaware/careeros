@@ -58,6 +58,21 @@ class ProviderResult:
 
     provider: str
     items: list[dict[str, Any]] = field(default_factory=list)
+    # v2.0: index-aligned with `items` — `tiers[i]` is the list of query-tier
+    # names (e.g. ["global_remote"], or a provider-agnostic ["default"] for
+    # a provider with no segmented query plan) that produced `items[i]`.
+    # Populated by `careeros/cli/discover.py`'s `_fetch_provider`, written to
+    # `01_discover/raw.json`'s top-level `provenance` key, and consumed by
+    # `careeros/pipeline/normalize.py` to set `Job.tiers` — the whole reason
+    # this exists is so the learning ledger (careeros/pipeline/outcomes.py)
+    # can attribute a job's fate back to the query tier that found it.
+    # NEVER read `work_mode_priority` to enumerate tier names — a segmented
+    # plan can consolidate multiple profile entries into one tier (e.g. both
+    # `navi_mumbai_onsite` and `mumbai_onsite` collapse into a single
+    # `"onsite"` query — see queryplan.py's `build_query_plan`), so the only
+    # correct source of tier names is the query plan itself, which is what
+    # populates this field.
+    tiers: list[list[str]] = field(default_factory=list)
     cost_usd: float = 0.0
     requests: int = 0
     records: int = 0

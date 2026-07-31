@@ -42,6 +42,16 @@ _UNICODE_FALLBACKS = {
     "€": "EUR ",  # Euro
     "£": "GBP ",  # British Pound
     "¥": "JPY ",  # Japanese Yen / Chinese Yuan
+    # Zero-width characters: invisible in any rendered form, so dropping
+    # them (not substituting a visible fallback) is always correct — found
+    # live in a company name ("Emp‌ower") that silently broke a whole
+    # cover letter's PDF render, most likely a copy-paste artifact from
+    # whatever produced that content rather than anything meaningful in the
+    # text itself.
+    "​": "",  # zero-width space
+    "‌": "",  # zero-width non-joiner
+    "‍": "",  # zero-width joiner
+    "﻿": "",  # zero-width no-break space / BOM
 }
 
 

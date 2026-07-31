@@ -41,9 +41,15 @@ def normalize_one(
     source: str,
     description_max_chars: int = 4000,
     raw_index: int | None = None,
+    tiers: list[str] | None = None,
 ) -> Job | None:
     """Normalize one raw provider record into a Job. Returns None if the
-    provider's own mapper rejects the record (missing title/URL)."""
+    provider's own mapper rejects the record (missing title/URL).
+
+    `tiers` (v2.0): the query tier(s) that surfaced this raw item — see
+    raw.json's `provenance` (careeros/providers/base.py's ProviderResult.tiers
+    docstring). Purely descriptive metadata for the learning ledger; never
+    affects `Job.content_hash()` or anything gate/evaluate reads."""
     mapped = provider.to_job_dict(raw)
     if mapped is None:
         return None
@@ -75,6 +81,7 @@ def normalize_one(
         contact=Contact(**contact_dict) if contact_dict else None,
         company_linkedin=mapped.get("company_linkedin"),
         raw_ref=f"01_discover/raw.json#{raw_index}" if raw_index is not None else None,
+        tiers=list(tiers) if tiers else None,
     )
 
 
@@ -84,12 +91,19 @@ def normalize_all(
     *,
     source: str,
     description_max_chars: int = 4000,
+    provenance: list[list[str]] | None = None,
 ) -> list[Job]:
+    """`provenance` (v2.0): index-aligned with `raw_records`, from raw.json's
+    top-level `provenance[source]` — see normalize_one's docstring. Optional
+    and defaults to None so any external caller/test that doesn't care about
+    tier attribution keeps working unchanged."""
     jobs: list[Job] = []
     for i, raw in enumerate(raw_records):
+        item_tiers = provenance[i] if provenance is not None and i < len(provenance) else None
         job = normalize_one(
             raw, provider, source=source,
             description_max_chars=description_max_chars, raw_index=i,
+            tiers=item_tiers,
         )
         if job is not None:
             jobs.append(job)

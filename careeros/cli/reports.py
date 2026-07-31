@@ -157,6 +157,12 @@ def summary(date: str = typer.Option(None)):
 
     discovery_stats = _build_discovery_stats(cfg, date)
 
+    calibration_path = runmeta.stage_dir(cfg.runs_dir, date, "evaluate") / "_calibration.json"
+    calibration = None
+    if calibration_path.exists():
+        with open(calibration_path) as f:
+            calibration = json.load(f)
+
     results_dir = runmeta.results_dir(cfg.careeros_dir, date)
     artifact_links: dict[str, dict[str, str]] = {}
     for e in apply_evals:
@@ -170,7 +176,8 @@ def summary(date: str = typer.Option(None)):
 
     summary_md = render_summary(date, manifest, apply_evals, consider_evals, jobs_by_id,
                                 threshold=cfg.threshold, consider_threshold=cfg.consider_threshold,
-                                discovery_stats=discovery_stats, artifact_links=artifact_links)
+                                discovery_stats=discovery_stats, artifact_links=artifact_links,
+                                calibration=calibration)
 
     summary_path = runmeta.run_dir(cfg.runs_dir, date) / "summary.md"
     summary_path.parent.mkdir(parents=True, exist_ok=True)

@@ -457,3 +457,19 @@ def test_multiple_monthly_providers_concurrent_spend_all_recorded_no_lost_update
     # Each of the 3 providers spent $1.00 — total must be exactly $3.00, not
     # less (a lost update would silently under-count).
     assert state["spend_usd"] == 3.0
+
+
+def test_provenance_tags_unmetered_provider_items_as_default_tier(tmp_path, monkeypatch):
+    """v2.0: an unmetered ('none' capability) provider has no segmented
+    query plan, so every item it returns shares one implicit "default" tier
+    -- raw.json's `provenance` must reflect that, index-aligned with `items`."""
+    monkeypatch.chdir(tmp_path)
+    p1 = _FakeProvider("fake-a", [_job("Role A1"), _job("Role A2")])
+    monkeypatch.setitem(registry._REGISTRY, "fake-a", p1)
+    _write_config(tmp_path, "  fake-a:\n    enabled: true\n")
+
+    result = runner.invoke(app, ["discover", "--date", "t16"])
+    assert result.exit_code == 0, result.output
+
+    raw = json.loads((tmp_path / ".careeros/runs/t16/01_discover/raw.json").read_text())
+    assert raw["provenance"]["fake-a"] == [["default"], ["default"]]

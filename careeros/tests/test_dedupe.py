@@ -149,3 +149,94 @@ def test_dedupe_against_sheet_ids_empty_set_keeps_all():
     unique, dropped = dedupe_against_sheet_ids(jobs, set())
     assert len(unique) == 2
     assert dropped == []
+
+
+# ── processed.jsonl (v2.0): TTL-aware history, generic terminal records ──
+
+def test_load_processed_ids_reads_legacy_first_seen_key(tmp_path):
+    """A pre-v2.0 seen.jsonl (id + first_seen, no date/reason/score) must
+    still be readable with zero migration step."""
+    from careeros.pipeline.dedupe import append_seen_ids, load_processed_ids
+    path = tmp_path / "seen.jsonl"
+    append_seen_ids(path, [make_job(id="legacy-a")], "2026-07-01")
+    assert load_processed_ids(path) == {"legacy-a"}
+
+
+def test_load_processed_ids_no_ttl_never_expires(tmp_path):
+    from careeros.pipeline.dedupe import append_processed, load_processed_ids
+    path = tmp_path / "processed.jsonl"
+    append_processed(path, [{"id": "old-job", "date": "2020-01-01", "terminal_stage": "gate", "reason": "role-mismatch", "score": None}])
+    assert load_processed_ids(path) == {"old-job"}
+    assert load_processed_ids(path, ttl_days=30, as_of=None) == {"old-job"}  # as_of missing -> no TTL applied
+
+
+def test_load_processed_ids_ttl_expires_old_entries(tmp_path):
+    from careeros.pipeline.dedupe import append_processed, load_processed_ids
+    path = tmp_path / "processed.jsonl"
+    append_processed(path, [
+        {"id": "stale", "date": "2026-06-01", "terminal_stage": "gate", "reason": "role-mismatch", "score": None},
+        {"id": "fresh", "date": "2026-07-25", "terminal_stage": "gate", "reason": "role-mismatch", "score": None},
+    ])
+    ids = load_processed_ids(path, ttl_days=30, as_of="2026-07-31")
+    assert ids == {"fresh"}, "an entry older than the TTL must be allowed to resurface"
+
+
+def test_load_processed_ids_keeps_unparseable_dates_forever(tmp_path):
+    """A qa-* run label isn't an ISO date -- conservatively never expire it
+    rather than guessing."""
+    from careeros.pipeline.dedupe import append_processed, load_processed_ids
+    path = tmp_path / "processed.jsonl"
+    append_processed(path, [{"id": "qa-job", "date": "qa-hardening-02", "terminal_stage": "gate", "reason": None, "score": None}])
+    ids = load_processed_ids(path, ttl_days=30, as_of="2099-01-01")
+    assert ids == {"qa-job"}
+
+
+def test_dedupe_against_history_respects_ttl(tmp_path):
+    from careeros.pipeline.dedupe import append_processed, dedupe_against_history
+    path = tmp_path / "processed.jsonl"
+    append_processed(path, [{"id": "stale", "date": "2026-06-01", "terminal_stage": "evaluate", "reason": None, "score": 2.0}])
+    jobs = [make_job(id="stale"), make_job(id="new")]
+    unique, dropped = dedupe_against_history(jobs, path, ttl_days=30, as_of="2026-07-31")
+    assert [j.id for j in unique] == ["stale", "new"]
+    assert dropped == []
+
+
+def test_append_processed_records_are_additive(tmp_path):
+    from careeros.pipeline.dedupe import append_processed, load_processed_ids
+    path = tmp_path / "processed.jsonl"
+    append_processed(path, [{"id": "a", "date": "2026-07-30", "terminal_stage": "constraints", "reason": "onsite", "score": None}])
+    append_processed(path, [{"id": "b", "date": "2026-07-31", "terminal_stage": "select", "reason": "apply", "score": 4.3}])
+    assert load_processed_ids(path) == {"a", "b"}
+
+
+# ── tier provenance union on collapse (v2.0) ─────────────────────────────
+
+def test_dedupe_in_run_unions_tiers_across_collapsed_duplicate():
+    from careeros.models import Job
+    a1 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme",
+             apply_url="https://x", tiers=["global_remote"])
+    a2 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme",
+             apply_url="https://x", tiers=["india_remote"])
+    unique, dropped = dedupe_in_run([a1, a2])
+    assert len(unique) == 1
+    assert unique[0].tiers == ["global_remote", "india_remote"]
+
+
+def test_dedupe_cross_location_unions_tiers_across_collapsed_duplicate():
+    from careeros.models import Job
+    desc = "Same role description text repeated for length. " * 5
+    a = Job(id="a-poland", source="fantastic-jobs", title="Senior PM", company="Appfire",
+            apply_url="https://x", location="Poland", description=desc, tiers=["global_remote"])
+    b = Job(id="a-bulgaria", source="fantastic-jobs", title="Senior PM", company="Appfire",
+            apply_url="https://y", location="Bulgaria", description=desc, tiers=["india_remote"])
+    unique, dropped = dedupe_cross_location([a, b])
+    assert len(unique) == 1
+    assert unique[0].tiers == ["global_remote", "india_remote"]
+
+
+def test_dedupe_in_run_tiers_none_when_neither_job_has_tiers():
+    from careeros.models import Job
+    a1 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://x")
+    a2 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://x")
+    unique, _ = dedupe_in_run([a1, a2])
+    assert unique[0].tiers is None
