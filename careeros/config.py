@@ -132,6 +132,21 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "work_arrangement": [],
         "remove_agency": True,
         "has_salary": None,
+        # v2.1: server-side years-of-experience bands to fetch. The API's
+        # own `ai_experience_level` values are exactly "0-2" | "2-5" |
+        # "5-10" | "10+" (measured: those four cover 100% of 311 real
+        # records, no nulls). Verified live that the filter works but takes
+        # ONE value per request, so each band listed here becomes its own
+        # query per tier — extra requests, but NOT extra records, since the
+        # daily total divides across however many queries exist.
+        #
+        # Ships EMPTY (= fetch every band, pre-v2.1 behavior) because the
+        # right bands depend entirely on the candidate's own experience;
+        # `careeros start` / the profile's deal_breakers.min_years_ok is
+        # what should inform it. For a candidate with ~3 years,
+        # ["0-2", "2-5"] is the reachable set and cuts roughly two thirds
+        # of wasted quota.
+        "experience_levels": [],
         "tier_limits": {},
         # ── Quota guard (P2.8). CareerOS RECOMMENDS a daily discovery limit
         # and WARNS before you exhaust your provider quota, but never silently

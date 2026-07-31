@@ -188,3 +188,49 @@ def test_resolve_tier_limit_handles_missing_tier_limits_key():
     """A user config with no tier_limits at all (not even an empty dict)
     must not raise — falls back to default_limit cleanly."""
     assert resolve_tier_limit("global_remote", {"discovery_mode": "profile"}, 50) == 50
+
+
+# ── experience-level fan-out (v2.1) ──────────────────────────────────────
+# Measured motivation: 66% of 311 real fetched records asked for 5+ years
+# against a ~3-year candidate. The API filters on this server-side but takes
+# ONE band per request, so a tier must fan out into one query per band.
+
+def _profile_3_tier():
+    from careeros.tests.conftest import make_profile
+    return make_profile(
+        role_priorities=["Product Manager"],
+        work_mode_priority=["global_remote", "india_remote", "mumbai_onsite"],
+        location={"onsite_ok": ["Mumbai"]},
+    )
+
+
+def test_experience_levels_fan_each_tier_into_one_query_per_band():
+    plan = build_query_plan(_profile_3_tier(), {"experience_levels": ["0-2", "2-5"]})
+    assert len(plan) == 6, "3 tiers x 2 bands"
+    assert {q["experience_level"] for q in plan} == {"0-2", "2-5"}
+
+
+def test_experience_fan_out_keeps_the_tier_name_on_work_mode():
+    """The ledger aggregates by `_work_mode`; splitting a tier per band would
+    halve each one's sample and push every tier away from arming."""
+    plan = build_query_plan(_profile_3_tier(), {"experience_levels": ["0-2", "2-5"]})
+    modes = [q["_work_mode"] for q in plan]
+    assert modes.count("global_remote") == 2
+    assert all(":" not in m for m in modes), "tier names must not be suffixed with the band"
+
+
+def test_no_experience_levels_configured_keeps_pre_v21_behaviour():
+    plan = build_query_plan(_profile_3_tier(), {})
+    assert len(plan) == 3
+    assert all("experience_level" not in q for q in plan)
+
+
+def test_empty_experience_levels_list_is_treated_as_unset():
+    plan = build_query_plan(_profile_3_tier(), {"experience_levels": []})
+    assert len(plan) == 3
+
+
+def test_single_experience_band_does_not_multiply_queries():
+    plan = build_query_plan(_profile_3_tier(), {"experience_levels": ["2-5"]})
+    assert len(plan) == 3
+    assert all(q["experience_level"] == "2-5" for q in plan)

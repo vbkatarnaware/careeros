@@ -147,6 +147,21 @@ def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[s
         params["location"] = location
     if work_arrangement:
         params["ai_work_arrangement"] = work_arrangement
+    # v2.1: server-side years-of-experience filter, verified live 2026-08-01.
+    # This is the single highest-value filter available: measured across 311
+    # real fetched records, 66% asked for 5+ years against a candidate with
+    # 3 — i.e. two thirds of the weekly record quota was being spent on jobs
+    # that were never applicable, before any resume was ever read.
+    #
+    # IMPORTANT: the API accepts exactly ONE value per request. Verified
+    # live that neither a comma list ("0-2,2-5") nor a repeated param ORs
+    # them together — each silently returns just one band. So covering two
+    # bands means two queries, which `pipeline/queryplan.py` emits. That
+    # costs extra REQUESTS but not extra RECORDS (the quota's actual unit),
+    # since the daily total is divided across however many queries exist.
+    experience_level = api_cfg.get("experience_level")
+    if experience_level:
+        params["ai_experience_level"] = experience_level
     if has_salary is not None:
         params["has_salary"] = bool(has_salary)
     if remove_agency:

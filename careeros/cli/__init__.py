@@ -101,6 +101,7 @@ from careeros.cli import (  # noqa: E402,F401
     sheets_cmds,
     stubs,
     tune,
+    verify_live_cmd,
 )
 
 # Backward-compatible re-exports: tests (and any external tooling) that did
@@ -138,3 +139,4 @@ from careeros.cli.sheets_cmds import (  # noqa: E402,F401
 )
 from careeros.cli.stubs import daily, prep, scan, start  # noqa: E402,F401
 from careeros.cli.tune import tune  # noqa: E402,F401
+from careeros.cli.verify_live_cmd import verify_live  # noqa: E402,F401

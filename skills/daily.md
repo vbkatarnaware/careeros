@@ -214,6 +214,31 @@ only ever written from the Sheets step below and only for Apply/Consider
 ids, so a local-only run (Sheets disabled) never got any history tracking at
 all.
 
+## Step 7.5 — Verify the live posting (deterministic, v2.1)
+
+```
+careeros verify-live --date {today}
+```
+
+Runs BEFORE artifacts so a job that turns out to be impossible never costs a
+generated resume. For each Apply-tier job only (1-3 on a typical day), fetches
+the REAL posting and checks the two things the provider gets wrong most often:
+years-of-experience and location/work-arrangement.
+
+This exists because of two same-day misses on 2026-07-31, both from trusting
+provider metadata: MDOTM was labelled `remote: true` but is Milan-hybrid, and
+AU Small Finance Bank was labelled "2-5 years" (with a 1,509-char description
+that never stated a bar) while the live posting asks for 7. Neither was a
+reasoning failure — the pipeline scored honestly against wrong data, which is
+exactly why no smarter filter or prompt could have caught them.
+
+It FLAGS, never auto-rejects. If anything is flagged, surface it to the
+candidate in plain language per the Failure Handling Principle **before**
+running Step 8 — a job whose live posting contradicts what we scored should
+not silently get a resume generated for it. Let them decide: keep, drop, or
+re-score. An unreadable posting (login wall, closed, network error) is
+reported as "couldn't verify", not as "the job is fine".
+
 ## Step 8 — Artifacts, for each selected job
 
 ```

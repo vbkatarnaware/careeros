@@ -82,6 +82,17 @@ api:
   time_range: "7d"                 # 1h | 24h | 7d | 6m
   title_search: ["Product Manager"]
   location_search: []
+  # v2.1: server-side years-of-experience filter — usually the single
+  # highest-value setting in this file. The API's own values are exactly
+  # "0-2" | "2-5" | "5-10" | "10+", and it accepts ONE per request, so each
+  # band listed here becomes its own query per search tier (extra requests,
+  # but NOT extra records — your daily `limit` divides across them).
+  # Empty = fetch every band. Set this to the bands you can realistically
+  # get, based on your profile's deal_breakers.min_years_ok: for a ~3-year
+  # candidate, ["0-2", "2-5"] is the reachable set. Measured on one real
+  # profile, leaving this empty meant 66% of the weekly quota went to jobs
+  # asking 5+ years that could never convert.
+  experience_levels: []
   title_exclusion_search: []
   location_exclusion_search: []
   work_arrangement: []             # any of: "On-site" | "Hybrid" | "Remote OK" | "Remote Solely"

@@ -207,3 +207,16 @@ def test_to_job_dict_seniority_none_when_field_absent():
     raw = {"title": "Product Manager", "url": "https://example.com/job/2", "organization": "Acme"}
     job = provider.to_job_dict(raw)
     assert job["seniority"] is None
+
+
+# ── ai_experience_level filter (v2.1) ────────────────────────────────────
+
+def test_build_params_sends_experience_level_when_configured():
+    p = _build_params({"experience_level": "2-5"}, limit=10, search="")
+    assert p["ai_experience_level"] == "2-5"
+
+
+def test_build_params_omits_experience_level_when_unset():
+    assert "ai_experience_level" not in _build_params({}, limit=10, search="")
+    assert "ai_experience_level" not in _build_params({"experience_level": None}, limit=10, search="")
+    assert "ai_experience_level" not in _build_params({"experience_level": ""}, limit=10, search="")

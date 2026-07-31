@@ -81,15 +81,35 @@ def build_query_plan(profile: Profile, apify_cfg: dict[str, Any]) -> list[dict[s
     seen_specs: set[tuple] = set()
     has_onsite_tier = False
 
+    # v2.1: years-of-experience bands to fetch (see fantastic_jobs.py's
+    # `_build_params` for why this must be one query PER band). Empty/absent
+    # keeps the pre-v2.1 behavior of one unfiltered query per tier.
+    experience_levels = list(apify_cfg.get("experience_levels", []) or [])
+
     def _add(work_mode: str, location_search: list[str], work_arrangement: list[str]) -> None:
         dedup_key = (tuple(location_search), tuple(work_arrangement))
         if dedup_key in seen_specs:
             return
         seen_specs.add(dedup_key)
-        query = _base_query(apify_cfg, role_priorities)
-        query.update({"location_search": location_search, "work_arrangement": work_arrangement})
-        query["_work_mode"] = work_mode  # debug/logging only, not an actor field
-        plan.append(query)
+
+        def _emit(experience_level: str | None) -> None:
+            query = _base_query(apify_cfg, role_priorities)
+            query.update({"location_search": location_search, "work_arrangement": work_arrangement})
+            if experience_level:
+                query["experience_level"] = experience_level
+            # `_work_mode` deliberately stays the TIER name even when a tier
+            # fans out across experience bands: the learning ledger
+            # (pipeline/ledger.py) aggregates by it, and splitting one tier
+            # into several would halve each one's sample size and push every
+            # tier further from the arming thresholds for no analytical gain.
+            query["_work_mode"] = work_mode  # debug/logging only, not an actor field
+            plan.append(query)
+
+        if experience_levels:
+            for level in experience_levels:
+                _emit(level)
+        else:
+            _emit(None)
 
     for tier in work_modes:
         if tier == "global_remote":
