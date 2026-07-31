@@ -4,6 +4,51 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-08-01
+
+Root cause found for ~100 applications producing zero recruiter calls: not
+resume quality or the market, but which jobs the pipeline was even trying.
+Measured across 311 real fetched jobs (2026-07-28..07-31), 66% asked for 5+
+years of experience against a ~3-year candidate — two thirds of every day's
+record quota spent on jobs that could never convert, before any resume was
+read.
+
+### Added
+
+- **Experience-band discovery filter** (`api.experience_levels` in
+  `config.yaml`) — the Fantastic Jobs API's `ai_experience_level` field
+  ("0-2"/"2-5"/"5-10"/"10+") works as a server-side query filter, verified
+  live. It accepts one value per request, so each configured band fans a
+  search tier out into its own query. Set to `["0-2", "2-5"]`: 3 tiers x 2
+  bands = 6 queries x 16 records = the same ~100/day, but every record is
+  now in reach. Deliberately did not also add a title exclusion for
+  Staff/Principal/Director/VP — measured, all 45 such jobs were already in
+  the 5+ bands, so the experience filter removes them with zero added false
+  positives.
+- **`careeros verify-live`** — new stage between `threshold` and
+  `artifacts`. Fetches the real posting for each Apply-tier job (1-3/day)
+  and checks years-of-experience and location/work-arrangement against the
+  profile, flagging (never auto-rejecting) a mismatch. Built after two
+  same-day misses where the pipeline scored honestly against wrong provider
+  metadata: MDOTM labelled remote but was Milan-hybrid, AU Small Finance
+  Bank labelled "2-5 years" while the live posting asked for 7. Both are
+  pinned as regression tests.
+
+### Fixed
+
+- **Salary floor now compares exactly for same-currency postings.** The
+  0.9x margin in `constraints.py` exists to absorb FX conversion error, but
+  was also being applied when no conversion happened, silently lowering a
+  stated floor by 10% (12 LPA rejected only below 10.8, letting an 11 LPA
+  posting through). Same-currency amounts now compare exactly; converted
+  amounts keep the margin.
+- **`deal_breakers.min_years_ok`: 4 -> 3** in `.careeros/profile.yaml`.
+  Actual full-time experience is ~3.0y; the inflated 4 was quietly boosting
+  `seniority_fit` on every evaluation. `profile.version` bumped 9 -> 10.
+- **`comp.floor_lpa`: 15 -> 12.**
+
+667 tests passing.
+
 ## [2.0.0] - 2026-07-31
 
 Triggered by a real run that looked like a discovery-quality collapse (1
