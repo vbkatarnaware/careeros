@@ -137,9 +137,20 @@
   margin: fit-margin,
 )
 
+// A light resume (fewer bullets/skills than the page-fit tier needs) used to
+// finish Education early and leave every leftover inch as one dead gap below
+// it -- the auto-fit loop only picks the LARGEST font that still fits one
+// page, it never stretches content to fill it. These `v(1fr)` spacers between
+// sections absorb that leftover space instead, distributing it as generous
+// breathing room throughout the page. On a resume that already fills the
+// page at its fit tier there's no leftover space to distribute, so each
+// spacer collapses toward 0 and this is a no-op -- safe for every density.
+
 // -- Summary -----------------------------------------------------------
 = Summary
 #data.summary
+
+#v(1fr)
 
 // -- Experience --------------------------------------------------------
 = Experience
@@ -152,6 +163,8 @@
     details: list(..e.bullets.map(b => [#b])),
   )
 ]
+
+#v(1fr)
 
 // -- Selected Products ----------------------------------------------------
 #if "projects" in data and data.projects.len() > 0 [
@@ -166,11 +179,14 @@
       details: list(..p.bullets.map(b => [#b])),
     )
   ]
+  #v(1fr)
 ]
 
 // -- Skills ----------------------------------------------------------------
 = Skills
 #skills(data.skills.map(cat => (cat.category, cat.items)))
+
+#v(1fr)
 
 // -- Education ---------------------------------------------------------
 = Education

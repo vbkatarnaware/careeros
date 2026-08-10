@@ -163,19 +163,26 @@ def test_finalize_rejects_a_resume_that_overflows_one_page(tmp_path, monkeypatch
     cfg, date, artifacts_dir = _setup_run(tmp_path, monkeypatch)
     # Force overflow: a huge summary, a maximally-padded bullet (schema caps
     # bullets at 4 per company, so bulk comes from length/skills, not count),
-    # and many long skill categories.
+    # and many long skill categories. Multipliers padded up from 40/20 after
+    # the resume.typ `v(1fr)` section-spacer fix (2026-08-06, distributes a
+    # light resume's leftover space instead of dumping it all below Education)
+    # measurably recovered a few % of vertical room even at the smallest fit
+    # tier -- confirmed via direct before/after compile that a real resume's
+    # content (bounded by resume_v4.md's own 22-28 skills / 3-4 bullets caps,
+    # nothing like this fixture) was never at risk; this fixture just needed
+    # more headroom to keep genuinely proving the >1-page rejection path.
     huge_summary = " ".join(
-        ["This is a very long summary sentence padded out with extra words to take up space."] * 40
+        ["This is a very long summary sentence padded out with extra words to take up space."] * 60
     )
     huge_bullet = "Shipped widget X, growing revenue 40%. " + (
-        "Extra padding detail repeated to make this one bullet very long indeed. " * 40
+        "Extra padding detail repeated to make this one bullet very long indeed. " * 60
     )
     # Items must be a real profile.yaml skill (the fixture profile only has
     # "SQL") now that verify_resume_facts also rejects fabricated skills --
     # only the category label is free text, so padding lives there.
     huge_skills = [
         {"category": f"Category Number {i} With Extra Padding Words", "items": ["SQL"] * 12}
-        for i in range(20)
+        for i in range(30)
     ]
     _write_resume_json(
         artifacts_dir, summary=huge_summary, skills=huge_skills,
