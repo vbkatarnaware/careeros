@@ -24,3 +24,8 @@ htmlcov/
 *.env
 .env*
 secrets*
+
+# personal data — resumes and sync reports must never be committed
+*.pdf
+*resume*.pdf
+profile-sync-report-*.md
