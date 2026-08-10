@@ -21,21 +21,25 @@ import VideoDemo from "@/components/ui/VideoDemo.tsx";
     You generate it once and edit it rarely.
   </p>
 
-  <h2>2. Add your discovery credentials</h2>
+  <h2>2. Discovery is already set up</h2>
   <p>
-    Real credentials live in <code>.careeros/secrets.env</code>, which is
-    gitignored. Config files hold the <em>name</em> of an environment variable,
-    never the key itself.
+    Nothing to add here. The default source reads a free, open dataset (no
+    API key, no <code>secrets.env</code> entry, no signup) covering 65 real
+    ATS platforms, updated daily. It filters itself from the
+    <code>profile.yaml</code> you just built.
+  </p>
+  <p>
+    Want the optional paid Fantastic Jobs source too (e.g. for its
+    LinkedIn/YC/Wellfound coverage)? Real credentials live in
+    <code>.careeros/secrets.env</code>, which is gitignored — config files
+    hold only the <em>name</em> of an environment variable, never the key
+    itself.
   </p>
   <CommandBlock
     client:visible
-    label=".careeros/secrets.env"
+    label=".careeros/secrets.env (optional)"
     code={`FANTASTIC_API_KEY=your-developer-fantastic-jobs-key`}
   />
-  <p>
-    That's the only credential you need. If you skip the plan setting, CareerOS
-    assumes the free tier (500 records per week) rather than over-fetching.
-  </p>
 
   <h2>3. Run the daily pipeline</h2>
   <CommandBlock client:visible label="run" code={`$ careeros daily`} />

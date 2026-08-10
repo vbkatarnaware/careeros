@@ -43,8 +43,11 @@ def init():
 
     typer.echo(
         "\nNext:\n"
-        "  1. In .careeros/config.yaml, set api.transport to \"direct\" or \"rapidapi\" "
-        "and the matching key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY).\n"
+        "  1. Install the free discovery source: pip install -e \".[ats-dataset]\" "
+        "(no signup, no API key — see careeros/providers/ats_dataset.py). Only if "
+        "you want the optional paid Fantastic Jobs source instead/as well, set "
+        "providers.fantastic-jobs.enabled: true in .careeros/config.yaml and its "
+        "api.transport + key env var (FANTASTIC_API_KEY / RAPIDAPI_KEY).\n"
         "  2. Run `/careeros start` inside your host coding CLI — paste your CV "
         "(or `skip`), set your interviews/week goal, plan, and daily job limit, "
         "and choose Google Sheets/Drive or local-only results (Sheets/Drive is "

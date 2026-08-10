@@ -13,8 +13,11 @@ from careeros import calibration, runmeta
 from careeros.cache import Cache, eval_cache_key
 from careeros.cli import app
 from careeros.cli._shared import _config, _load_profile, _today
+from careeros.companies import normalize_name
 from careeros.config import Config
-from careeros.models import Job, dumps
+from careeros.models import Job, Profile, dumps
+
+_ROTATION_STATE_FILENAME = "gate_rotation.json"
 
 
 # ── gate (AI stage: prepare / finalize) ──────────────────────────────────
@@ -38,15 +41,151 @@ def gate(
         raise typer.Exit(1)
 
 
+def _gate_input_job(job: dict, max_chars: int) -> dict:
+    """A copy of one eligible.json job dict with `description` trimmed to
+    `max_chars` for the Gate's eyes only — this is what the Gate actually
+    reads (see cfg.gate_description_max_chars's docstring: 86% of gate
+    tokens are this one field, measured across this project's own past
+    runs, for a stage that only needs "could this plausibly be a fit").
+    `eligible.json` itself is never touched, and `evaluate` reads it
+    independently at its own `description_max_chars`, so evaluation depth
+    is unaffected. Same truncate-with-ellipsis convention as
+    pipeline/normalize.py, applied a second time on top of it."""
+    description = job.get("description")
+    if description and len(description) > max_chars:
+        job = {**job, "description": description[:max_chars].rstrip() + "…"}
+    return job
+
+
+def _load_rotation_state(cfg: Config) -> dict[str, str]:
+    path = cfg.careeros_dir / _ROTATION_STATE_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_rotation_state(cfg: Config, state: dict[str, str]) -> None:
+    path = cfg.careeros_dir / _ROTATION_STATE_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        f.write(dumps(state))
+
+
+def _company_cap_select(
+    jobs: list[dict], *, max_per_company: int | None, rotation: dict[str, str],
+) -> tuple[list[dict], list[dict]]:
+    """Per-company fairness cap for the AI Gate's INPUT only — never applied
+    to `eligible.json` itself, so nothing discovered is ever deleted. A job
+    dropped here just isn't sent to the Gate this run; since it's never
+    gated/evaluated it's never written to `.careeros/processed.jsonl`, so it
+    remains a normal candidate on every future run.
+
+    Rotation-aware, not a fixed top-N: within a company, jobs never before
+    sent to the Gate (absent from `rotation`) sort first, then the
+    longest-unshown, so a flooding company's unseen jobs get priority over
+    ones a prior run already showed the Gate — a company is never
+    permanently capped at the same N jobs."""
+    if not max_per_company:
+        return jobs, []
+    by_company: dict[str, list[dict]] = {}
+    for job in jobs:
+        by_company.setdefault(normalize_name(job.get("company") or ""), []).append(job)
+
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for group in by_company.values():
+        # Stable sort applied twice (recency, then rotation) is simplest
+        # correct way to express a two-key sort with mixed direction:
+        # most-recent-first among ties, but rotation state as the primary key.
+        group.sort(key=lambda j: j.get("posted_at") or "", reverse=True)
+        group.sort(key=lambda j: rotation.get(j["id"], ""))
+        kept.extend(group[:max_per_company])
+        dropped.extend(group[max_per_company:])
+    return kept, dropped
+
+
+def _gate_rank_key(job: dict, profile: Profile) -> tuple[int, int]:
+    """Plain, auditable ranking — tier priority then role-title priority,
+    both straight from profile.yaml, no ML/embeddings. Lower sorts first."""
+    work_modes = list(getattr(profile, "work_mode_priority", []) or [])
+    tiers = job.get("tiers") or []
+    tier_rank = min((work_modes.index(t) for t in tiers if t in work_modes), default=len(work_modes))
+
+    role_priorities = list(getattr(profile, "role_priorities", []) or [])
+    title = (job.get("title") or "").lower()
+    role_rank = next(
+        (i for i, r in enumerate(role_priorities) if r.lower() in title),
+        len(role_priorities),
+    )
+    return (tier_rank, role_rank)
+
+
+def _overall_cap_select(
+    jobs: list[dict], *, gate_max_jobs: int | None, profile: Profile,
+) -> tuple[list[dict], list[dict]]:
+    """Cost ceiling applied AFTER the per-company cap. Same
+    discovery-is-never-lost guarantee as `_company_cap_select` — this only
+    decides what reaches the Gate today."""
+    if not gate_max_jobs or len(jobs) <= gate_max_jobs:
+        return jobs, []
+    ranked = sorted(jobs, key=lambda j: j.get("posted_at") or "", reverse=True)
+    ranked.sort(key=lambda j: _gate_rank_key(j, profile))
+    return ranked[:gate_max_jobs], ranked[gate_max_jobs:]
+
+
 def _gate_prepare(cfg: Config, date: str) -> None:
     eligible_path = runmeta.stage_dir(cfg.runs_dir, date, "constraints") / "eligible.json"
     if not eligible_path.exists():
         typer.echo(f"No {eligible_path} — run `careeros constraints` first.", err=True)
         raise typer.Exit(1)
     with open(eligible_path) as f:
-        jobs = json.load(f)
+        eligible_jobs = json.load(f)
+
+    rotation = _load_rotation_state(cfg)
+    selected, company_capped = _company_cap_select(
+        eligible_jobs, max_per_company=cfg.max_jobs_per_company_per_run, rotation=rotation,
+    )
+
+    volume_capped: list[dict] = []
+    if cfg.gate_max_jobs:
+        try:
+            profile = _load_profile(cfg)
+        except (OSError, TypeError, KeyError) as e:
+            typer.echo(
+                f"[gate:prepare] gate_max_jobs is set but profile.yaml couldn't be "
+                f"read ({e}) — skipping the volume cap this run.", err=True,
+            )
+        else:
+            selected, volume_capped = _overall_cap_select(
+                selected, gate_max_jobs=cfg.gate_max_jobs, profile=profile,
+            )
+
+    for job in selected:
+        rotation[job["id"]] = date
+    if selected:
+        _save_rotation_state(cfg, rotation)
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "gate")
+    if company_capped or volume_capped:
+        selection_meta = {
+            "eligible": len(eligible_jobs),
+            "sent_to_gate": len(selected),
+            "dropped_by_company_cap": len(company_capped),
+            "dropped_by_gate_max_jobs": len(volume_capped),
+            "dropped_ids": {
+                "company_cap": [j["id"] for j in company_capped],
+                "gate_max_jobs": [j["id"] for j in volume_capped],
+            },
+        }
+        with open(stage_dir / "_selection_meta.json", "w") as f:
+            f.write(dumps(selection_meta))
+
+    jobs = [_gate_input_job(j, cfg.gate_description_max_chars) for j in selected]
+
     batch_size = cfg.gate_batch_size
     batches = [jobs[i:i + batch_size] for i in range(0, len(jobs), batch_size)]
     input_paths = []
@@ -62,8 +201,16 @@ def _gate_prepare(cfg: Config, date: str) -> None:
     })
 
     prompt_path = cfg.prompt_path("gate")
+    cap_note = ""
+    if company_capped or volume_capped:
+        cap_note = (
+            f" ({len(eligible_jobs)} eligible, {len(company_capped)} held back by the"
+            f" per-company cap, {len(volume_capped)} by gate_max_jobs — see"
+            f" 05_gate/_selection_meta.json; none are lost, they're candidates again"
+            f" on a future run)"
+        )
     typer.echo(
-        f"[gate:prepare] {len(jobs)} jobs -> {len(batches)} batch(es) of up to {batch_size}.\n\n"
+        f"[gate:prepare] {len(jobs)} jobs -> {len(batches)} batch(es) of up to {batch_size}.{cap_note}\n\n"
         f"AGENT INSTRUCTIONS:\n"
         f"Read {prompt_path} and .careeros/profile.yaml.\n"
         f"For each 05_gate/_input_N.json batch, write 05_gate/_output_N.json:\n"

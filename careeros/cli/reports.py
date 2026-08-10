@@ -83,7 +83,17 @@ def _build_discovery_stats(cfg: Config, date: str) -> Optional[dict]:
             platform_counts[src] = platform_counts.get(src, 0) + 1
     top_platforms = sorted(platform_counts.items(), key=lambda kv: -kv[1])[:5]
 
-    stats: dict = {"ats_count": ats_count, "jb_count": jb_count, "top_platforms": top_platforms}
+    # v1.9: only set when fantastic-jobs actually ran with items — without
+    # this guard, disabling it (now the default; see providers/ats_dataset.py)
+    # made summary.md print a FALSE "Sources: 0 ATS-direct, 0 job board" line
+    # (ats_count/jb_count both 0 unconditionally) even when every job that
+    # run came from a real ATS. report.py already guards on `is not None`/
+    # truthiness, so omitting the keys entirely is enough to drop the line.
+    stats: dict = {}
+    if fj_items:
+        stats["ats_count"] = ats_count
+        stats["jb_count"] = jb_count
+        stats["top_platforms"] = top_platforms
 
     if "fantastic-jobs" in provider_names:
         fj_meta = meta_by_provider.get("fantastic-jobs", {})

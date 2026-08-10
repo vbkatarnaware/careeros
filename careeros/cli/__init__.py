@@ -96,6 +96,7 @@ from careeros.cli import (  # noqa: E402,F401
     lint_verify,
     perjob,
     pipeline,
+    registry_cmd,
     reports,
     setup,
     sheets_cmds,

@@ -16,16 +16,17 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
   <p>
     The <code>providers</code> block controls which sources are enabled and the
     order they run in. Deduplication keeps the first occurrence of a role, so
-    list your most-trusted source first. As of v1.7, discovery runs on a single
-    source — Fantastic Jobs, free and direct, no signup beyond an API key. Seven
-    other sources shipped through v1.6 and were removed after two weeks of live
-    evidence; see the project's <code>providers/README.md</code> "Evaluated and
-    removed" section if you're curious, or want to add your own provider back.
+    list your most-trusted source first. As of v1.9, discovery runs on
+    <code>ats-dataset</code>: a free, open, no-signup dataset covering 65
+    real ATS platforms, filtered from your own <code>profile.yaml</code>.
+    Several earlier sources, including a paid REST aggregator, were tried
+    and superseded — see the project's <code>providers/README.md</code> for
+    the evidence, and how to re-enable any of them.
   </p>
   <CommandBlock
     client:visible
     label=".careeros/config.yaml"
-    code={`providers:\n  fantastic-jobs: { enabled: true }     # your main (and only) source`}
+    code={`providers:\n  ats-dataset: { enabled: true }        # free, no signup — your main source\n  fantastic-jobs: { enabled: false }    # optional paid alternative`}
   />
 
   <h2>Thresholds</h2>
@@ -57,11 +58,13 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
     Secrets never go in config. They live in <code>.careeros/secrets.env</code>
     (gitignored), and config fields reference the environment variable
     <em>name</em>. This is why the Sheets service account and the Drive OAuth
-    client are set by pointing at env vars, not by pasting keys.
+    client are set by pointing at env vars, not by pasting keys. The default
+    discovery source needs none of this — the block below only applies if
+    you've enabled the optional paid Fantastic Jobs provider.
   </p>
   <CommandBlock
     client:visible
-    label=".careeros/secrets.env"
+    label=".careeros/secrets.env (only if fantastic-jobs is enabled)"
     code={`FANTASTIC_API_KEY=...  # or RAPIDAPI_KEY, depending on api.transport`}
   />
 

@@ -57,6 +57,42 @@ If it prints `"nothing worth flagging this week"`, say nothing about it at
 all and continue straight to Step 1 — the candidate asked not to be
 bothered on quiet weeks.
 
+## Step 0.6 — Reference registry sync (deterministic, automatic, v2.0)
+
+```
+careeros registry sync
+```
+
+Only meaningful if `ats-watchlist` is enabled and you're hand-adding
+companies to `.careeros/watchlist.yaml` — this keeps the local lookup
+(`careeros registry find <name>`) current so you can check "is this
+company already in the free hosted snapshot" before writing a new
+watchlist entry, instead of guessing or adding a redundant one.
+
+Cheap and self-limiting: it always fetches the small upstream
+manifest.json first, and skips the 6.8MB company-directory download
+entirely when `manifest.generated_at` hasn't changed since the last sync
+— most days this is a few-KB check, not a real download. Safe to run
+every single day unconditionally.
+
+**This step is entirely independent of Step 1 and must never gate,
+skip, or delay it.** The reference registry answers "which companies do
+we know about" — a lookup convenience. The job dataset (Step 1) answers
+"what jobs are available today" — a completely different freshness
+domain (see `careeros/registry.py`'s module docstring). Run this step,
+then always continue to Step 1 regardless of whether anything changed
+here.
+
+**Watchlist maintenance needs no separate step.** Every `.careeros/
+watchlist.yaml` entry is already re-verified as a normal part of Step 1
+— the `ats-watchlist` provider (if enabled) scrapes every entry on every
+`discover` run and updates `.careeros/watchlist_state.json` itself
+(`verification_status`, `last_checked_at`, `consecutive_failures`, ATS-
+migration `history[]`). A watchlist is small by design (a handful of
+companies you've hand-identified), so re-checking all of it daily is
+cheap — there is no larger set to throttle. Run `careeros watchlist list`
+any time to see current status without triggering a fetch.
+
 ## Step 1 — Discover (deterministic)
 
 ```
@@ -455,6 +491,75 @@ skipped.
 Read `summary.md` back and relay it, briefly. Point them at the Sheet. Do not
 dump full report/resume/cover/answers text into the chat — the artifacts are
 the deliverable, `summary.md` is the day-level pointer to them.
+
+## Step 14 — Opportunistic company discovery (agentic, bounded, optional)
+
+Non-blocking, runs after Step 13, using today's results as evidence — never
+before Step 1, and must never delay reporting to the candidate.
+
+**Cheap no-op check first.** Look at today's `07_select/selected.json` +
+`consider.json` and whatever the Gate/Evaluate reasoning already surfaced
+about company/industry/source patterns. If nothing plausible comes to
+mind, say so in one line and stop — most days this should cost nothing,
+not trigger a search.
+
+**If something's worth a look:**
+
+1. Read the FULL `.careeros/profile.yaml`, not a fixed subset of fields —
+   `targets`, `role_priorities`, `work_mode_priority`, `location`,
+   `deal_breakers`, `comp`, and anything else present are all fair game as
+   targeting/exclusion signal. This step must work unmodified for any
+   OSS user's profile schema, including fields that don't exist yet.
+2. Using today's kept/considered jobs as analogy ("companies like the ones
+   that worked today, for these roles/geography/comp expectations"),
+   reason toward AT MOST 3 candidate companies. Web search if the host
+   provides it; if not, reason from the profile + today's evidence alone
+   and skip gracefully — this step must never hard-fail for lacking a
+   search tool, and must never become a generalized crawler.
+3. **Reference registry is authoritative for "already known."** Run
+   `careeros registry find <name>` for each candidate — a match means this
+   company is already in the free hosted snapshot; do not propose it,
+   full stop, regardless of whether Layer 1 currently surfaces a job for
+   it. Also check the current `.careeros/watchlist.yaml` — skip anything
+   already tracked there.
+4. Check `.careeros/discovery_candidates.json` (agent-maintained, see
+   below) for this company's last outcome. Skip a company with a
+   `status: unresolved` entry unless `last_checked_at` is 30+ days old OR
+   you have a concrete reason to believe it changed (e.g. evidence today
+   that it moved careers platforms) — record that reason if you re-check
+   early. A missing or unparseable file is just an empty history, not a
+   failure — never let a bad read block this step.
+5. For each surviving candidate, run
+   `careeros watchlist add <name> [--url ... | --ats ... --slug ...]` —
+   the existing deterministic validation path. **Never hand-write a
+   watchlist entry and never accept your own guess as verified** — an
+   UNRESOLVED result from that command is the real answer for this
+   company today.
+6. Update `.careeros/discovery_candidates.json` yourself (plain JSON,
+   normalized company name as key) for every candidate you looked at this
+   run:
+   ```json
+   {
+     "acme corp": {"status": "unresolved", "last_checked_at": "2026-08-10", "reason": "no detectable ATS"}
+   }
+   ```
+   Only `unresolved` outcomes need an entry — a company that resolved is
+   already tracked in `watchlist.yaml` itself (checking there again next
+   time is enough, no need to duplicate that state here), and a company
+   skipped because it's already in the registry/watchlist doesn't need
+   recording either, since step 3 answers that live, every time, for free.
+
+**On explicit request** ("find more companies like X"), run this same
+procedure mid-conversation, any time — not gated to `daily`. A
+user-supplied company/URL always goes straight to `careeros watchlist add`
+regardless of this step; skip steps 1-2 (there's nothing to reason toward,
+the candidate is already named) but still run steps 3-6.
+
+Report at the end of this step: how many candidates were considered, how
+many were skipped as already-known (registry/watchlist/recent-unresolved),
+how many were verified vs. came back UNRESOLVED. Zero candidates on a
+given day is a normal, expected outcome, not a failure to report as one —
+same principle as Step 10's zero-selected-jobs case.
 
 ## On failure
 

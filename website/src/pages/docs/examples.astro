@@ -45,10 +45,11 @@ import CommandBlock from "@/components/ui/CommandBlock.tsx";
 
   <h2>Verifying a new provider before trusting it</h2>
   <p>
-    Discovery ships with one source (Fantastic Jobs) today, but the registry is
-    built to take more — see <code>providers/README.md</code>'s "Adding a
-    provider" section. Before wiring one into <code>daily</code>, force it in
-    isolation and inspect its real output shape.
+    Discovery ships with <code>ats-dataset</code> enabled by default today,
+    but the registry is built to run several sources side by side — see
+    <code>providers/README.md</code>'s "Adding a provider" section. Before
+    wiring a new one into <code>daily</code>, force it in isolation and
+    inspect its real output shape.
   </p>
   <CommandBlock
     client:visible

@@ -49,6 +49,48 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "gate_batch_size": 50,
     "description_max_chars": 4000,
+    # v1.9: how much of a job's `description` the Gate stage's _input_N.json
+    # actually gets, separate from `description_max_chars` (which bounds
+    # what normalize.py stores on the Job, and what `evaluate` reads later).
+    # Measured 2026-08-08 across this project's own past gate runs: 86% of
+    # gate tokens are the description field (2,403 of 2,789 chars/job), for a
+    # stage that only needs to answer "could this plausibly be a fit" — not
+    # the depth `evaluate` needs. Trimming the GATE's copy only (not the
+    # stored Job, not what evaluate reads) cuts gate cost ~3x with no loss of
+    # evaluation quality. Chosen small enough to matter, large enough that a
+    # gate call still sees the substance of a role (the pharma
+    # brand-management pattern this project's gate has caught before —
+    # SUN PHARMA/DWD, see providers/README.md's "Evaluated and removed" era
+    # notes — needs more than the title to catch).
+    "gate_description_max_chars": 900,
+    # 2026-08-10: fixing the geography reachability gap and enabling
+    # global_remote raises the eligible-job count well past what a
+    # single-employer's posting volume used to keep in check (measured: one
+    # employer alone produced 64% of a day's discovery). Both caps below are
+    # applied ONLY at the Gate-input boundary (careeros/cli/gate_evaluate.py
+    # _gate_prepare) — they never touch `04_constraints/eligible.json` or
+    # any provider/dedupe output, so nothing discovered is ever deleted or
+    # permanently excluded. A job dropped by either cap simply isn't sent to
+    # the AI Gate TODAY; since it was never gated/evaluated it's never
+    # written to `.careeros/processed.jsonl`, so it remains a normal
+    # candidate on every future run. Both default OFF (None) — an OSS user
+    # with a small/well-scoped provider config may never need either.
+    #
+    # Per-company rotation cap: at most this many of one company's jobs are
+    # sent to the Gate in a single run. Rotation state lives in
+    # `.careeros/gate_rotation.json` (job_id -> last_shown_date) so a
+    # flooding company's UNSEEN jobs are prioritized over ones already shown
+    # — a company is never permanently capped at the same N jobs forever.
+    "max_jobs_per_company_per_run": None,
+    # Overall Gate volume ceiling, applied AFTER the per-company cap, via a
+    # plain deterministic sort (work_mode_priority tier rank, then
+    # role_priorities title-match rank, then posted_at recency) — no ML,
+    # no embeddings, auditable in `05_gate/_selection_meta.json`. This is a
+    # COST control, not a relevance filter: it exists because Gate/Evaluate
+    # are genuine per-job AI calls (see AGENT_GUIDE.md's deterministic/
+    # reasoning boundary), and volume growth from better geo recall
+    # shouldn't translate 1:1 into AI spend without an explicit ceiling.
+    "gate_max_jobs": None,
     # v1.3: how many enabled providers' fetch() calls `discover` runs
     # concurrently (each is a blocking network call, so this is real
     # wall-clock savings, not a correctness risk — budget/quota state is
@@ -129,6 +171,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "location_search": [],
         "title_exclusion_search": [],
         "location_exclusion_search": [],
+        # v2.2: "advanced" (default) sends ONE boolean `title_advanced`
+        # expression; "basic" sends the older bare `title` param, which
+        # pipeline/queryplan.py must then CHUNK into groups of 3.
+        # Live-verified 2026-08-05: the bare param silently drops its
+        # `-exclusion` clause at 4+ OR-terms, which had made
+        # `title_exclusion_search` above a no-op for any profile with more
+        # than 3 role_priorities. See providers/fantastic_jobs.py's
+        # `build_title_advanced`.
+        "title_mode": "advanced",
         "work_arrangement": [],
         "remove_agency": True,
         "has_salary": None,
@@ -266,6 +317,9 @@ class Config:
     consider_threshold: float
     gate_batch_size: int
     description_max_chars: int
+    gate_description_max_chars: int = 900
+    max_jobs_per_company_per_run: int | None = None
+    gate_max_jobs: int | None = None
     discovery_max_workers: int = 4
     goals: dict[str, Any] = field(default_factory=dict)
     prompts: dict[str, str] = field(default_factory=dict)
@@ -388,6 +442,9 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         consider_threshold=merged.get("consider_threshold", 3.5),
         gate_batch_size=merged["gate_batch_size"],
         description_max_chars=merged["description_max_chars"],
+        gate_description_max_chars=merged.get("gate_description_max_chars", 900),
+        max_jobs_per_company_per_run=merged.get("max_jobs_per_company_per_run"),
+        gate_max_jobs=merged.get("gate_max_jobs"),
         discovery_max_workers=merged.get("discovery_max_workers", 4),
         goals=merged.get("goals", {}),
         prompts=merged["prompts"],

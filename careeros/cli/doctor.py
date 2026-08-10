@@ -8,11 +8,12 @@ from typing import Optional
 
 import typer
 
-from careeros import budget
+from careeros import budget, registry as reference_registry
 from careeros.cli import app
 from careeros.cli._shared import _config, _load_profile
 from careeros.config import DEFAULT_CONFIG, Config, enabled_providers
 from careeros.pipeline.queryplan import build_query_plan
+from careeros.providers.ats_watchlist import STATE_FILENAME, load_state, load_watchlist
 from careeros.providers.base import ProviderError
 from careeros.providers.registry import get as get_provider
 
@@ -66,6 +67,120 @@ def _latest_discovery_meta(cfg: Config) -> tuple[Optional[str], dict[str, dict]]
     return latest.name, raw.get("meta", {})
 
 
+# ── three independent freshness clocks (2026-08-10 gap audit) ────────────
+# Deliberately three separate checks, never merged: "when did we last sync
+# the reference company directory" tells you nothing about "when did the
+# ats-dataset snapshot itself last change" or "when did we last verify a
+# watchlist company's ATS mapping." A fresh one does NOT imply the others
+# are fresh — see careeros/registry.py and providers/ats_watchlist.py's
+# module docstrings for why these stay independent.
+
+def _local_snapshot_age(cfg: Config) -> tuple[Optional[str], Optional[float]]:
+    """Offline — reads the newest `.careeros/dataset/*.parquet` cache
+    filename (careeros/providers/ats_dataset.py's `_load_slice` cache,
+    keyed `<ats>-<generated_at>.parquet`) rather than hitting the network.
+    Returns (generated_at ISO string, age in days) or (None, None) if
+    nothing has been cached yet (fresh install, or ats-dataset never run)."""
+    from datetime import datetime, timezone
+
+    dataset_dir = cfg.careeros_dir / "dataset"
+    if not dataset_dir.exists():
+        return None, None
+    stamps = []
+    for f in dataset_dir.glob("*.parquet"):
+        # filename: "<ats>-<YYYYmmddTHHMMSS>.parquet"
+        try:
+            stamp = f.stem.rsplit("-", 1)[1]
+            stamps.append(datetime.strptime(stamp, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc))
+        except (IndexError, ValueError):
+            continue
+    if not stamps:
+        return None, None
+    newest = max(stamps)
+    age_days = (datetime.now(timezone.utc) - newest).total_seconds() / 86400
+    return newest.isoformat(), age_days
+
+
+def _registry_freshness_check(cfg: Config) -> tuple[str, str, str]:
+    meta = reference_registry.load_meta(cfg)
+    if meta is None:
+        return _check_result(_CheckStatus.WARN, "Reference registry freshness",
+                             "never synced — optional; run `careeros registry sync` before `registry find`")
+    return _check_result(_CheckStatus.PASS, "Reference registry freshness",
+                         f"{meta.get('row_count', '?')} companies, last_synced_at={meta.get('last_synced_at')}")
+
+
+def _watchlist_freshness_check(cfg: Config) -> tuple[str, str, str]:
+    entries = load_watchlist(cfg.careeros_dir / "watchlist.yaml")
+    if not entries:
+        return _check_result(_CheckStatus.WARN, "Watchlist freshness",
+                             "no entries in .careeros/watchlist.yaml — Layer 2A is enabled but idle")
+    state = load_state(cfg.careeros_dir / STATE_FILENAME)
+    checked = [s.get("last_checked_at") for s in state.values() if s.get("last_checked_at")]
+    never_checked = len(entries) - len(state)
+    if not checked:
+        return _check_result(_CheckStatus.WARN, "Watchlist freshness",
+                             f"{len(entries)} entries, none ever checked — will run on the next `careeros discover`")
+    detail = f"{len(entries)} entries, last checked {max(checked)}"
+    if never_checked > 0:
+        detail += f" ({never_checked} never checked yet)"
+    return _check_result(_CheckStatus.PASS, "Watchlist freshness", detail)
+
+
+def _watchlist_status_check(cfg: Config) -> tuple[str, str, str] | None:
+    """Counts by `verification_status` across `watchlist_state.json` —
+    live/stale/validation_failed/temporary_error/rate_limited (see
+    providers/ats_watchlist.py). Returns None (no row) when the watchlist
+    is empty or has never been checked — `_watchlist_freshness_check`
+    already covers that case, no need to say it twice."""
+    import collections
+
+    entries = load_watchlist(cfg.careeros_dir / "watchlist.yaml")
+    state = load_state(cfg.careeros_dir / STATE_FILENAME)
+    if not entries or not state:
+        return None
+    counts = collections.Counter(
+        s.get("verification_status", "never_checked") for s in state.values()
+    )
+    detail = ", ".join(f"{status}={n}" for status, n in sorted(counts.items()))
+    bad = counts.get("stale", 0) + counts.get("validation_failed", 0)
+    status = _CheckStatus.WARN if bad else _CheckStatus.PASS
+    return _check_result(status, "Watchlist mapping status", detail)
+
+
+def _layer2a_output_check(cfg: Config) -> tuple[str, str, str] | None:
+    """"Is Layer 2A actually producing jobs?" — straight from the same
+    `raw.json` meta block `_latest_discovery_meta` already reads for every
+    other provider. Returns None when ats-watchlist hasn't run yet (no
+    signal to report) or isn't configured at all — nothing to say."""
+    if "ats-watchlist" not in cfg.providers:
+        return None
+    latest_date, latest_meta = _latest_discovery_meta(cfg)
+    if latest_date is None:
+        return None
+    meta = latest_meta.get("ats-watchlist")
+    if meta is None:
+        return None
+    if meta.get("skipped"):
+        return _check_result(_CheckStatus.WARN, "Layer 2A output",
+                             f"skipped on {latest_date} — {meta.get('skip_reason') or 'unknown reason'}")
+    n = meta.get("records", 0)
+    status = _CheckStatus.PASS if n > 0 else _CheckStatus.WARN
+    return _check_result(status, "Layer 2A output",
+                         f"{n} job(s) produced on {latest_date}")
+
+
+def _snapshot_freshness_check(cfg: Config) -> tuple[str, str, str]:
+    generated_at, age_days = _local_snapshot_age(cfg)
+    if generated_at is None:
+        return _check_result(_CheckStatus.WARN, "Job snapshot freshness (local)",
+                             "no cached slices yet — will populate on the next `careeros discover`")
+    status = _CheckStatus.WARN if age_days > 5 else _CheckStatus.PASS
+    return _check_result(status, "Job snapshot freshness (local)",
+                         f"cached snapshot from {generated_at} ({age_days:.1f} days old — "
+                         "run `careeros doctor --live` to check against upstream)")
+
+
 class _CheckStatus:
     PASS = "PASS"
     WARN = "WARN"
@@ -110,6 +225,21 @@ def _run_doctor_checks(cfg: Config) -> list[tuple[str, str, str]]:
         ))
     else:
         results.append(_check_result(_CheckStatus.PASS, "config.yaml keys", "no unrecognized top-level keys"))
+
+    # Three independent freshness clocks (2026-08-10) — a fresh one never
+    # implies the others are fresh, see the block comment above these
+    # helpers. All three are local/offline; the fourth angle (is the LOCAL
+    # snapshot behind the LIVE upstream one) needs a network call and lives
+    # in `_run_doctor_live_checks` under `--live`.
+    results.append(_snapshot_freshness_check(cfg))
+    results.append(_registry_freshness_check(cfg))
+    results.append(_watchlist_freshness_check(cfg))
+    watchlist_status = _watchlist_status_check(cfg)
+    if watchlist_status is not None:
+        results.append(watchlist_status)
+    layer2a_output = _layer2a_output_check(cfg)
+    if layer2a_output is not None:
+        results.append(layer2a_output)
 
     # Profile
     if not cfg.profile_path.exists():
@@ -372,6 +502,55 @@ def _run_doctor_live_checks(cfg: Config) -> list[tuple[str, str, str]]:
                 ))
         except ProviderError as e:
             results.append(_check_result(_CheckStatus.FAIL, "Fantastic Jobs (LIVE)", str(e)))
+
+    # Live manifest check (2026-08-10 gap audit) — the one thing that
+    # genuinely needs the network: is our local snapshot behind upstream,
+    # and has upstream added ATS sources our config doesn't know about.
+    # Report-only — never auto-enables anything, per the audit's explicit
+    # instruction not to silently change the configured source set.
+    if "ats-dataset" in active:
+        import importlib.util
+        if importlib.util.find_spec("ats_scrapers") is None:
+            results.append(_check_result(_CheckStatus.WARN, "Upstream manifest (LIVE)",
+                                         'ats-scrapers not installed — run: pip install -e ".[ats-dataset]"'))
+        else:
+            try:
+                from ats_scrapers.manifest import DEFAULT_MANIFEST_URL, Manifest
+
+                manifest = Manifest.fetch(DEFAULT_MANIFEST_URL)
+                local_generated_at, local_age_days = _local_snapshot_age(cfg)
+                if local_generated_at is None:
+                    results.append(_check_result(
+                        _CheckStatus.PASS, "Upstream manifest (LIVE)",
+                        f"reachable — upstream generated_at={manifest.generated_at.isoformat()}, "
+                        "no local cache yet to compare"
+                    ))
+                else:
+                    upstream_ts = manifest.generated_at.isoformat()
+                    is_current = upstream_ts.startswith(local_generated_at[:10])  # date-level compare
+                    results.append(_check_result(
+                        _CheckStatus.PASS if is_current else _CheckStatus.WARN,
+                        "Upstream manifest (LIVE)",
+                        f"upstream generated_at={upstream_ts}, local cache from {local_generated_at} "
+                        f"({'current' if is_current else f'{local_age_days:.1f} days behind — next `careeros discover` will refresh it'})"
+                    ))
+
+                configured = set(cfg.providers.get("ats-dataset", {}).get("ats", []))
+                upstream_sources = set(manifest.by_ats.keys())
+                unconfigured = sorted(upstream_sources - configured)
+                if unconfigured:
+                    results.append(_check_result(
+                        _CheckStatus.WARN, "Unconfigured upstream ATS sources",
+                        f"{len(unconfigured)} source(s) available upstream but not in your "
+                        f"providers.ats-dataset.ats list: {', '.join(unconfigured)} — "
+                        "not auto-enabled; add by hand in config.yaml if relevant"
+                    ))
+                else:
+                    results.append(_check_result(_CheckStatus.PASS, "Unconfigured upstream ATS sources",
+                                                 "none — every upstream source is in your configured list"))
+            except Exception as e:
+                results.append(_check_result(_CheckStatus.WARN, "Upstream manifest (LIVE)",
+                                             f"could not reach manifest: {e}"))
 
     return results
 

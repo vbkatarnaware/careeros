@@ -37,11 +37,12 @@ class _FakeProvider:
     free source's real shape."""
 
     def __init__(self, provider_id: str, items: list[dict], *, validate_errors: list[str] | None = None,
-                 fetch_error: Exception | None = None):
+                 fetch_error: Exception | None = None, tiers: list[list[str]] | None = None):
         self.id = provider_id
         self._items = items
         self._validate_errors = validate_errors or []
         self._fetch_error = fetch_error
+        self._tiers = tiers
         self.fetch_called = False
 
     def validate(self, config):
@@ -52,7 +53,8 @@ class _FakeProvider:
         if self._fetch_error is not None:
             raise self._fetch_error
         return ProviderResult(provider=self.id, items=list(self._items), cost_usd=0.0,
-                               requests=1, records=len(self._items), seconds=0.1)
+                               requests=1, records=len(self._items), seconds=0.1,
+                               tiers=list(self._tiers) if self._tiers is not None else [])
 
     def to_job_dict(self, raw):
         if not raw.get("title") or not raw.get("url", "").startswith("http"):
@@ -97,6 +99,26 @@ def test_multiple_providers_merge_in_config_order(tmp_path, monkeypatch):
     assert len(jobs) == 3
     sources = {j["source"] for j in jobs}
     assert sources == {"fake-a", "fake-b"}
+
+
+def test_provider_populated_tiers_are_not_clobbered_with_default(tmp_path, monkeypatch):
+    """v2.0: a provider that already returns real per-item tiers (e.g.
+    ats_dataset.py's geo-tier provenance) must keep them — `discover`'s
+    fallback to `[["default"]]` only applies when a provider returns none."""
+    monkeypatch.chdir(tmp_path)
+    items = [_job("Role A1"), _job("Role A2")]
+    p1 = _FakeProvider("fake-tiered", items, tiers=[["india_remote"], ["onsite"]])
+    p2 = _FakeProvider("fake-untiered", [_job("Role B1")])  # no tiers -> still gets "default"
+    monkeypatch.setitem(registry._REGISTRY, "fake-tiered", p1)
+    monkeypatch.setitem(registry._REGISTRY, "fake-untiered", p2)
+    _write_config(tmp_path, "  fake-tiered:\n    enabled: true\n  fake-untiered:\n    enabled: true\n")
+
+    result = runner.invoke(app, ["discover", "--date", "t2"])
+    assert result.exit_code == 0, result.output
+
+    raw = json.loads((tmp_path / ".careeros/runs/t2/01_discover/raw.json").read_text())
+    assert raw["provenance"]["fake-tiered"] == [["india_remote"], ["onsite"]]
+    assert raw["provenance"]["fake-untiered"] == [["default"]]
 
 
 def test_single_disabled_provider_is_never_fetched(tmp_path, monkeypatch):

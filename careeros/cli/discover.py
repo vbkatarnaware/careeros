@@ -231,8 +231,11 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
             f"[discover] {name}: {len(result.items)} items (${result.cost_usd:.4f}, {result.seconds:.1f}s)"
         )
         # No segmented query plan for this capability -- every item shares
-        # one implicit "default" tier.
-        result.tiers = [["default"] for _ in result.items]
+        # one implicit "default" tier, UNLESS the provider already populated
+        # real per-item tiers itself (v2.0, e.g. ats_dataset.py's geo-tier
+        # provenance) -- never clobber a provider's own answer.
+        if not result.tiers:
+            result.tiers = [["default"] for _ in result.items]
         return result
 
     # "none": an unmetered free provider. Previously had no try/except at
@@ -245,7 +248,12 @@ def _fetch_provider(cfg: Config, plan: _ProviderPlan, *, search: str) -> Provide
         typer.echo(f"[discover] {name}: skipped — {e}")
         return ProviderResult.skip(name, str(e))
     typer.echo(f"[discover] {name}: {len(result.items)} items ({result.seconds:.1f}s)")
-    result.tiers = [["default"] for _ in result.items]
+    for w in result.warnings:
+        typer.echo(f"[discover] {name}: ⚠ {w}")
+    # Same "don't clobber a provider's own answer" guard as the monthly
+    # branch above.
+    if not result.tiers:
+        result.tiers = [["default"] for _ in result.items]
     return result
 
 

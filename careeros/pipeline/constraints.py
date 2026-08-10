@@ -10,7 +10,7 @@ enforced here as pass/fail, NOT as rubric weights.
 Only OBJECTIVE constraints live here. Role fit stays an AI reasoning task
 (gate + evaluate) — this module never inspects the title or judges seniority.
 
-Two objective rules:
+Three objective rules:
 - Location: an onsite/hybrid role in a KNOWN city outside the profile's
   accepted onsite cities is a hard reject. Remote (any geography) always
   passes. Unknown work arrangement, or onsite with an unknown/missing city,
@@ -18,6 +18,18 @@ Two objective rules:
 - Salary: reject ONLY when a confidently-computed annual-INR equivalent is
   below the profile's floor. Unknown/unparseable salary NEVER rejects — most
   postings omit salary, and rejecting on absence would nuke the pipeline.
+- Work authorization (v2.0, P0.7 "Level 0"): reject ONLY an EXPLICIT
+  work-authorization exclusion ("must be authorized to work in the US") when
+  the candidate needs visa sponsorship. Deliberately narrow — see
+  `_work_authorization_excludes`'s docstring for the measurement behind the
+  scope line. Everything ambiguous fails open to the AI Gate, which already
+  reasons about geography as part of the full profile; this rule exists
+  only to catch the unambiguous cases before they reach (and waste) that
+  AI call, and especially before they'd waste a full Apply-tier artifact
+  generation. `matched_geo_tier`'s `global_remote` tag on a job means
+  "remote, no detected geographic restriction" — it is NOT a claim that the
+  role is confirmed open to India; this rule and the Gate together are what
+  actually enforce that.
 
 Used in two places for a belt-and-suspenders guarantee: as its own pipeline
 stage (so hard-rejects never reach the AI gate, saving tokens), and re-checked
@@ -27,9 +39,30 @@ the deterministic rule still removes it).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from careeros.models import Job, Profile
+
+# Explicit work-authorization exclusions only — no timezone/region-name
+# heuristics ("Americas", "EST hours"). Measured 2026-08-10 across 517
+# `global_remote`-tier jobs from the real dataset: this exact pattern set
+# matched 38 (7%); 91 (18%) were explicitly India/worldwide-open; the
+# remaining 387 (75%) had no geographic signal either way and are
+# deliberately left for the AI Gate rather than guessed at here — a looser
+# pattern (region names, timezone mentions) was tried during that
+# measurement and produced false positives on genuinely-open roles.
+_WORK_AUTH_EXCLUSION_RE = re.compile(
+    r"authorized to work in the (?:US|U\.S\.|United States)"
+    r"|must (?:be|reside|live) .{0,30}(?:United States|USA|US\b|UK\b|Canada|EU\b|Europe)"
+    r"|\bUS[- ]only\b|\bU\.S\.[- ]only\b|\bUnited States only\b"
+    r"|\bEU only\b|\bUK only\b|\bCanada only\b"
+    r"|within the United States"
+    r"|eligible to work in the (?:US|UK|EU|United States|Canada)"
+    r"|work authorization in the (?:US|United States)"
+    r"|legally authorized to work in the United States",
+    re.IGNORECASE,
+)
 
 # Fraction of the floor a CONVERTED salary must fall UNDER to trigger a
 # reject. 0.9 = only reject when clearly below floor, absorbing FX
@@ -82,6 +115,19 @@ def _accepted_onsite_cities(profile: Profile) -> list[str]:
     return [c.lower() for c in (profile.location or {}).get("onsite_ok", [])]
 
 
+def _work_authorization_excludes(job: Job, profile: Profile) -> bool:
+    """True only for an EXPLICIT work-authorization exclusion, and only when
+    the candidate actually needs visa sponsorship (`profile.location.
+    visa_sponsorship_required`) — a candidate who doesn't need sponsorship
+    is never affected by this rule regardless of what a posting says.
+    See `_WORK_AUTH_EXCLUSION_RE`'s comment for the measurement behind the
+    pattern set's scope."""
+    if not (profile.location or {}).get("visa_sponsorship_required"):
+        return False
+    haystack = f"{job.location or ''} {job.description or ''}"
+    return bool(_WORK_AUTH_EXCLUSION_RE.search(haystack))
+
+
 def evaluate_constraints(job: Job, profile: Profile, fx_rates: dict[str, float]) -> ConstraintResult:
     reasons: list[str] = []
 
@@ -115,5 +161,11 @@ def evaluate_constraints(job: Job, profile: Profile, fx_rates: dict[str, float])
                 reasons.append(
                     f"salary ~INR {annual/100_000:.1f} LPA is below floor {floor_lpa} LPA"
                 )
+
+    # ---- Work authorization ----
+    if _work_authorization_excludes(job, profile):
+        reasons.append(
+            "explicit work-authorization exclusion incompatible with required visa sponsorship"
+        )
 
     return ConstraintResult(passed=not reasons, reasons=reasons)

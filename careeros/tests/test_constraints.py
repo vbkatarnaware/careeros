@@ -207,3 +207,74 @@ def test_foreign_currency_clearly_below_floor_is_still_rejected():
     profile = make_profile(comp={"floor_lpa": 12, "currency": "INR"})
     job = make_job(remote=True, salary=_sal(5_000, cur="USD"))  # ~4.2 LPA
     assert not evaluate_constraints(job, profile, FX_RATES).passed
+
+
+# ── evaluate_constraints: work authorization (P0.7 Level 0) ─────────────
+# Deliberately narrow — see _WORK_AUTH_EXCLUSION_RE's comment in
+# constraints.py for the measurement (517 real jobs, 7% explicit exclusion,
+# 18% explicitly open, 75% ambiguous) behind this scope line.
+
+def _sponsorship_profile(**location_overrides):
+    location = {"remote": "preferred", "onsite_ok": ["Mumbai"], "visa_sponsorship_required": True}
+    location.update(location_overrides)
+    return make_profile(location=location)
+
+
+def test_explicit_us_authorization_requirement_rejects():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote",
+                    description="Must be authorized to work in the US without sponsorship.")
+    result = evaluate_constraints(job, profile, FX_RATES)
+    assert not result.passed
+    assert "work-authorization" in result.reasons[0]
+
+
+def test_us_only_in_location_rejects():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote - US only", description="")
+    assert not evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_does_not_reject_when_sponsorship_not_required():
+    """The same exclusionary posting is irrelevant to a candidate who
+    doesn't need sponsorship — the rule must never fire for them."""
+    profile = make_profile(location={"remote": "preferred", "onsite_ok": ["Mumbai"]})
+    job = make_job(remote=True, location="Remote",
+                    description="Must be authorized to work in the US without sponsorship.")
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_ambiguous_remote_job_fails_open():
+    """No explicit signal either way — must NOT be rejected here. This is
+    the 75% bucket; it's the AI Gate's job, not this module's."""
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote", description="Great team, fast-growing startup.")
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_explicitly_worldwide_open_job_passes():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote - Worldwide",
+                    description="Open to candidates anywhere in the world.")
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_empty_description_never_rejects():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote", description=None)
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_weak_region_mention_does_not_reject():
+    """'Americas'/timezone mentions were explicitly excluded from the
+    pattern set — they produced false positives in the real measurement."""
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote",
+                    description="Collaborate with our Americas team during EST hours.")
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+def test_onsite_mumbai_job_unaffected_by_work_auth_rule():
+    profile = _sponsorship_profile()
+    job = make_job(remote=False, location="Mumbai, Maharashtra, India", description="")
+    assert evaluate_constraints(job, profile, FX_RATES).passed

@@ -16,9 +16,10 @@ own `to_job_dict()` and concatenates every provider's jobs into ONE flat
 list. Order matters: `pipeline/dedupe.py` keeps the FIRST occurrence of a
 duplicate role, so list your primary/most-trusted source first.
 
-**As of v1.7 only one provider ships enabled** (`fantastic-jobs`), but none
-of the above changed — the machinery for running several at once is intact
-and tested. See "Evaluated and removed" for why the tree is down to one.
+**As of v1.9 only one provider ships enabled** (`ats-dataset`), but none of
+the above changed — the machinery for running several at once is intact and
+tested. See "Legacy providers" for the sources that were tried, worked, and
+were superseded, all still fully registered and re-enableable.
 
 `providers:` controls *which* sources run. It is NOT where a source's
 detailed settings live — those stay in that provider's own config (Fantastic
@@ -64,35 +65,114 @@ spend-capping without touching `discover`.
 
 ## The shipped provider
 
-- **`fantastic-jobs`** (`fantastic_jobs.py`) — the official Fantastic Jobs
-  REST API. Supports two transports via `config.api.transport` (no default —
-  you must choose): `"direct"` (developer.fantastic.jobs) or `"rapidapi"`
-  (RapidAPI's "Active Jobs DB"). Both proxy the identical dataset and differ
-  only in base URL + auth header; which is cheaper for your volume is a
-  config/commercial decision, not an architectural one. Also queries **both**
-  upstream endpoints by default via `config.api.endpoint: "both"` —
-  `active-ats` (career sites/ATS, 54 platforms including Workday/Greenhouse/
-  Ashby/Lever) and `active-jb` (+LinkedIn/YC/Wellfound), merged, with the
-  per-tier record allocation split 50/50 (not doubled). This is the P2.8
-  Final Discovery Acceptance Audit's frozen default — see
-  `.careeros/qa/acceptance_audit_report.md` for the evidence (full 107-job
-  population: both sources score an equal ~8% ≥4.0 rate but are 92%
-  disjoint, so "both" roughly doubles interview-worthy jobs at the same
-  quota cost). Free per job — subscription/credit-metered, guarded by the
-  weekly record quota (`careeros/budget.py`).
+- **`ats-dataset`** (`ats_dataset.py`, v1.9) — reads the free, open
+  [`ats-scrapers`](https://github.com/kalil0321/ats-scrapers) hosted
+  dataset: 4.85M jobs / 79,906 companies / 65 real ATS platforms
+  (Greenhouse, Lever, Ashby, Darwinbox, Keka, Workday, iCIMS,
+  SmartRecruiters, ...), regenerated daily, **no API key, no signup**.
+  `apply_url` is the company's own real application page, never a LinkedIn
+  mirror — the reason this replaced Fantastic Jobs as primary: measured
+  across every Apply-tier job on disk under the old source, `apply_url` was
+  **100% LinkedIn** for this query profile.
 
-### How its daily limit is spent
+  Needs one optional dependency: `pip install -e ".[ats-dataset]"` (pandas +
+  pyarrow + httpx). Without it, `validate()` reports the exact install
+  command and the provider degrades to a skipped result — a fresh clone
+  with no extras still runs.
 
-`api.limit` is a **daily total** — jobs per day from this source, across
-every search. `discover` divides it evenly across however many query tiers
-your `profile.work_mode_priority` generates (see `pipeline/queryplan.py`),
-then `fetch()` splits each tier's allocation 50/50 across the two endpoints.
-Left null, the quota guard recommends `weekly_quota ÷ active_days_per_week`.
+  Filters itself entirely from **your own `profile.yaml`** — no separate
+  config needed:
+  - `role_priorities` → title include list (apostrophe-normalized substring
+    match, e.g. "Founder's Office" matches "Founders Office" too)
+  - `work_mode_priority` + `location.onsite_ok` → geography, parsed by the
+    exact same tier-name rules as `pipeline/queryplan.py`
+    (`global_remote` / `<place>_remote` / `*_onsite`) — see
+    `build_geo_spec`'s docstring for why `global_remote` is deliberately
+    conservative (only a row with NO country tagged matches; live-checked,
+    a "worldwide/global" text signal produces false positives from company
+    names and boilerplate, and `region` is empty on ~100% of real rows)
+  - `deal_breakers.min_years_ok` → a deterministic JD years-of-experience
+    filter (regex-extracted, ambiguous text always kept — never rejects on
+    uncertainty)
 
-This was per-*search* before v1.7, which surprised people: a 3-tier profile
-silently fetched 3× the number they configured. `api.tier_limits` still
-overrides individual tiers explicitly — when you set those, your real daily
-total is the sum of them.
+  Two more deterministic (zero-AI) filters replace what Fantastic Jobs'
+  server-side `experience_levels` param used to do, since this dataset has
+  no structured experience field: a seniority-title filter (drops
+  Principal/Director/VP/Head of/Chief — deliberately keeps Senior/Lead/Staff,
+  per this project's own measured 26.7% conversion rate on those titles) and
+  a freshness window (`max_age_days`, default 30 — NOT a mirror of
+  Fantastic Jobs' `time_range: 24h`: this dataset's `posted_at` is a
+  still-open posting's *original* listing date, not a "new today" signal;
+  1 day returned zero matches live, 30 returned hundreds).
+
+  Config block (`providers.ats-dataset`), all optional:
+  ```yaml
+  ats-dataset:
+    enabled: true
+    ats: [keka, greenhouse, lever, ashby]  # override — default is all 33 (see below)
+    limit: 100                # daily total, same semantics as every other provider
+    max_age_days: 30
+    title_exclusions: [intern, internship, trainee, marketing, social media, assistant]
+  ```
+
+  **`ats` defaults to all 33 genuine multi-tenant ATS platforms** the
+  dataset offers — see `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact
+  list and what's deliberately excluded (government portals, single-
+  company scrapers like `amazon`/`apple`, regional non-English-market
+  platforms, and sources this project already evaluated and rejected —
+  `remoteok`/`weworkremotely`, see "Evaluated and removed" below). This is
+  a real cost: ~2GB+ downloaded and several minutes of discovery time on
+  every run (Workday alone measured 380s / 1.3GB RSS live). Override `ats:`
+  with a smaller list for a faster run — the config block above shows an
+  example.
+
+  Also see `cfg.gate_description_max_chars` (`careeros/config.py`, default
+  900): a v1.9 addition specifically to keep this source's higher volume
+  cheap at the AI Gate stage — trims what the Gate reads (not what
+  `evaluate` reads, not what's stored) since 86% of gate tokens are the
+  description field, measured across this project's own past runs.
+
+## Legacy providers (still registered, disabled by default)
+
+`careeros/providers/legacy/` holds every superseded-but-working discovery
+source. **Nothing here is broken or unmaintained-in-principle** — each was
+the primary source at some point, moved out only once a better option was
+measured, and stays fully registered in `registry.py` specifically so
+switching back is a two-line `config.yaml` edit, never a code change or a
+git-history dig.
+
+- **`fantastic-jobs`** (`legacy/fantastic_jobs.py`) — the official Fantastic
+  Jobs REST API (v1.0-v1.8 primary source). Supports two transports via
+  `config.api.transport` (no default — you must choose): `"direct"`
+  (developer.fantastic.jobs) or `"rapidapi"` (RapidAPI's "Active Jobs DB").
+  Queries **both** upstream endpoints by default via `config.api.endpoint:
+  "both"` — `active-ats` (career sites/ATS, 54 platforms) and `active-jb`
+  (+LinkedIn/YC/Wellfound), merged 50/50. Free per job, but
+  subscription/credit-metered with a weekly record quota
+  (`careeros/budget.py`) — this is the paid alternative if you want its
+  specific search filters (`api.title_search`, experience-level bands,
+  etc.) or its LinkedIn/YC/Wellfound coverage via `active-jb`.
+
+  `api.limit` is a **daily total**, divided across however many query tiers
+  `profile.work_mode_priority` generates (`pipeline/queryplan.py`), then
+  split 50/50 across the two endpoints. `api.tier_limits` overrides
+  individual tiers explicitly.
+
+- **`ats-watchlist`** (`ats_watchlist.py`, v2.0) — Layer 2A: a small,
+  hand-curated list of specific companies (`.careeros/watchlist.yaml`)
+  scraped live via `ats-scrapers`' own 50+ per-platform adapters, for
+  companies the `ats-dataset` snapshot doesn't carry at all. Opt-in,
+  disabled by default (an empty watchlist is a normal, zero-cost state).
+  Deliberately targeted, not automated discovery — see that module's
+  docstring, and **[docs/ats-registry.md](../../docs/ats-registry.md)**
+  for the full design and the reference-registry lookup
+  (`careeros registry sync` / `find`) that helps you avoid adding a
+  company that's already in the Layer 1 snapshot.
+  <br>*(v1.8's hand-written `greenhouse`/`lever`/`ashby` providers + a
+  SQLite board registry were removed 2026-08-10 — every seeded board was
+  permanently `status='unverified'` and those providers only ever read
+  `status='live'`, so they were structurally skip-only and had never
+  returned a job. `ats-watchlist` replaces that entire mechanism.)*
 
 ## Evaluated and removed
 
@@ -146,9 +226,13 @@ verifying output shape and relevance, not cost.
 
 ## The contract
 
-Copy `fantastic_jobs.py` — the reference implementation, and currently the
-only one. Every provider — no exceptions, no special cases — implements
-exactly three methods:
+Copy `ats_dataset.py` for a source that derives its filters from
+`profile.yaml` (the current recommended pattern), `legacy/fantastic_jobs.py`
+for a config-driven source with its own explicit search filters, or
+`ats_watchlist.py` for a source that reads its worklist from a small
+user-supplied file (`.careeros/watchlist.yaml`) and reuses `ats_dataset.py`'s
+filter chain rather than duplicating it. Every provider — no exceptions,
+no special cases — implements exactly three methods:
 
 ```python
 from careeros.providers.base import ProviderResult
@@ -220,9 +304,14 @@ and a missing API key.
 1. Write `careeros/providers/my_source.py` implementing the three-method
    contract above, ending with `PROVIDER = MyProvider()`.
 2. Add one import + one `_REGISTRY` entry in `registry.py`.
-3. Add its defaults to `DEFAULT_CONFIG["providers"]` in `careeros/config.py`.
-   If it's a paid, metered source, include `max_monthly_budget_usd` — that
-   key alone is what opts it into the rolling-month spend guard
+3. Add it to `providers:` in `templates/config.example.yaml` (`{enabled:
+   false}` at minimum, plus whatever config keys your own `fetch()` reads —
+   `ats-dataset` and the legacy trio all follow this pattern; don't add it
+   to `DEFAULT_CONFIG["providers"]` in `careeros/config.py`, which
+   `test_config_providers.py` asserts stays exactly `{"fantastic-jobs": ...}`
+   as the one always-present built-in default). If it's a paid, metered
+   source, include `max_monthly_budget_usd` in its config block — that key
+   alone is what opts it into the rolling-month spend guard
    (`budget.guard_for`); no `discover` change is needed.
 4. Trial it in isolation (see "Verify live" below) before enabling it.
 5. `careeros doctor` picks up its `validate()` automatically.
@@ -249,10 +338,16 @@ the cost lesson at the end of "Evaluated and removed".
 
 ## Planned future providers
 
-Greenhouse, Ashby, Lever, and Workday all expose fairly stable public JSON
-board APIs (no Apify actor needed) — a direct-fetch provider for each is a
-good first contribution, though note all three ATS platforms are already
-covered indirectly via Fantastic Jobs' `active-ats` endpoint, so a dedicated
-provider for one only adds value if it surfaces something that feed misses.
-A generic "custom career site" provider (HTML scrape + heuristic field
-extraction) is a larger, lower-priority effort.
+Greenhouse, Lever, and Ashby shipped in v1.8 (see "Legacy providers"
+above); their real-apply-URL benefit is now covered more broadly by
+`ats-dataset` (v1.9). **Workday** exposes a real per-tenant CXS search
+endpoint but no
+single stable, documented public URL shape across tenants (the site/instance
+coordinates aren't derivable from a company name alone — see career-ops's
+discover-ats.mjs for the bounded-probe approach this would need), so it's
+deferred rather than shipped speculatively. BambooHR, iCIMS, SuccessFactors,
+and Teamtailor are lower-ROI (mostly auth-walled or low measured volume for
+this candidate profile) — add on measured need, not speculation, same bar
+every provider in this file was held to. A generic "custom career site"
+provider (HTML scrape + heuristic field extraction) is a larger,
+lower-priority effort.

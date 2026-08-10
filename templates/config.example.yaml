@@ -13,13 +13,64 @@
 # Naukri, Foundit and Indeed shipped through v1.6 and were removed on live
 # evidence — see providers/README.md's "Evaluated and removed" for the
 # per-source numbers, and "Adding a provider" if you want to write your own.
+#
+# v1.9 (DEFAULT since 2026-08-08): `ats-dataset` (careeros/providers/
+# ats_dataset.py) reads the free, open ats-scrapers hosted dataset — 4.85M
+# jobs / 79,906 companies, regenerated daily, NO API KEY, NO SIGNUP.
+# apply_url is the company's real application page, never a LinkedIn mirror.
+# One optional install step: `pip install -e ".[ats-dataset]"` (pandas +
+# pyarrow + httpx). Filters itself using YOUR profile.yaml (role_priorities,
+# work_mode_priority, location.onsite_ok, deal_breakers.min_years_ok) — no
+# separate setup. Without the pip extra installed, it degrades to a skipped
+# result with the exact install command, never a crash.
+#
+# DEFAULT ATS COVERAGE: all 33 genuine multi-tenant ATS platforms the
+# dataset offers (see `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact
+# list and what's deliberately excluded — government portals, single-
+# company scrapers, regional non-English-market platforms, and sources
+# this project already evaluated and rejected). This is a real cost, not
+# free: ~2GB+ downloaded and several minutes of discovery time on every
+# run (Workday alone measured 380s/1.3GB live). Deliberate "maximum
+# coverage first, then narrow" choice for a fresh clone. Override with a
+# smaller/faster list any time:
+#   providers:
+#     ats-dataset:
+#       enabled: true
+#       ats: [keka, greenhouse, lever, ashby]   # example: just these 4
+#
+# `fantastic-jobs` (paid aggregator, needs an API key — see the api: block
+# below) is DISABLED by default but fully intact — flip both `enabled`
+# values below to roll back, nothing else to restore.
+#
+# Earlier discovery approaches (v1.0-v1.7: RemoteOK/We Work Remotely/
+# Glassdoor/ZipRecruiter/Naukri/Foundit/Indeed) moved to
+# `careeros/providers/legacy/` once superseded — see providers/README.md
+# for the full history. The v1.8 curated-registry `greenhouse`/`lever`/
+# `ashby` trio was removed entirely in v2.0 (never returned a job on this
+# project's own checkout); `ats-watchlist` below replaces it.
 providers:
-  fantastic-jobs: { enabled: true }      # your main source — detail in api: below
+  ats-dataset: { enabled: true }         # free, no signup — your main source
+  fantastic-jobs: { enabled: false }     # optional paid alternative — detail in api: below
+  # Layer 2A: a small, hand-curated list of specific companies scraped
+  # live (.careeros/watchlist.yaml, see templates/watchlist.example.yaml)
+  # for companies ats-dataset's snapshot doesn't carry at all. Opt-in —
+  # an empty/missing watchlist is a normal, zero-cost state, so enabling
+  # this with no entries yet is harmless. See
+  # careeros/providers/ats_watchlist.py's docstring before using it.
+  ats-watchlist: { enabled: false }
 
 threshold: 4.0          # APPLY: score >= this -> full pipeline (resume/cover/report + Drive + Sheet)
 consider_threshold: 3.5 # CONSIDER: this <= score < threshold -> Sheet row only (score + reason, no AI artifacts). Below this = omitted
 gate_batch_size: 50      # jobs per AI Gate call — the main cost lever
 description_max_chars: 4000
+# Both null (off) by default — a fresh clone's discovery volume is small
+# enough that neither matters yet. Worth setting once you enable more
+# providers/platforms and a single employer or overall daily volume starts
+# dominating your AI Gate cost — see careeros/config.py's DEFAULT_CONFIG
+# comment for the full rationale and how rotation keeps a capped
+# company's OTHER jobs from being permanently hidden.
+max_jobs_per_company_per_run: null   # e.g. 5 — per-company AI Gate fairness cap, rotation-aware
+gate_max_jobs: null                  # e.g. 100 — overall AI Gate volume ceiling, deterministic ranking
 # How many enabled providers' discover() fetch() calls run CONCURRENTLY —
 # each is a blocking network call, so this is real wall-clock savings with no
 # correctness risk (budget/quota is always checked+recorded serially; merge

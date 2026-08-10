@@ -23,16 +23,16 @@ package is the deterministic half; see [Architecture](#architecture).
 ```
 git clone https://github.com/<you>/careeros.git
 cd careeros
-pip install -e .
+pip install -e ".[ats-dataset]"
 careeros init
 ```
 
-Set your discovery credential — one source is on by default: the official
-**Fantastic Jobs** REST API (needs a free key):
-
-```
-export FANTASTIC_API_KEY=...   # developer.fantastic.jobs — or RAPIDAPI_KEY, see Installation below
-```
+That's the whole setup. No API key, no signup. The default discovery
+source (`ats-dataset`) reads a free, open, no-auth dataset covering 65 real
+ATS platforms (4.85M jobs, 79,906 companies, updated daily), so `apply_url`
+is always the company's own real application page, never a LinkedIn mirror.
+(A paid Fantastic Jobs option exists too, disabled by default — see
+Installation below.)
 
 Then, inside your host coding CLI:
 
@@ -55,11 +55,7 @@ or see **[docs/google-setup.md](docs/google-setup.md)** any time later.
 
 ```
 $ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
-  [discover] query 1/4 (global_remote): 22 items
-  [discover] query 2/4 (india_remote): 9 items
-  [discover] query 3/4 (navi_mumbai_onsite): 11 items
-  [discover] query 4/4 (mumbai_onsite): 42 items
-[discover] fantastic-jobs: 84 raw items across 4 queries (11.4s)
+[discover] ats-dataset: 84 raw items across 5 ATS platforms (38.2s)
 [normalize] 84 raw -> 81 jobs (0.1s)
 [dedupe] 81 in -> 47 unique, 34 dropped (in-run: 2, history: 30, sheet: 2)
 [constraints] 47 in -> 41 eligible, 6 hard-rejected (0.0s)
@@ -70,9 +66,9 @@ $ /careeros daily        # run inside Claude Code / Codex / Gemini CLI / etc.
 [summary] wrote .careeros/results/2026-07-14/summary.md (also: .careeros/results/latest/)
 
 4 jobs scored above threshold. Top match: Senior PM at Acme (4.6) — strong
-role fit, remote, comp in range. See .careeros/results/latest/summary.md for
-all 4 with resumes and cover letters generated, plus 6 near-misses under
-Consider for visibility.
+role fit, remote, comp in range, real application link (not LinkedIn). See
+.careeros/results/latest/summary.md for all 4 with resumes and cover letters
+generated, plus 6 near-misses under Consider for visibility.
 ```
 
 ## Why this exists
@@ -155,7 +151,7 @@ non-recomputed fit judgment.
            │
    ┌───────┴───────┬──────────────────┬─────────────┐
    ▼               ▼                  ▼             ▼
- Fantastic Jobs   Local digest     Sheets (opt.)  Drive (opt.)
+ ats-dataset      Local digest     Sheets (opt.)  Drive (opt.)
  [deterministic]  [deterministic]  [deterministic] [deterministic]
 ```
 
@@ -171,18 +167,16 @@ handling, and the Failure Handling Principle every stage follows.
 
 ## Pipeline
 
-1. **Discover** — call a provider (the Fantastic Jobs REST API; see
-   `careeros/providers/README.md`), by default as one segmented query per
-   profile work-mode tier rather than a single broad fetch
-   (`pipeline/queryplan.py`). The provider queries **both** Fantastic
-   sources by default — `active-ats` (career sites/ATS: Greenhouse, Lever,
-   Ashby…) and `active-jb` (+ LinkedIn/YC/Wellfound) — merged and deduped.
-   A production acceptance audit (full 107-job population) found the two
-   sources score an equal ~8% ≥4.0 rate but are 92% disjoint, so querying
-   both roughly doubles interview-worthy jobs found at the **same** quota
-   (the per-tier record allocation is split 50/50, not doubled). Set
-   `api.endpoint` to `active-ats` or `active-jb` to use one source.
-   Deterministic.
+1. **Discover** — call a provider (by default `ats-dataset`, a free,
+   open, no-signup dataset covering 65 real ATS platforms — Greenhouse,
+   Lever, Ashby, Darwinbox, Keka, Workday, and more; see
+   `careeros/providers/README.md`), filtered by your own `profile.yaml`
+   (role titles, work-mode/location tiers, years-of-experience floor) with
+   zero server-side query cost. `apply_url` is always the company's real
+   application page, never a LinkedIn mirror. An optional paid alternative,
+   the Fantastic Jobs REST API (`active-ats` + `active-jb`, incl.
+   LinkedIn/YC/Wellfound coverage), remains fully available — disabled by
+   default, one config flip to switch. Deterministic.
 2. **Normalize** — map to the universal `Job` schema. Deterministic.
 3. **Dedupe** — drop jobs already seen this run, in a prior run, or already
    recorded (Sheet, if enabled). Deterministic.
@@ -271,7 +265,7 @@ you want just one piece of the full treatment.
 |---|---|
 | `careeros init` | Scaffold `.careeros/` (config, profile template) |
 | `careeros start` | Guided onboarding → `.careeros/profile.yaml` + discovery goal/plan + Sheets/Drive-or-local choice. Opens by asking for your CV (optional — `skip` to answer questions instead) |
-| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials, and (if enabled) Sheets/Drive — plus your current vs. recommended daily job limit and the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything, never fails just because Sheets/Drive are off. Add `--live` to actually verify Fantastic Jobs against its real API right now, instead of trusting local/stored state alone |
+| `careeros doctor` | First-run checklist: Python version, profile, discovery credentials for every enabled provider, and (if enabled) Sheets/Drive — plus the last discovery failure, if any (from local state — never a live API call by default). Never modifies anything, never fails just because Sheets/Drive are off. If Fantastic Jobs is enabled, add `--live` to verify it against its real API right now (a small, bounded amount of real quota) instead of trusting local/stored state alone |
 | `careeros daily` (alias `scan`) | Run the full daily pipeline |
 | `careeros job <job-id>` | Full Apply-tier treatment for ONE job, any score — resume, cover, report, application answers, auto-published |
 | `careeros prep <job-id>` | Level-2 deep interview-prep report |
@@ -279,6 +273,7 @@ you want just one piece of the full treatment.
 | `careeros publish <job-id>` | Upload one job's current artifacts to Drive/Sheet (if configured) and refresh the local digest — use after `prep`/`apply <job-id>` so the result shows up without a full `daily` run |
 | `careeros config` | Show resolved config, incl. the discovery quota-guard's current recommendation |
 | `careeros providers` | List registered discovery providers |
+| `careeros registry init/add/list/verify/import-history/stats` | Manage the ATS company/board registry behind the `greenhouse`/`lever`/`ashby` providers — see [docs/ats-registry.md](docs/ats-registry.md) |
 | `careeros sheets migrate` | Apply the current header/formatting/dropdown pass to an existing Sheet right now, instead of waiting for the next `daily` run |
 | `careeros backfill-drive` | Advanced: add Drive links to Apply-tier Sheet rows that predate Drive automation. Idempotent, defaults to `--dry-run` |
 | `careeros --version` | Print the installed version and exit |
@@ -301,11 +296,14 @@ careeros/
 │   ├── sheets.py  drive.py  pdf.py  budget.py  typst_render.py
 │   ├── apply/            # Application Answers: HTTP/Playwright form-reading (browser.py)
 │   ├── providers/        # one file per discovery source
+│   │   ├── ats_dataset.py  # the default source (v1.9) — see below
+│   │   └── legacy/         # superseded-but-working sources (fantastic_jobs.py, ats/, discovery/)
 │   └── pipeline/         # queryplan, normalize, dedupe, constraints, threshold
 ├── prompts/              # AI step templates, versioned (gate_v1.md, ...)
 ├── skills/               # host-CLI playbooks (daily, start, prep, apply, job)
 ├── schemas/              # JSON Schema — the actual source-of-truth contracts
 ├── templates/            # example profile/config, safe to commit
+├── seeds/                # companies.yaml — curated ATS board seeds for the legacy registry, PR-reviewable
 └── .careeros/            # your local state (gitignored): profile, cache, runs, results
 ```
 
@@ -319,62 +317,59 @@ cd careeros
 pip install -e .
 ```
 
-That installs the `careeros` CLI plus the default REST provider's dependency
-(`requests`). Two things you'll also need, neither installed by pip:
+That installs the `careeros` CLI. The default discovery source needs one
+more (still free, still no signup) extra:
+
+```
+pip install -e ".[ats-dataset]"   # pandas + pyarrow + httpx — the ats-dataset provider
+```
+
+Two things you'll also need, neither installed by pip:
 
 - **A host coding CLI** (Claude Code, Codex, Gemini CLI, OpenCode, …) — this
   is what actually runs `/careeros daily` and performs the AI Gate/Evaluate
   reasoning steps. CareerOS's own Python package is the deterministic half;
   see [Architecture](#architecture).
-- **A Fantastic Jobs API key** (default provider) — see Quickstart above.
+- **Nothing else, by default.** No API key required. (If you'd rather use
+  the optional paid Fantastic Jobs source instead/as well — e.g. for its
+  LinkedIn/YC/Wellfound coverage via `active-jb` — see step 1 below.)
 
 ## Setting up your profile and discovery source
 
-1. **Set your discovery credential.** `careeros` runs one source
-   (`.careeros/config.yaml`'s `providers:` block): the official Fantastic
-   Jobs REST API. Pick one transport in `api:` and export the matching key:
-   - `api.transport: direct` → `export FANTASTIC_API_KEY=...` ([developer.fantastic.jobs](https://developer.fantastic.jobs))
-   - `api.transport: rapidapi` → `export RAPIDAPI_KEY=...` (RapidAPI's "Active Jobs DB")
+1. **Discovery source — works out of the box.** `careeros` ships with
+   `ats-dataset` enabled: a free, open, no-signup dataset covering 65 real
+   ATS platforms (Greenhouse, Lever, Ashby, Darwinbox, Keka, Workday, and
+   more — 4.85M jobs, 79,906 companies, updated daily). Nothing to
+   configure; it reads its filters straight from your `profile.yaml` (set
+   up in step 2). See `careeros/providers/README.md`'s "The shipped
+   provider" for the config keys you *can* override (which ATS platforms to
+   pull, daily limit, freshness window).
 
-   *(Seven other sources shipped through v1.6 — RemoteOK, We Work Remotely,
-   Glassdoor, ZipRecruiter, Naukri, Foundit, Indeed — and were removed in
-   v1.7 after two weeks of live use: Fantastic Jobs produced half the
-   selected jobs from 13% of the raw volume, for free. See
-   `careeros/providers/README.md`'s "Evaluated and removed" for the
-   per-source numbers, and "Adding a provider" to write your own.)*
+   *(Want the optional paid alternative instead/as well? Set
+   `providers.fantastic-jobs.enabled: true` in `.careeros/config.yaml`, pick
+   a transport in the `api:` block, and export the matching key:
+   `api.transport: direct` → `FANTASTIC_API_KEY` from
+   [developer.fantastic.jobs](https://developer.fantastic.jobs); `rapidapi`
+   → `RAPIDAPI_KEY`. Several other sources — RemoteOK, We Work Remotely,
+   Glassdoor, ZipRecruiter, Naukri, Foundit, Indeed, and a curated
+   Greenhouse/Lever/Ashby registry — were tried across v1.0-v1.8 and
+   superseded; all still work, disabled, in `careeros/providers/legacy/`.
+   See `careeros/providers/README.md` for the full history and how to
+   re-enable any of them.)*
 2. **Set up your profile**: `/careeros start` inside your host coding CLI —
    opens by asking you to paste your CV (optional; `skip` to answer
-   questions instead), then extracts your facts into `.careeros/profile.yaml`,
-   asks your interviews/week goal + Fantastic Jobs plan (Free / Paid /
-   Custom quota), then asks how many jobs per day you want from Fantastic
-   Jobs (a loop over every enabled source — one today, more if you add them
-   later), explained in plain English against your own search preferences (e.g.
-   *"Based on your search preferences (Remote, India, Onsite), CareerOS runs
-   3 searches per day. On the Free plan, the recommended total is 71 jobs
-   per day — 23 per search."*) — accept it or enter your own number, and asks
-   whether you want a Google Sheet + Drive or to stay local-only (see
-   Quickstart above; nothing extra to set up either way). **If you skip the
-   plan question or never set `api.plan`, CareerOS assumes the Free plan by
-   default** (500 records/week) rather than silently over-fetching — you'll
-   see a one-time note about the assumption on `discover`/`careeros config`,
-   and `careeros doctor` always shows current-vs-recommended. Or hand-edit
-   `.careeros/profile.yaml` directly — see `templates/profile.example.yaml`.
-   **Change the limit anytime later** by editing `api.limit` (a daily total),
-   `api.active_days_per_week`, or `api.plan` in `.careeros/config.yaml`.
+   questions instead), then extracts your facts into `.careeros/profile.yaml`
+   (role titles, work-mode/location preferences, years of experience, salary
+   floor — everything `ats-dataset` filters on), asks your interviews/week
+   goal and daily job limit, and asks whether you want a Google Sheet +
+   Drive or to stay local-only (see Quickstart above; nothing extra to set
+   up either way). Or hand-edit `.careeros/profile.yaml` directly — see
+   `templates/profile.example.yaml`. **Change the daily limit anytime** via
+   `providers.ats-dataset.limit` in `.careeros/config.yaml`.
 3. **Check your setup**: `careeros doctor` — a green/red checklist for
    Python version, profile, discovery credentials, and (if enabled)
    Sheets/Drive. Fixes nothing itself; just tells you exactly what's
-   missing — and never fails just because Sheets/Drive are off. If
-   `discover` ever fails, it now classifies *why* — an invalid/expired API
-   key, a network or Fantastic Jobs outage, transient rate-limiting, or
-   your request/record quota being exhausted are each reported with a
-   distinct, plain-English next action instead of a generic error;
-   `doctor` also shows the last failure from local state, with no extra
-   API call. Want to catch a bad or exhausted key *before* your first
-   `daily` run instead of finding out mid-`discover`? Run `careeros doctor
-   --live` — it actually pings Fantastic Jobs right now (a small, bounded
-   amount of real quota: one 1-record fetch) and reports its real status
-   instead of only local state.
+   missing — and never fails just because Sheets/Drive are off.
 4. **Run it**: `/careeros daily` inside your host coding CLI.
 
 ## Local-first results digest
@@ -597,10 +592,12 @@ cache — a re-run of `daily` with nothing else changed costs zero AI calls.
 
 ## What's built today
 
-The full pipeline runs end to end: profile-driven segmented discovery from
-the Fantastic Jobs REST API (seven other sources were evaluated and removed
-in v1.7 — see `careeros/providers/README.md` for the evidence),
-deterministic normalize/dedupe/constraints/two-tier threshold,
+The full pipeline runs end to end: profile-driven discovery from a free,
+open, no-signup ATS dataset (`ats-dataset`, v1.9 — apply_url is always the
+company's real application page, never LinkedIn; several earlier sources,
+including a paid REST aggregator, were tried and superseded — see
+`careeros/providers/README.md` for the evidence and how to re-enable any of
+them), deterministic normalize/dedupe/constraints/two-tier threshold,
 the AI Gate and Evaluate stages with the file-based prepare/finalize contract,
 resume/cover generation against your `profile.yaml`, automatic Application
 Answers for Apply-tier jobs (background HTTP/Playwright form-reading, with
@@ -616,14 +613,42 @@ column, and header/Score formatting.
 in `templates/`); replace it with your own facts — via `/careeros start`
 (CV-first) or by editing directly — before your first real run.
 
+v1.8 added `greenhouse`/`lever`/`ashby` — direct-API providers that read
+their company list from a small SQLite registry (derived from the
+git-tracked `seeds/companies.yaml`) instead of config-driven search filters,
+so `apply_url` can be a company's real application page instead of a
+LinkedIn mirror. Superseded by `ats-dataset` (v1.9, same benefit at 65
+platforms instead of 3, zero registry to curate), and **removed in v2.0**:
+every seeded board was permanently `status='unverified'` on this project's
+own checkout, and those providers only ever read `status='live'` boards —
+they were structurally skip-only and had never returned a single job.
+
+v1.9 replaced Fantastic Jobs (paid, quota-limited, 100% LinkedIn apply
+URLs for this profile) with `ats-dataset` as the default: a free, open,
+no-signup dataset covering 65 real ATS platforms, updated daily, filtered
+entirely from your own `profile.yaml`. Two deterministic filters (a
+seniority-title cut and a JD years-of-experience check) replace what
+Fantastic Jobs' server-side experience-level param used to do, and the AI
+Gate stage now reads a trimmed description (`gate_description_max_chars`)
+to keep the higher volume cheap.
+
+v2.0 fixed a geography reachability gap (`row_matches_geo` couldn't match
+remote tiers on the ~53% of rows where the dataset's `is_remote` column is
+unpopulated — measured 100% on greenhouse), added an `ats-watchlist`
+provider (Layer 2A: a small user-supplied list of specific companies,
+scraped live via `ats-scrapers`' own adapters, for companies the hosted
+snapshot doesn't carry at all — see
+[docs/ats-registry.md](docs/ats-registry.md)), and added a per-company AI
+Gate fairness cap with rotation (`max_jobs_per_company_per_run`) so one
+high-volume employer can't dominate a day's AI evaluation budget. The v1.8
+trio and its SQLite registry were removed as part of this release —
+`fantastic-jobs` remains registered, disabled, for instant rollback.
+
 ## Roadmap
 
-- Direct-API providers for Greenhouse, Ashby, Lever, Workday (see
-  `careeros/providers/README.md`)
-- Incremental (`date_created_gte`) discovery — deferred out of the REST
-  provider migration to keep it a pure parity swap. (LinkedIn/Wellfound/YC
-  via the `active-jb` endpoint is now **live** — the default `endpoint:
-  both` queries it alongside `active-ats`; see Pipeline step 1.)
+- Workday direct-API provider
+- Incremental (`date_created_gte`) discovery for the legacy Fantastic Jobs
+  provider — deferred to keep that migration a pure parity swap.
 - `careeros config get/set/show` — a validated, scriptable config editor so
   hand-editing `.careeros/config.yaml` YAML is never required (`careeros
   config` today is read-only)
@@ -656,8 +681,10 @@ Unit tests cover the deterministic logic that's genuinely subtle: hard
 constraints (`constraints.py`), two-tier threshold selection, cache-key
 stability, dedupe, the resume-truthfulness fact-preservation check (numbers,
 company/project names, and skill names all verified against `profile.yaml`
-— see `verify_resume_facts` in `careeros/lint.py`), the Fantastic Jobs
-provider's source-side-filter and transport wiring, the Sheets name-keyed
+— see `verify_resume_facts` in `careeros/lint.py`), the `ats-dataset`
+provider's profile-driven filtering (title/geo/seniority/years-of-experience,
+NaN-safety, salary-period ambiguity), the legacy Fantastic Jobs provider's
+source-side-filter and transport wiring, the Sheets name-keyed
 read/write and additive header migration, the daily-summary render (incl.
 the local-first results digest), Drive artifact upload/backfill/idempotency,
 and PDF rendering — the pure functions most likely to silently regress. They

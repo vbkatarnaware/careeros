@@ -6,16 +6,47 @@ v1.7: deliberately down to ONE source. Seven providers (RemoteOK, We Work
 Remotely, Glassdoor, ZipRecruiter, Naukri, Foundit, Indeed) plus the legacy
 Apify actor were removed after two weeks of live evidence — see this
 package's own README.md (careeros/providers/README.md)'s "Evaluated and
-removed" section for the per-source numbers. This file being one entry long
-is a decision about which sources are worth running, not a change to the
-architecture that lets you add more.
+removed" section for the per-source numbers.
+
+v1.8 (ATS discovery registry, REMOVED 2026-08-10): three hand-written
+ATS-direct scrapers (`greenhouse`, `lever`, `ashby`) plus a SQLite
+company/board registry to back them. Deleted after audit: every seeded
+board was permanently `status='unverified'` on this project's own
+checkout, and all three providers only ever read `status='live'` boards —
+they were structurally skip-only and had never returned a single job.
+Superseded by v1.9 (below) for the hosted-snapshot case and by v2.0's
+`ats-watchlist` (using the same `ats-scrapers` library's 50+ maintained
+adapters) for the targeted-scrape case — no functionality was lost, only
+~1,500 lines of dead code and a SQLite dependency this project otherwise
+has none of.
+
+v1.9 (free ATS dataset): `ats-dataset` (careeros/providers/ats_dataset.py)
+queries the free, open `ats-scrapers` hosted dataset — 65 ATS platforms
+including India-specific ones (Darwinbox, Keka) the v1.8 registry never
+covered, no company list to curate, no scraping infra of our own. This is
+now the PRIMARY source (enabled by default, see
+templates/config.example.yaml) — `fantastic-jobs` and the v1.8 trio are
+disabled but kept registered here, which is the entire rollback mechanism:
+flip two booleans in config.yaml, nothing else to restore.
+
+v2.0 (Layer 2A watchlist): `ats-watchlist` (careeros/providers/
+ats_watchlist.py) — a small, user-supplied list of specific companies
+scraped live via the same `ats-scrapers` package's per-platform adapters,
+for companies the Layer 1 hosted snapshot doesn't carry at all. Opt-in and
+disabled by default (an empty watchlist is a normal, zero-cost state); see
+that module's docstring for what it deliberately does NOT do (generic
+automated company discovery).
 """
 
 from __future__ import annotations
 
-from careeros.providers.fantastic_jobs import PROVIDER as FANTASTIC_JOBS
+from careeros.providers.ats_dataset import PROVIDER as ATS_DATASET
+from careeros.providers.ats_watchlist import PROVIDER as ATS_WATCHLIST
+from careeros.providers.legacy.fantastic_jobs import PROVIDER as FANTASTIC_JOBS
 
 _REGISTRY = {
+    ATS_DATASET.id: ATS_DATASET,
+    ATS_WATCHLIST.id: ATS_WATCHLIST,
     FANTASTIC_JOBS.id: FANTASTIC_JOBS,
 }
 

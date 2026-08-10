@@ -1,0 +1,41 @@
+# Layer 2A: a small, hand-curated list of specific companies to scrape
+# directly, for companies the free Layer 1 hosted dataset (ats-dataset
+# provider) doesn't carry at all. See careeros/providers/ats_watchlist.py's
+# module docstring for the full design and why this is deliberately
+# targeted, not automated company discovery.
+#
+# This is entirely OPTIONAL and OFF by default (an empty/missing file is a
+# normal state — enable the `ats-watchlist` provider in config.yaml only
+# once you have entries here worth scraping).
+#
+# Two ways to identify a company, per entry:
+#
+#   1. `careers_url` — the company's own careers page. Resolved
+#      automatically to (ats, slug) via ats-scrapers' URL-shape matching.
+#      Works for companies already hosted on a known multi-tenant ATS
+#      (jobs.lever.co/x, boards.greenhouse.io/x, jobs.ashbyhq.com/x, a
+#      *.myworkdayjobs.com/* URL, etc).
+#
+#   2. `ats` + `slug` — for a custom-domain careers site `careers_url`
+#      can't resolve on its own. You must supply BOTH: `ats` from
+#      https://github.com/kalil0321/ats-scrapers's supported platform
+#      list, and `slug` in the EXACT shape that platform's own scraper
+#      expects (usually the tenant token, but Workday/Taleo want the full
+#      URL — see that platform's scraper module for specifics). Note: not
+#      every ATS this project's Layer 1 config lists has a Layer 2
+#      scraper — Darwinbox and Keka, for example, currently don't.
+#
+# `source` and `added_at` are free-text provenance for your own reference;
+# neither is read by the provider.
+
+companies:
+  - name: "Example Co (careers_url)"
+    careers_url: "https://jobs.lever.co/example-co"
+    source: "manual"
+    added_at: "2026-01-01"
+
+  - name: "Example Co (explicit ats+slug)"
+    ats: "greenhouse"
+    slug: "examplecoinc"
+    source: "manual"
+    added_at: "2026-01-01"

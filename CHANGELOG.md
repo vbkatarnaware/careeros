@@ -4,6 +4,67 @@ All notable, user-visible changes to CareerOS are documented here. Format
 loosely follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Discovery-recall audit: measured the `ats-dataset` provider against the
+real profile and found the dominant loss wasn't infrastructure, it was a
+geography reachability bug plus one missing profile tier — 50 matched
+jobs/day as configured, 537 once both were fixed.
+
+### Fixed
+
+- **`row_matches_geo` reachability gap** (`providers/ats_dataset.py`) —
+  remote-tier matching (`india_remote`, `global_remote`) only checked the
+  dataset's `is_remote` column when it was exactly `True`; that column is
+  unpopulated (`None`) on ~53% of rows, 100% on greenhouse's, making those
+  tiers structurally unreachable regardless of profile config. Added a
+  text-based fallback (location/region/title only, never `description`,
+  to avoid the documented false-positive class) for `is_remote is None`.
+- **Silent truncation** — `ats-dataset`'s `matched[:limit]` now warns when
+  the true match count exceeds `limit`, surfaced in `careeros discover`'s
+  own output for every provider, not just this one.
+
+### Added
+
+- **`ats-watchlist` provider** (`providers/ats_watchlist.py`) — Layer 2A:
+  a small, user-supplied list of specific companies
+  (`.careeros/watchlist.yaml`) scraped live via `ats-scrapers`'s
+  per-platform adapters, for companies the hosted snapshot doesn't carry
+  at all. Deliberately targeted, not automated discovery — see that
+  module's docstring for the measured evidence against building more.
+  Deterministic ATS-migration detection (`history[]`, never a silent
+  overwrite) and a 3-consecutive-failure staleness marker, no AI.
+- **Optional reference registry** (`careeros/registry.py`,
+  `careeros registry sync`/`find`/`stats`) — a local cache of the public
+  ~80K-row company/tenant directory, for "do we already know this
+  company" lookups before hand-adding a watchlist entry. Plain CSV
+  (stdlib `csv`, zero extra deps) — benchmarked against Parquet at this
+  row count and the ~0.15s difference wasn't worth a pandas/pyarrow
+  dependency for an occasional lookup command. Never a dependency of
+  `careeros discover` itself.
+- **Per-company AI Gate fairness cap** (`max_jobs_per_company_per_run`,
+  `careeros/cli/gate_evaluate.py`) — caps how many of one company's jobs
+  reach the AI Gate in a single run, with rotation
+  (`.careeros/gate_rotation.json`) so an over-represented employer's
+  unseen postings get priority on the next run rather than the same N
+  forever. Applies only at the Gate-input boundary — `eligible.json` is
+  never touched, so nothing discovered is ever deleted.
+- **`gate_max_jobs`** — an overall AI-cost ceiling applied after the
+  per-company cap, via a plain deterministic sort (work-mode tier rank,
+  then role-priority title match, then recency) — no ML, auditable in
+  `05_gate/_selection_meta.json`.
+
+### Removed
+
+- **`greenhouse`/`lever`/`ashby` providers and the SQLite ATS registry**
+  (`providers/legacy/ats/`, `providers/legacy/discovery/`,
+  `seeds/companies.yaml`, `.careeros/registry.db`) — every seeded board
+  was permanently `status='unverified'` on this project's own checkout,
+  and those providers only ever read `status='live'` boards, so they were
+  structurally skip-only and had never returned a single job. Superseded
+  by `ats-watchlist` above, which uses `ats-scrapers`' own 50+ maintained
+  adapters instead of three hand-written ones.
+
 ## [2.0.0] - 2026-08-01
 
 Two problems, found back to back on the same real data.

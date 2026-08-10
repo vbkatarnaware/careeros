@@ -56,6 +56,15 @@ pdf = ["fpdf2>=2.7"]
 # `careeros doctor` checks for both independently and tells you exactly
 # which of the two (if either) is missing.
 apply = ["playwright>=1.40"]
+# Optional: the `ats-dataset` discovery provider (careeros/providers/
+# ats_dataset.py). Reads the free, no-API-key ats-scrapers hosted dataset
+# (4.85M jobs / 79,906 companies / 65 ATS platforms, regenerated daily —
+# https://github.com/kalil0321/ats-scrapers) instead of a paid aggregator.
+# `[parquet]` pulls pandas + pyarrow + httpx — not core dependencies, since
+# a fresh OSS clone must still run without them. Without this installed,
+# the provider's `validate()` reports the exact pip command instead of
+# crashing `discover`/`doctor`.
+ats-dataset = ["ats-scrapers[parquet]>=0.2.0"]
 
 [project.scripts]
 careeros = "careeros.cli:app"
