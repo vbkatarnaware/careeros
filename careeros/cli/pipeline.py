@@ -121,7 +121,20 @@ def dedupe(
 
     start = time.time()
     unique, dropped_in_run = dedupe_in_run(jobs)
-    unique, dropped_cross_location = dedupe_cross_location(unique)
+    # v2.1: record which SOURCE survived over which, for every cross-location
+    # collapse — the only point survivor+dropped are both in scope together.
+    # Read by `pipeline/ledger.py`'s `compute_run_source_stats` to answer
+    # "how many Layer 2A (ats-watchlist) jobs were duplicates of a Layer 1
+    # (ats-dataset) job" — a job.id already appearing once here is dropped
+    # exactly once, so this dict is never overwritten mid-run.
+    duplicate_survivor_source: dict[str, str] = {}
+
+    def _record_cross_location_duplicate(survivor: Job, dropped_dup: Job) -> None:
+        duplicate_survivor_source[dropped_dup.id] = survivor.source
+
+    unique, dropped_cross_location = dedupe_cross_location(
+        unique, on_duplicate=_record_cross_location_duplicate,
+    )
 
     if replay:
         dropped_history: list[Job] = []
@@ -152,8 +165,19 @@ def dedupe(
     # history | sheet), mirroring the `_reject_reasons` convention constraints
     # already uses -- previously this was a flat concat with no way to tell
     # which pass dropped a given job after the fact.
+    # v2.1: a `cross-location` entry ALSO gets `_duplicate_of_source` — the
+    # source of the job that survived over it, from `duplicate_survivor_
+    # source` above. Only meaningful for this one drop reason (in-run/
+    # history/sheet duplicates were never compared against a DIFFERENT
+    # source's job in the first place).
     def _tag(reason: str, batch: list[Job]) -> list[dict]:
-        return [{**j.to_dict(), "_drop_reason": reason} for j in batch]
+        tagged = []
+        for j in batch:
+            d = {**j.to_dict(), "_drop_reason": reason}
+            if reason == "cross-location" and j.id in duplicate_survivor_source:
+                d["_duplicate_of_source"] = duplicate_survivor_source[j.id]
+            tagged.append(d)
+        return tagged
 
     tagged_dropped = (
         _tag("in-run", dropped_in_run) + _tag("cross-location", dropped_cross_location)

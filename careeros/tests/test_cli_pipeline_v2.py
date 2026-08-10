@@ -69,6 +69,43 @@ def test_dedupe_drops_job_recorded_in_processed_jsonl(tmp_path, monkeypatch):
     assert dropped[0]["_drop_reason"] == "history"
 
 
+def test_dedupe_tags_cross_layer_duplicate_with_survivor_source(tmp_path, monkeypatch):
+    """v2.1: a real Layer 1 (ats-dataset) and Layer 2A (ats-watchlist)
+    version of the same job, run through the actual `dedupe` CLI command
+    end to end -- confirms `dropped.json` records not just THAT it was a
+    cross-location duplicate, but WHICH source's job survived, so
+    `pipeline/ledger.py` can answer "how many Layer 2A jobs duplicated a
+    Layer 1 job" and not merely "a duplicate occurred"."""
+    monkeypatch.chdir(tmp_path)
+    _write_profile(tmp_path)
+    cfg = _cfg()
+    date = "2026-08-10"
+
+    desc = "Own growth loops end to end for the Sarvam platform. " * 3
+    normalize_dir = runmeta.stage_dir(cfg.runs_dir, date, "normalize")
+    jobs = [
+        make_job(id="l1", source="ats-dataset", company="Sarvam AI",
+                 title="Product Manager, Growth", description=desc, remote=True),
+        make_job(id="l2a", source="ats-watchlist", company="Sarvam AI",
+                 title="Product Manager, Growth", description=desc, remote=True),
+    ]
+    with open(normalize_dir / "jobs.json", "w") as f:
+        f.write(dumps([j.to_dict() for j in jobs]))
+
+    from unittest.mock import patch
+    with patch("careeros.cli.pipeline._config", return_value=cfg):
+        dedupe(date=date, against_sheet=False, replay=False)
+
+    unique = json.loads((runmeta.stage_dir(cfg.runs_dir, date, "dedupe") / "unique.json").read_text())
+    assert [j["id"] for j in unique] == ["l1"]  # ats-dataset (Layer 1) survives, listed first
+
+    dropped = json.loads((runmeta.stage_dir(cfg.runs_dir, date, "dedupe") / "dropped.json").read_text())
+    assert len(dropped) == 1
+    assert dropped[0]["id"] == "l2a"
+    assert dropped[0]["_drop_reason"] == "cross-location"
+    assert dropped[0]["_duplicate_of_source"] == "ats-dataset"
+
+
 def test_dedupe_replay_bypasses_history_check(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path)

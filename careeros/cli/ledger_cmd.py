@@ -59,8 +59,10 @@ def ledger(
         return
 
     all_entries = []
+    all_source_entries = []
     for d in dates:
         all_entries.extend(ledger_mod.compute_run_tier_stats(cfg, d))
+        all_source_entries.extend(ledger_mod.compute_run_source_stats(cfg, d))
 
     learning_dir = cfg.careeros_dir / "learning"
     learning_dir.mkdir(parents=True, exist_ok=True)
@@ -70,9 +72,20 @@ def ledger(
         for e in all_entries:
             f.write(json.dumps(e.to_dict(), sort_keys=True) + "\n")
 
+    # v2.1: discovery-layer (Layer 1 vs Layer 2A) entries get their own
+    # JSONL, same append-only/fully-regenerable spirit as ledger.jsonl —
+    # kept separate rather than interleaved since the two entry shapes
+    # (tier vs source) aren't the same schema.
+    source_jsonl_path = learning_dir / "ledger_by_source.jsonl"
+    with open(source_jsonl_path, "w") as f:
+        for e in all_source_entries:
+            f.write(json.dumps(e.to_dict(), sort_keys=True) + "\n")
+
     summary = ledger_mod.aggregate_entries(all_entries)
     arming = ledger_mod.compute_arming(summary)
+    source_summary = ledger_mod.aggregate_source_entries(all_source_entries)
     md = ledger_mod.render_ledger_markdown(summary, arming=arming)
+    md += "\n" + ledger_mod.render_source_ledger_markdown(source_summary)
     md_path = learning_dir / "ledger.md"
     with open(md_path, "w") as f:
         f.write(md)

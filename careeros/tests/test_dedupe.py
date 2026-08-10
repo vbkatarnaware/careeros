@@ -234,6 +234,44 @@ def test_dedupe_cross_location_unions_tiers_across_collapsed_duplicate():
     assert unique[0].tiers == ["global_remote", "india_remote"]
 
 
+def test_dedupe_cross_location_on_duplicate_fires_with_survivor_and_dropped():
+    """The seam `careeros/cli/pipeline.py`'s `dedupe` command uses to record
+    which SOURCE survived a cross-location collapse (for `pipeline/ledger.py`'s
+    cross-layer duplicate attribution) -- fires exactly once per collapse,
+    with (survivor, dropped) in that order, never on a non-duplicate."""
+    from careeros.models import Job
+    desc = "Same role description text repeated for length. " * 5
+    layer1 = Job(id="l1", source="ats-dataset", title="Product Manager, Growth",
+                 company="Sarvam AI", apply_url="https://x", description=desc)
+    layer2a = Job(id="l2a", source="ats-watchlist", title="Product Manager, Growth",
+                  company="Sarvam AI", apply_url="https://y", description=desc)
+    unrelated = Job(id="u", source="ats-dataset", title="Data Scientist",
+                     company="Sarvam AI", apply_url="https://z", description="Different role entirely.")
+
+    calls: list[tuple[str, str]] = []
+    unique, dropped = dedupe_cross_location(
+        [layer1, layer2a, unrelated],
+        on_duplicate=lambda survivor, dup: calls.append((survivor.id, dup.id)),
+    )
+
+    assert calls == [("l1", "l2a")]  # fired once, survivor first
+    assert [j.id for j in unique] == ["l1", "u"]
+    assert [j.id for j in dropped] == ["l2a"]
+
+
+def test_dedupe_cross_location_on_duplicate_none_is_backward_compatible():
+    """Every existing caller/test omits on_duplicate entirely -- confirms
+    the default keeps dedupe_cross_location's behavior byte-for-byte
+    unchanged from before the callback existed."""
+    from careeros.models import Job
+    desc = "Same role description text repeated for length. " * 5
+    a = Job(id="a", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://x", description=desc)
+    b = Job(id="b", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://y", description=desc)
+    unique, dropped = dedupe_cross_location([a, b])  # no on_duplicate passed
+    assert [j.id for j in unique] == ["a"]
+    assert [j.id for j in dropped] == ["b"]
+
+
 def test_dedupe_in_run_tiers_none_when_neither_job_has_tiers():
     from careeros.models import Job
     a1 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://x")

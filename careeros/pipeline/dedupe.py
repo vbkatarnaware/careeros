@@ -42,7 +42,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from careeros.models import Job
 
@@ -87,7 +87,10 @@ def _cross_location_key(job: Job) -> tuple[str, str, str]:
     return (company, title, desc_prefix)
 
 
-def dedupe_cross_location(jobs: list[Job]) -> tuple[list[Job], list[Job]]:
+def dedupe_cross_location(
+    jobs: list[Job],
+    *, on_duplicate: Optional[Callable[[Job, Job], None]] = None,
+) -> tuple[list[Job], list[Job]]:
     """Returns (unique, dropped): collapses the same role posted once per
     country/office into a single entry. Keeps the FIRST occurrence in list
     order — since `discover` runs segmented queries in `profile.work_mode_
@@ -96,6 +99,15 @@ def dedupe_cross_location(jobs: list[Job]) -> tuple[list[Job], list[Job]]:
     tier (e.g. a role also posted in a lower-priority country is dropped in
     favor of the same role's higher-priority-tier posting), with zero extra
     ranking logic needed here.
+
+    `on_duplicate(survivor, dropped_dup)`, if given, fires once per collapse
+    — the only point where both the surviving and dropped Job are in scope
+    together. Return signature is UNCHANGED from before this existed (both
+    still plain `list[Job]`) specifically so every existing caller/test
+    keeps working untouched; this is purely an opt-in side channel for
+    `careeros/cli/pipeline.py`'s `dedupe` command to record which source's
+    job survived over a Layer 2A one (or vice versa) — see
+    `pipeline/ledger.py`'s `compute_run_source_stats` for what reads it.
     """
     seen_keys: dict[tuple[str, str, str], Job] = {}
     unique: list[Job] = []
@@ -103,7 +115,10 @@ def dedupe_cross_location(jobs: list[Job]) -> tuple[list[Job], list[Job]]:
     for job in jobs:
         key = _cross_location_key(job)
         if key in seen_keys:
-            _union_tiers(seen_keys[key], job)
+            survivor = seen_keys[key]
+            _union_tiers(survivor, job)
+            if on_duplicate is not None:
+                on_duplicate(survivor, job)
             dropped.append(job)
         else:
             seen_keys[key] = job
