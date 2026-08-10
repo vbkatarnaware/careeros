@@ -234,3 +234,114 @@ def test_single_experience_band_does_not_multiply_queries():
     plan = build_query_plan(_profile_3_tier(), {"experience_levels": ["2-5"]})
     assert len(plan) == 3
     assert all(q["experience_level"] == "2-5" for q in plan)
+
+
+# ── title chunking (v2.2) ────────────────────────────────────────────────
+# Live-verified 2026-08-05: Fantastic.jobs silently DROPS the `-exclusion`
+# clause from the bare `title` param once it holds 4+ OR-terms. Confirmed by
+# isolating term-count from string-length: 3 terms + 7 exclusions (129 chars)
+# filtered correctly, while 4 terms + 4 exclusions (122 chars) leaked every
+# excluded job. So chunk by TERM COUNT, never by length.
+
+_SIX_ROLES = [
+    "Product Manager", "AI Product Manager", "Founder's Office",
+    "Growth Product Manager", "Product Operations", "Associate Product Manager",
+]
+
+
+_BASIC = {"title_mode": "basic"}
+
+
+def test_role_priorities_over_three_are_chunked_in_basic_mode():
+    """The real profile's 6 roles must not go out as one 6-term OR string —
+    that silently disables title_exclusion_search server-side."""
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC)
+    assert len(plan) == 2, "6 roles -> 2 chunks of 3"
+    assert all(len(q["title_search"]) <= 3 for q in plan)
+
+
+def test_chunking_preserves_every_role_exactly_once():
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC)
+    flattened = [role for q in plan for role in q["title_search"]]
+    assert flattened == _SIX_ROLES, "no role dropped, duplicated, or reordered"
+
+
+def test_three_or_fewer_roles_are_not_chunked():
+    """Regression guard: chunking must be a no-op below the threshold, so
+    existing profiles/tests keep their original query count."""
+    profile = _real_shaped_profile(
+        role_priorities=["Product Manager", "AI Product Manager", "Founder's Office"],
+        work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC)
+    assert len(plan) == 1
+    assert len(plan[0]["title_search"]) == 3
+
+
+def test_chunking_multiplies_with_experience_bands_in_basic_mode():
+    """Both fan-outs compose: 1 tier x 2 bands x 2 title chunks = 4 queries."""
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC | {"experience_levels": ["0-2", "2-5"]})
+    assert len(plan) == 4
+
+
+def test_every_chunked_query_still_carries_the_exclusion_list():
+    """The whole point of chunking — each chunk must keep the exclusions that
+    were being silently dropped before."""
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC | {"title_exclusion_search": ["Intern", "Marketing"]})
+    assert all(q["title_exclusion_search"] == ["Intern", "Marketing"] for q in plan)
+
+
+def test_chunked_queries_keep_the_tier_name_for_ledger_aggregation():
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, _BASIC)
+    assert {q["_work_mode"] for q in plan} == {"india_remote"}
+
+
+# ── advanced mode is the DEFAULT and must not chunk (v2.2) ───────────────
+# The boolean `title_advanced` grammar has no OR-term ceiling, so chunking
+# is unnecessary there — and avoiding it is what halves the request count
+# (8 queries -> 4 at 2 tiers x 2 bands, i.e. 16 -> 8 requests at 2 endpoints).
+
+
+def test_advanced_mode_is_the_default_and_does_not_chunk():
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, {})  # no title_mode -> advanced
+    assert len(plan) == 1, "all 6 roles in ONE query"
+    assert plan[0]["title_search"] == _SIX_ROLES
+
+
+def test_advanced_mode_halves_query_count_versus_basic():
+    """The concrete request-cost win, asserted rather than assumed."""
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES,
+        work_mode_priority=["india_remote", "mumbai_onsite"],
+    )
+    cfg = {"experience_levels": ["0-2", "2-5"]}
+    advanced = build_query_plan(profile, cfg)
+    basic = build_query_plan(profile, cfg | _BASIC)
+    assert len(advanced) == 4, "2 tiers x 2 bands, no chunking"
+    assert len(basic) == 8, "same, doubled by 2 title chunks"
+
+
+def test_advanced_mode_still_carries_exclusions_for_the_provider_to_encode():
+    profile = _real_shaped_profile(
+        role_priorities=_SIX_ROLES, work_mode_priority=["india_remote"],
+    )
+    plan = build_query_plan(profile, {"title_exclusion_search": ["Intern"]})
+    assert all(q["title_exclusion_search"] == ["Intern"] for q in plan)

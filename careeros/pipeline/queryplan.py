@@ -13,6 +13,14 @@ every onsite city the profile accepts, each searching all of
 calls total, not a cartesian product — cost- and complexity-bounded by
 construction.
 
+v2.2 (2026-08-05): `role_priorities` beyond 3 terms must now be CHUNKED, one
+query per chunk of `_MAX_TITLE_OR_TERMS` — see that constant's comment for
+the live-verified bug this works around. A 6-role profile (the real
+.careeros/profile.yaml) now costs 2x the queries above (e.g. 4 tiers -> 8),
+not 3-4 flat; the record budget still divides evenly across however many
+queries actually get built, so this costs extra `api_requests` (a looser,
+separately-metered quota) but not extra records/week.
+
 The P2.6 benchmark (2026-07-08) added two refinements, both evidence-backed:
 - **Onsite cities are merged into ONE query** instead of one call per city —
   confirmed live that `locationSearch` with multiple cities returns their
@@ -48,6 +56,43 @@ _ONSITE_ARRANGEMENT = ["On-site", "Hybrid"]
 _CARRY_THROUGH_KEYS = (
     "remove_agency", "has_salary", "title_exclusion_search", "location_exclusion_search",
 )
+
+# Live-verified 2026-08-05 against Fantastic.jobs' bare `title` param (the
+# documented syntax we use: "A OR B OR C -D -E" — see their Advanced
+# Searching Guide). Their docs state no hard term-count limit exists, but
+# direct testing found the exact break point: with <=3 OR-terms, an
+# `-exclusion` clause in the same param applies cleanly every time (0 leaks
+# across repeated tests); at 4+ OR-terms, the exclusion clause is silently
+# ignored — same leaked jobs whether 1 exclusion or 6 is appended, regardless
+# of term order or total string length (isolated by testing both). This is
+# why title_exclusion_search (Intern/Trainee/Marketing/Assistant/...) never
+# actually filtered anything live once role_priorities grew past 3 entries:
+# the query string was syntactically fine, just silently over budget for
+# whatever internal limit the provider's query parser enforces.
+_MAX_TITLE_OR_TERMS = 3
+
+
+def _title_chunks(role_priorities: list[str], apify_cfg: dict[str, Any]) -> list[list[str]]:
+    """Splits role_priorities into groups of at most `_MAX_TITLE_OR_TERMS` so
+    every resulting query's title param stays inside the verified range where
+    `-exclusion` terms actually apply. A profile with <=3 roles (nearly every
+    test fixture, and plenty of real profiles) yields exactly one chunk equal
+    to the full list — this is a no-op for anyone not already past the
+    threshold.
+
+    Chunking is SKIPPED entirely in the default `title_mode: advanced`, where
+    `providers/fantastic_jobs.py` expresses the same roles + exclusions as one
+    boolean `title_advanced` expression that has no term ceiling. Chunking
+    remains the fallback for `title_mode: basic` — it is the only thing that
+    makes exclusions work on the bare `title` param."""
+    if not role_priorities:
+        return [[]]
+    if apify_cfg.get("title_mode", "advanced") == "advanced":
+        return [list(role_priorities)]
+    return [
+        role_priorities[i : i + _MAX_TITLE_OR_TERMS]
+        for i in range(0, len(role_priorities), _MAX_TITLE_OR_TERMS)
+    ]
 
 
 def _base_query(apify_cfg: dict[str, Any], role_priorities: list[str]) -> dict[str, Any]:
@@ -93,17 +138,22 @@ def build_query_plan(profile: Profile, apify_cfg: dict[str, Any]) -> list[dict[s
         seen_specs.add(dedup_key)
 
         def _emit(experience_level: str | None) -> None:
-            query = _base_query(apify_cfg, role_priorities)
-            query.update({"location_search": location_search, "work_arrangement": work_arrangement})
-            if experience_level:
-                query["experience_level"] = experience_level
-            # `_work_mode` deliberately stays the TIER name even when a tier
-            # fans out across experience bands: the learning ledger
-            # (pipeline/ledger.py) aggregates by it, and splitting one tier
-            # into several would halve each one's sample size and push every
-            # tier further from the arming thresholds for no analytical gain.
-            query["_work_mode"] = work_mode  # debug/logging only, not an actor field
-            plan.append(query)
+            # v2.2: one query per title chunk (see _MAX_TITLE_OR_TERMS) so
+            # title_exclusion_search stays effective regardless of how many
+            # role_priorities the profile declares.
+            for title_chunk in _title_chunks(role_priorities, apify_cfg):
+                query = _base_query(apify_cfg, title_chunk)
+                query.update({"location_search": location_search, "work_arrangement": work_arrangement})
+                if experience_level:
+                    query["experience_level"] = experience_level
+                # `_work_mode` deliberately stays the TIER name even when a
+                # tier fans out across experience bands OR title chunks: the
+                # learning ledger (pipeline/ledger.py) aggregates by it, and
+                # splitting one tier into several would shrink each one's
+                # sample size and push every tier further from the arming
+                # thresholds for no analytical gain.
+                query["_work_mode"] = work_mode  # debug/logging only, not an actor field
+                plan.append(query)
 
         if experience_levels:
             for level in experience_levels:

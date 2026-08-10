@@ -1,4 +1,4 @@
-"""Tests for careeros/providers/fantastic_jobs.py's pure functions: REST
+"""Tests for careeros/providers/legacy/fantastic_jobs.py's pure functions: REST
 param construction and transport/auth resolution (P2.7's default provider).
 No network calls — `requests` itself is never touched here, only the
 config -> query-param mapping, and the transport/header selection.
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from careeros.providers.base import ProviderError
-from careeros.providers.fantastic_jobs import (
+from careeros.providers.legacy.fantastic_jobs import (
     _base_url_and_headers, _build_params, _merge_query, _or_exclude_param,
 )
 
@@ -78,9 +78,17 @@ def test_build_params_no_actor_style_minimum_limit():
 
 
 def test_build_params_search_overrides_config_title_search():
-    cfg = {"title_search": ["Product Manager"]}
+    cfg = {"title_mode": "basic", "title_search": ["Product Manager"]}
     params = _build_params(cfg, limit=10, search="Growth PM")
     assert params["title"] == "Growth PM"
+
+
+def test_build_params_search_overrides_config_title_search_in_advanced_mode():
+    """Same override, expressed in the default boolean grammar."""
+    cfg = {"title_search": ["Product Manager"]}
+    params = _build_params(cfg, limit=10, search="Growth PM")
+    assert params["title_advanced"] == "'Growth PM'"
+    assert "title" not in params, "docs: title_advanced wins, so don't send both"
 
 
 def test_build_params_wires_work_arrangement_filter():
@@ -116,6 +124,7 @@ def test_build_params_has_salary_included_when_set():
 
 def test_build_params_wires_exclusion_searches_into_title_and_location():
     cfg = {
+        "title_mode": "basic",
         "title_search": ["Product Manager"],
         "title_exclusion_search": ["Intern"],
         "location_search": ["India"],
@@ -123,6 +132,25 @@ def test_build_params_wires_exclusion_searches_into_title_and_location():
     }
     params = _build_params(cfg, limit=10, search="")
     assert params["title"] == "Product Manager -Intern"
+    assert params["location"] == "India -United States"
+
+
+def test_build_params_uses_title_advanced_by_default():
+    """v2.2 default. The bare `title` param silently drops its `-exclusion`
+    clause past 3 OR-terms (live-verified 2026-08-05), so the boolean grammar
+    is now the default path."""
+    cfg = {
+        "title_search": ["Product Manager", "Founder's Office"],
+        "title_exclusion_search": ["Intern", "Marketing"],
+        "location_search": ["India"],
+        "location_exclusion_search": ["United States"],
+    }
+    params = _build_params(cfg, limit=10, search="")
+    assert params["title_advanced"] == (
+        "('Product Manager' | Founder:* <-> Office) & !(Intern | Marketing)"
+    )
+    assert "title" not in params
+    # location is untouched by title_mode — still the bare param
     assert params["location"] == "India -United States"
 
 
@@ -175,7 +203,7 @@ def test_base_url_and_headers_rapidapi_respects_custom_host(monkeypatch):
 # None entirely, so every job (including Staff/Principal/Director-titled
 # roles) reached the AI gate with no seniority signal to filter on for free.
 
-from careeros.providers.fantastic_jobs import FantasticJobsProvider, _seniority_from_experience_level
+from careeros.providers.legacy.fantastic_jobs import FantasticJobsProvider, _seniority_from_experience_level
 
 
 def test_seniority_from_experience_level_maps_all_four_known_buckets():

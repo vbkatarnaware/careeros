@@ -42,6 +42,7 @@ transports, one architecture; "rapidapi" shares the same response shape.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import requests
@@ -66,6 +67,69 @@ _EMPLOYMENT_MAP = {
     "INTERN": "internship",
     "INTERNSHIP": "internship",
 }
+
+
+def _advanced_term(term: str) -> str:
+    """Encodes ONE search phrase for the `title_advanced` boolean grammar.
+
+    Three cases, in order:
+      - single word            -> bare token           (`robotics`)
+      - multi-word, no apostrophe -> single-quoted     (`'machine learning'`)
+      - multi-word WITH apostrophe -> adjacency chain with a prefix match
+        (`Founder:* <-> Office`)
+
+    That last case exists because the docs specify single-quoted phrases but
+    say NOTHING about apostrophes inside them, and `'Founder's Office'` is
+    ambiguous at best (the inner quote almost certainly terminates the
+    string). Rather than emit a query whose parse we can't predict, we sidestep
+    quoting entirely: `<->` is the documented adjacency operator, and `:*` is
+    the documented prefix operator, so `Founder:* <-> Office` matches
+    "Founder's Office", "Founders Office", and "Founder Office" without ever
+    needing to quote an apostrophe.
+
+    This is the one construct here that has NOT been verified against the live
+    API (the api_requests meter was exhausted when this was written), and it
+    guards the profile's highest-converting role term, so verify it before
+    trusting a run that depends on it."""
+    term = term.strip()
+    if not term:
+        return ""
+    if "'" in term or "’" in term:
+        parts = [p for p in re.split(r"\s+", term) if p]
+        chained = []
+        for part in parts:
+            head = re.split(r"['’]", part)[0]
+            chained.append(f"{head}:*" if head != part else head)
+        return " <-> ".join(chained)
+    if re.search(r"\s", term):
+        return f"'{term}'"
+    return term
+
+
+def build_title_advanced(terms: list[str], exclusions: list[str]) -> str | None:
+    """Builds a full `title_advanced` expression: an OR-group of wanted titles,
+    AND-NOT a grouped OR of unwanted ones.
+
+        ('Product Manager' | Founder:* <-> Office) & !(intern | marketing)
+
+    This is what replaces the `title` param's 3-OR-term ceiling (see
+    pipeline/queryplan.py's `_MAX_TITLE_OR_TERMS`): the boolean grammar has no
+    such limit, so all of `role_priorities` plus every exclusion fits in ONE
+    query instead of N chunks — which is the difference between 16 and 8 API
+    requests per run at 2 endpoints."""
+    included = [_advanced_term(t) for t in terms if t and t.strip()]
+    included = [t for t in included if t]
+    excluded = [_advanced_term(t) for t in exclusions if t and t.strip()]
+    excluded = [t for t in excluded if t]
+    if not included and not excluded:
+        return None
+    expr = ""
+    if included:
+        expr = f"({' | '.join(included)})" if len(included) > 1 else included[0]
+    if excluded:
+        neg = f"!({' | '.join(excluded)})" if len(excluded) > 1 else f"!{excluded[0]}"
+        expr = f"{expr} & {neg}" if expr else neg
+    return expr
 
 
 def _or_exclude_param(terms: list[str], exclusions: list[str]) -> str | None:
@@ -139,9 +203,22 @@ def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[s
         "time_frame": api_cfg.get("time_range", "7d"),
         "description_format": "text",
     }
-    title = _or_exclude_param(title_search, title_exclusion)
-    if title:
-        params["title"] = title
+    # v2.2: `title_advanced` is the DEFAULT because the bare `title` param
+    # silently drops its `-exclusion` clause once it holds 4+ OR-terms
+    # (live-verified 2026-08-05 — see queryplan._MAX_TITLE_OR_TERMS). The
+    # boolean grammar has no such ceiling, so this both fixes the exclusions
+    # AND removes the need to chunk one tier into several requests.
+    # Set `api.title_mode: basic` to fall back to the chunked bare-title path.
+    if api_cfg.get("title_mode", "advanced") == "advanced":
+        advanced = build_title_advanced(title_search, title_exclusion)
+        if advanced:
+            # Docs: "If `title` is also passed, `title_advanced` wins." Send
+            # only one to keep the request honest about what it's asking for.
+            params["title_advanced"] = advanced
+    else:
+        title = _or_exclude_param(title_search, title_exclusion)
+        if title:
+            params["title"] = title
     location = _or_exclude_param(location_search, location_exclusion)
     if location:
         params["location"] = location
@@ -173,6 +250,33 @@ def _build_params(api_cfg: dict[str, Any], *, limit: int, search: str) -> dict[s
 
 
 _BOTH_ENDPOINTS = ("active-ats", "active-jb")
+
+# Substrings that mark a 401/403 body as "you are out of quota" rather than
+# "your credentials are wrong". Deliberately conservative: every one of these
+# describes consumption, and none of them appears in a genuine auth failure
+# ("invalid", "expired", "lacks access", "unauthorized"), so a real bad-key
+# response can't be misclassified as a quota problem by accident.
+_QUOTA_DETAIL_MARKERS = ("meter", "exceeded", "quota", "allowed limit", "usage limit")
+
+
+def _problem_detail(resp: Any) -> str | None:
+    """Pulls the `detail` string out of an RFC-7807 problem+json error body
+    (which is what Fantastic Jobs returns on 4xx). Returns None for any body
+    that isn't parseable JSON or doesn't carry a usable `detail` — an error
+    path must never raise a SECOND error while explaining the first."""
+    try:
+        body = resp.json()
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    detail = body.get("detail")
+    return detail.strip() if isinstance(detail, str) and detail.strip() else None
+
+
+def _reads_like_quota_exhaustion(detail: str) -> bool:
+    lowered = detail.lower()
+    return any(marker in lowered for marker in _QUOTA_DETAIL_MARKERS)
 
 
 def _endpoint_limits(effective_cfg: dict[str, Any], endpoints: tuple[str, ...], total_limit: int) -> dict[str, int]:
@@ -221,10 +325,31 @@ def _fetch_one_endpoint(
         raise ProviderError(f"fantastic-jobs ({endpoint}): request failed — {e}") from e
 
     if resp.status_code in (401, 403):
+        # Fantastic Jobs returns 403 for BOTH a genuinely bad key AND an
+        # exhausted usage meter, and the ONLY thing distinguishing them is the
+        # RFC-7807 `detail` field in the body. Collapsing both into "your key
+        # is invalid, rotate it" sent this project chasing a key rotation
+        # twice on 2026-08-05 while the key was fine and the real cause was
+        #   'API Key has exceeded the allowed limit for "api_requests" meter.'
+        # That matters because the two need OPPOSITE actions: a bad key needs
+        # replacing, an exhausted meter needs a reset/upgrade (a fresh key
+        # only helps if the meter is per-key). Always surface the provider's
+        # own words rather than guessing on the user's behalf.
+        detail = _problem_detail(resp)
+        if detail and _reads_like_quota_exhaustion(detail):
+            raise ProviderError(
+                f"fantastic-jobs ({endpoint}): usage quota exhausted (HTTP {resp.status_code}) — "
+                f"the API says: {detail!r}. Your key is NOT invalid, so rotating it only helps if "
+                "this meter is billed per-key. Otherwise wait for the meter to reset or upgrade "
+                "your plan. NOTE this is a DIFFERENT meter from CareerOS's own weekly record "
+                "budget — `careeros doctor` can still report records remaining while this one is "
+                "spent."
+            )
+        suffix = f" The API says: {detail!r}." if detail else ""
         raise ProviderError(
             f"fantastic-jobs ({endpoint}): API key rejected (HTTP {resp.status_code}) — your "
             "FANTASTIC_API_KEY (or RAPIDAPI_KEY) is invalid, expired, or lacks access. Check/rotate "
-            "it — see providers/README.md."
+            f"it — see providers/README.md.{suffix}"
         )
     if resp.status_code == 429:
         # x-ratelimit-*-remaining headers (per Fantastic Jobs' own docs)
