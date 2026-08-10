@@ -4,7 +4,23 @@ only overrides what it actually cares about."""
 
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
+
 from careeros.models import Job, Profile
+
+# Shared skip guard for tests whose SUBJECT is real ats_scrapers integration
+# (not just an incidental import) — the optional `ats-dataset` extra, absent
+# from a minimal `pip install -e ".[dev,resume,apply]"` (e.g. CI's default
+# matrix). Consistent with how production code itself checks availability
+# (see providers/ats_watchlist.py's `validate()`, providers/ats_dataset.py's
+# `validate()`) — a missing extra is a clean skip, never a crash, here or
+# there.
+requires_ats_scrapers = pytest.mark.skipif(
+    importlib.util.find_spec("ats_scrapers") is None,
+    reason="requires the optional ats-dataset extra: pip install -e \".[ats-dataset]\"",
+)
 
 
 def make_job(**overrides) -> Job:

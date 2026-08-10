@@ -8,11 +8,12 @@ from __future__ import annotations
 import functools
 import json
 
-import httpx
 import pytest
-from ats_scrapers.exceptions import CompanyNotFoundError, ScraperError
 
-from careeros.providers.darwinbox import _resolve_tenant, fetch_darwinbox_jobs
+httpx = pytest.importorskip("httpx")
+from ats_scrapers.exceptions import CompanyNotFoundError, ScraperError  # noqa: E402
+
+from careeros.providers.darwinbox import _resolve_tenant, fetch_darwinbox_jobs  # noqa: E402
 
 _JOB = {
     "id": "123",

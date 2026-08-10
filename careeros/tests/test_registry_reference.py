@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from careeros.config import Config
 from careeros.registry import find_company, load_meta, sync_reference
+from careeros.tests.conftest import requires_ats_scrapers
 
 
 def _cfg() -> Config:
@@ -86,6 +87,7 @@ def _fake_manifest():
     return manifest
 
 
+@requires_ats_scrapers
 def test_sync_reference_writes_csv_and_meta(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     csv_bytes = b"ats,name,slug,url\ngreenhouse,Acme,acme,https://x\n"
@@ -105,6 +107,7 @@ def test_sync_reference_writes_csv_and_meta(tmp_path, monkeypatch):
     assert "sha256" in meta and "imported_at" in meta and "last_synced_at" in meta
 
 
+@requires_ats_scrapers
 def test_sync_reference_preserves_original_imported_at_on_resync(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     csv_bytes = b"ats,name,slug,url\ngreenhouse,Acme,acme,https://x\n"
@@ -121,6 +124,7 @@ def test_sync_reference_preserves_original_imported_at_on_resync(tmp_path, monke
     assert second["last_synced_at"]  # refreshed each sync, not asserted equal
 
 
+@requires_ats_scrapers
 def test_sync_reference_skips_download_when_manifest_unchanged(tmp_path, monkeypatch):
     """The maintenance-step optimization this whole mechanism exists for:
     a second sync against an UNCHANGED upstream manifest must not
@@ -142,6 +146,7 @@ def test_sync_reference_skips_download_when_manifest_unchanged(tmp_path, monkeyp
     assert second["row_count"] == 1  # preserved from the first real sync
 
 
+@requires_ats_scrapers
 def test_sync_reference_redownloads_when_manifest_changed(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     old_bytes = b"ats,name,slug,url\ngreenhouse,Acme,acme,https://x\n"
@@ -171,6 +176,7 @@ def test_load_meta_returns_none_when_never_synced(tmp_path, monkeypatch):
     assert load_meta(_cfg()) is None
 
 
+@requires_ats_scrapers
 def test_load_meta_after_sync(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     fake_response = MagicMock()

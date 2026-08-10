@@ -10,11 +10,19 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
 import yaml
-from typer.testing import CliRunner
 
-from careeros.cli import app
-from careeros.providers.ats_watchlist import WatchlistConfigError, load_watchlist
+pytest.importorskip("ats_scrapers", reason=(
+    "every test here invokes the real `watchlist add` CLI command, whose "
+    "body unconditionally imports ats_scrapers.exceptions regardless of "
+    "whether _scrape_entry itself is mocked — see registry_cmd.py"
+))
+
+from typer.testing import CliRunner  # noqa: E402
+
+from careeros.cli import app  # noqa: E402
+from careeros.providers.ats_watchlist import WatchlistConfigError, load_watchlist  # noqa: E402
 
 runner = CliRunner()
 

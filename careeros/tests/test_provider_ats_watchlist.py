@@ -23,6 +23,7 @@ from careeros.providers.ats_watchlist import (
     entry_key,
     load_watchlist,
 )
+from careeros.tests.conftest import requires_ats_scrapers
 
 
 def _cfg(**overrides) -> Config:
@@ -94,11 +95,13 @@ def test_load_watchlist_parses_ats_slug_entry(tmp_path):
 
 # ── validate ─────────────────────────────────────────────────────────────
 
+@requires_ats_scrapers
 def test_validate_ok_when_ats_scrapers_installed(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert PROVIDER.validate(_cfg()) == []
 
 
+@requires_ats_scrapers
 def test_validate_missing_watchlist_file_is_not_a_problem(tmp_path, monkeypatch):
     # No watchlist.yaml at all — opt-in provider, zero entries is normal.
     monkeypatch.chdir(tmp_path)
@@ -107,6 +110,7 @@ def test_validate_missing_watchlist_file_is_not_a_problem(tmp_path, monkeypatch)
 
 # ── fetch: skip cases ────────────────────────────────────────────────────
 
+@requires_ats_scrapers
 def test_fetch_skips_when_watchlist_empty(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = PROVIDER.fetch(_cfg())
@@ -114,6 +118,7 @@ def test_fetch_skips_when_watchlist_empty(tmp_path, monkeypatch):
     assert "no entries" in result.skip_reason
 
 
+@requires_ats_scrapers
 def test_fetch_skips_when_profile_missing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_watchlist(tmp_path, [{"name": "Acme", "ats": "greenhouse", "slug": "acme"}])
@@ -124,6 +129,7 @@ def test_fetch_skips_when_profile_missing(tmp_path, monkeypatch):
 
 # ── fetch: successful scrape + filter chain wiring ──────────────────────
 
+@requires_ats_scrapers
 def test_fetch_returns_filtered_rows(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile())
@@ -140,6 +146,7 @@ def test_fetch_returns_filtered_rows(tmp_path, monkeypatch):
     assert result.items[0]["company"] == "Acme India"
 
 
+@requires_ats_scrapers
 def test_fetch_geo_filter_excludes_non_matching_row(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile(work_mode_priority=["india_remote"], location={"onsite_ok": []}))
@@ -152,6 +159,7 @@ def test_fetch_geo_filter_excludes_non_matching_row(tmp_path, monkeypatch):
     assert result.items == []
 
 
+@requires_ats_scrapers
 def test_fetch_records_success_in_state_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile())
@@ -168,6 +176,7 @@ def test_fetch_records_success_in_state_file(tmp_path, monkeypatch):
     assert state[key]["ats"] == "greenhouse"
 
 
+@requires_ats_scrapers
 def test_fetch_warns_and_truncates_when_over_limit(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile())
@@ -183,6 +192,7 @@ def test_fetch_warns_and_truncates_when_over_limit(tmp_path, monkeypatch):
 
 # ── fetch: CompanyNotFoundError / ScraperError handling ─────────────────
 
+@requires_ats_scrapers
 def test_fetch_company_not_found_increments_consecutive_failures(tmp_path, monkeypatch):
     from ats_scrapers.exceptions import CompanyNotFoundError
 
@@ -201,6 +211,7 @@ def test_fetch_company_not_found_increments_consecutive_failures(tmp_path, monke
     assert "verification_status" not in state[key] or state[key].get("verification_status") != "stale"
 
 
+@requires_ats_scrapers
 def test_fetch_marks_stale_after_three_consecutive_not_found(tmp_path, monkeypatch):
     from ats_scrapers.exceptions import CompanyNotFoundError
 
@@ -220,6 +231,7 @@ def test_fetch_marks_stale_after_three_consecutive_not_found(tmp_path, monkeypat
     assert any("marked stale" in w for w in result.warnings)
 
 
+@requires_ats_scrapers
 def test_fetch_generic_scraper_error_produces_warning_not_crash(tmp_path, monkeypatch):
     from ats_scrapers.exceptions import ScraperError
 
@@ -240,6 +252,7 @@ def test_fetch_generic_scraper_error_produces_warning_not_crash(tmp_path, monkey
     assert state[key]["consecutive_failures"] == 0  # transient, never counts toward "stale"
 
 
+@requires_ats_scrapers
 def test_fetch_classifies_429_as_rate_limited(tmp_path, monkeypatch):
     from ats_scrapers.exceptions import ScraperError
 
@@ -256,6 +269,7 @@ def test_fetch_classifies_429_as_rate_limited(tmp_path, monkeypatch):
     assert state[key]["verification_status"] == "rate_limited"
 
 
+@requires_ats_scrapers
 def test_fetch_no_scraper_for_ats_is_validation_failed_not_a_crash(tmp_path, monkeypatch):
     """keka has no scraper in ats-scrapers (unlike darwinbox, which has a
     bespoke replacement — see test_provider_darwinbox.py and
@@ -278,6 +292,7 @@ def test_fetch_no_scraper_for_ats_is_validation_failed_not_a_crash(tmp_path, mon
     assert state[key]["consecutive_failures"] == 0  # not the CompanyNotFoundError counter
 
 
+@requires_ats_scrapers
 def test_scrape_entry_routes_darwinbox_to_bespoke_fetcher(monkeypatch):
     """darwinbox has no ats-scrapers adapter but DOES have a bespoke plain-
     httpx replacement (careeros/providers/darwinbox.py) — `_scrape_entry`
@@ -295,6 +310,7 @@ def test_scrape_entry_routes_darwinbox_to_bespoke_fetcher(monkeypatch):
     assert rows == [{"title": "APM", "company": "acme"}]
 
 
+@requires_ats_scrapers
 def test_fetch_malformed_entry_is_validation_failed(tmp_path, monkeypatch):
     """An entry with neither careers_url nor ats+slug can never resolve —
     real `_scrape_entry`, no mock."""
@@ -313,6 +329,7 @@ def test_fetch_malformed_entry_is_validation_failed(tmp_path, monkeypatch):
 
 # ── fetch: ATS migration detection ──────────────────────────────────────
 
+@requires_ats_scrapers
 def test_fetch_detects_ats_migration_and_appends_history(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile())
@@ -334,6 +351,7 @@ def test_fetch_detects_ats_migration_and_appends_history(tmp_path, monkeypatch):
     ]
 
 
+@requires_ats_scrapers
 def test_fetch_first_run_does_not_report_migration(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_profile(tmp_path, _profile())
@@ -347,6 +365,7 @@ def test_fetch_first_run_does_not_report_migration(tmp_path, monkeypatch):
 
 # ── multi-board: the core reason entry_key exists ────────────────────────
 
+@requires_ats_scrapers
 def test_fetch_multiple_boards_same_company_get_independent_state(tmp_path, monkeypatch):
     """Two boards for one company (e.g. a Workday tenant AND an Eightfold
     tenant) must not share one state slot, flip `ats` back and forth, or
@@ -371,6 +390,7 @@ def test_fetch_multiple_boards_same_company_get_independent_state(tmp_path, monk
     assert state[eightfold_key]["ats"] == "eightfold"
 
 
+@requires_ats_scrapers
 def test_fetch_multiple_boards_repeated_runs_do_not_flap(tmp_path, monkeypatch):
     """Re-running with the same two boards must never report a migration —
     each board's resolved ats is compared against its OWN prior state, not

@@ -13,10 +13,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 
-from careeros.providers.ats_dataset import _load_slice, _manifest_generated_at
+pd = pytest.importorskip("pandas")
+
+from careeros.providers.ats_dataset import _load_slice, _manifest_generated_at  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

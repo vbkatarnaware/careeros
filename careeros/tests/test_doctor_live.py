@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from careeros.cli import _CheckStatus, _run_doctor_live_checks
 from careeros.config import Config
+from careeros.tests.conftest import requires_ats_scrapers
 
 
 def _cfg(**overrides) -> Config:
@@ -93,6 +94,7 @@ def _fake_manifest(generated_at, by_ats_keys):
     return manifest
 
 
+@requires_ats_scrapers
 def test_live_manifest_check_reachable_with_no_local_cache(tmp_path, monkeypatch):
     from datetime import datetime, timezone
 
@@ -108,6 +110,7 @@ def test_live_manifest_check_reachable_with_no_local_cache(tmp_path, monkeypatch
     assert "no local cache yet" in detail
 
 
+@requires_ats_scrapers
 def test_live_manifest_check_flags_stale_local_cache(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
@@ -128,6 +131,7 @@ def test_live_manifest_check_flags_stale_local_cache(tmp_path, monkeypatch):
     assert "days behind" in detail
 
 
+@requires_ats_scrapers
 def test_live_manifest_check_current_when_dates_match(tmp_path, monkeypatch):
     from datetime import datetime, timezone
 
@@ -148,6 +152,7 @@ def test_live_manifest_check_current_when_dates_match(tmp_path, monkeypatch):
     assert "current" in detail
 
 
+@requires_ats_scrapers
 def test_live_check_warns_on_unconfigured_upstream_sources(tmp_path, monkeypatch):
     from datetime import datetime, timezone
 
@@ -164,6 +169,7 @@ def test_live_check_warns_on_unconfigured_upstream_sources(tmp_path, monkeypatch
     assert "not auto-enabled" in detail
 
 
+@requires_ats_scrapers
 def test_live_check_passes_when_all_upstream_sources_configured(tmp_path, monkeypatch):
     from datetime import datetime, timezone
 
@@ -179,6 +185,7 @@ def test_live_check_passes_when_all_upstream_sources_configured(tmp_path, monkey
     assert "none" in detail
 
 
+@requires_ats_scrapers
 def test_live_manifest_check_handles_fetch_failure_gracefully(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = _ats_cfg(["greenhouse"], tmp_path)
