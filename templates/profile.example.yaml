@@ -70,6 +70,18 @@ work_mode_priority:
   - "san_francisco_onsite"
   - "new_york_onsite"
 
+# Company-level DISCOVERY targeting only — read by Layer 2A company discovery
+# (`careeros watchlist discover`, skills/start.md, skills/daily.md) to decide
+# which companies to propose. Never read by gate/evaluate/constraints, so it
+# never affects a job's score or eligibility. Every field is optional; omit
+# the whole block and discovery ranks candidates on role/geography alone.
+preferences:
+  industries: ["fintech", "b2b saas", "developer tools"]
+  company_stage: ["seed", "series-a", "series-b"]
+  target_companies: []
+  exclude_companies: []
+  exclude_industries: ["gambling", "defense"]
+
 comp:
   target_lpa: [140000, 180000]
   floor_lpa: 120000

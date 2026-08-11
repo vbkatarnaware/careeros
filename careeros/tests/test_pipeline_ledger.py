@@ -223,6 +223,28 @@ def test_compute_run_source_stats_counts_duplicate_of_other_source(tmp_path, mon
     assert "ats-watchlist" not in by_source["ats-dataset"].descriptive["duplicate_of_other_source"]
 
 
+def test_compute_run_source_stats_ignores_same_source_cross_location_drops(tmp_path, monkeypatch):
+    """Regression: dedupe_cross_location's DOMINANT use is collapsing one
+    provider's own multi-country reposts (see its docstring) -- a same-
+    source collapse is not evidence of cross-LAYER overlap and must never
+    land in `duplicate_of_other_source`, or a source's own repost collapses
+    would misreport as "duplicates of another source". Real shape: pipeline.py's
+    `_tag` records `_duplicate_of_source` for every cross-location drop
+    regardless of whether the survivor's source differs."""
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg()
+    date = "2026-08-10"
+    jobs = [{"id": "a", "source": "ats-dataset", "company": "Acme"}]
+    _seed_run(cfg, date, jobs, [], [])
+    _seed_dropped(cfg, date, [
+        {"id": "b", "source": "ats-dataset", "company": "Acme",
+         "_drop_reason": "cross-location", "_duplicate_of_source": "ats-dataset"},
+    ])
+    entries = compute_run_source_stats(cfg, date)
+    by_source = {e.source: e for e in entries}
+    assert by_source["ats-dataset"].descriptive["duplicate_of_other_source"] == {}
+
+
 def test_compute_run_source_stats_ignores_non_cross_location_drops(tmp_path, monkeypatch):
     """A history/sheet/in-run drop was never compared against a DIFFERENT
     source's job -- only cross-location drops carry real cross-layer

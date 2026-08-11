@@ -18,11 +18,13 @@ filterable index). Nothing in `careeros discover` reads this; it exists
 purely for `careeros registry sync` / `careeros registry find <name>`.
 
 **Target watchlist** (`.careeros/watchlist.yaml`, see
-`templates/watchlist.example.yaml`) — the small, hand-curated list of
-companies actually scraped live. This is Layer 2A: targeted, not
-automated discovery. See `careeros/providers/ats_watchlist.py`'s module
-docstring for the full design, the adapter-contract details, and why
-generic automated company discovery (Layer 2B) is deliberately not built.
+`templates/watchlist.example.yaml`) — the list of companies actually
+scraped live, either hand-added (`watchlist add`) or auto-discovered
+(`watchlist discover`, see "Automated discovery (v2.2)" below). This is
+Layer 2A: the PROVIDER itself (`fetch()`) stays targeted — it only ever
+scrapes what's already in `watchlist.yaml`, never crawls on its own. See
+`careeros/providers/ats_watchlist.py`'s module docstring for the full
+design and the adapter-contract details.
 
 ## Commands
 
@@ -33,9 +35,50 @@ generic automated company discovery (Layer 2B) is deliberately not built.
 
 ## What this doesn't do
 
-No automated company discovery, no browser automation, no AI-proposed ATS
-mappings — see `ats_watchlist.py`'s docstring for the measured evidence
-behind that scope line.
+No browser automation, no AI-proposed `(ats, slug)` mapping trusted without
+a deterministic check against real job data. Automated, profile-driven
+company discovery (`careeros watchlist discover`) DOES exist as of v2.2 —
+see "Automated discovery (v2.2)" below and `ats_watchlist.py`'s docstring;
+the provider that actually scrapes `watchlist.yaml` (`fetch()`) remains
+targeted-only exactly as before, discovery is a separate, bounded seam on
+top of it, not a change to the provider itself.
+
+## ATS platform coverage audit (2026-08-11)
+
+Layer 1 (`ats-dataset`) enables 35 of the 65 `by_ats` sources the upstream
+dataset offers. Measured directly against a real Product-Manager-titled
+search rather than ranked by registry company count, which turned out to be
+the wrong signal in both directions:
+
+**Correctly excluded — confirmed low-yield, not just omitted.** The six
+largest excluded regional/non-English platforms by registry company count
+(`join_com` — 23,547 companies, 29.5% of the entire 79,906-row registry
+alone — plus `herp`, `hrmos`, `gupy`, `beisen`, `moka`) combined yield **252
+PM titles and zero India rows**. `join_com` alone: 87 PM titles, 100%
+German-speaking Europe. `eures` (government portal): 3.7GB / 8.4 min
+download for 457 PM titles, zero India rows — cost with no reach. `adp` has
+342 companies in the reference registry but **no loadable `by_ats` slice at
+all** — unreachable dead weight, company-count presence notwithstanding.
+
+**Added — measured gain, not obvious from company count.** Neither of these
+looks meaningful by registry company count (both are ~zero/near-zero there,
+since neither is a multi-tenant platform in the reference-registry sense);
+both were found by measuring PM-title yield per slice directly instead:
+
+| slice | PM titles | India rows | India PM | cost |
+|---|---:|---:|---:|---|
+| `welcometothejungle` | 1,274 | 195 | 3 | 189MB / 25s |
+| `amazon` | 632 | 2,937 | 67 | 246MB / 9.5s |
+
+`welcometothejungle` carries more PM titles than any enabled slice except
+workday/greenhouse (mostly FR/US/GB) — a real gain for the global/remote
+half of a mixed India+global search. `amazon` is a single-employer scraper,
+normally excluded by the same-category rule as apple/google/meta/etc — but
+its 67 India PM roles are a measured ~9% lift to this dataset's total India
+PM reach (759 titles across the 33 platforms enabled before this change),
+enough to justify it as an explicit exception rather than removing the
+category rule itself. See `providers/ats_dataset.py`'s `_DEFAULT_SLICES`
+comment block for the enable/exclude list this measurement produced.
 
 ## Investigated 2026-08-10: 11 companies missing from the dataset
 
@@ -177,25 +220,56 @@ distinction, deliberately at different layers:
   a second, separate AI pass over just this bucket would be pure duplicate
   cost. See `matched_geo_tier`'s own docstring for the same figures.
 
-## Architectural principle for any future agentic discovery work
+## Automated discovery (v2.2) — the principle below, implemented
 
-CareerOS is an agentic terminal tool (run by Claude Code / Codex / similar),
-so future company/ATS discovery work MAY use AI-agent investigation — but only
-where deterministic methods have measurably failed AND the incremental recall
-justifies the added complexity/cost (see the closed POC above for what "measure
-first" looks like in practice: the naive probe's 11/11 false-positive rate is
-itself the argument for what comes next). Deterministic code stays the default
-for anything repeatable; AI is for ambiguity, investigation, verification, and
-recovery — never a blind pass over every company. The non-negotiable shape,
-if this is ever built:
+CareerOS is an agentic terminal tool (run by Claude Code / Codex / Antigravity
+/ Gemini CLI / similar). The shape this doc called for above is now built,
+exactly as specified — AI proposes, deterministic code validates:
 
 ```
-AI proposes/investigates → deterministic validation (real job records,
-not HTTP 200) → persisted mapping/state
+Agent proposes candidate names (profile preferences + host web search if
+available, world knowledge otherwise — never required)
+  -> careeros/ats_resolve.py: fetch the company's own careers page over
+     plain httpx, look for an embedded ATS link (measurably better than
+     URL-shape matching alone — resolve_careers_url() alone was 1/12
+     against real missing-company pages; this technique resolved Fi Money,
+     Sarvam AI, Clevertap, and Perfios in the same session, ~5/9)
+  -> `careeros watchlist discover`: live-scrapes the resolved (ats, slug)
+     via the SAME _scrape_entry seam `watchlist add` and `careeros discover`
+     use, requires >=1 role-matching job posted within ~90 days (a
+     freshness bar distinct from the 30-day job-eligibility window)
+  -> only a company that clears ALL of the above is appended to
+     watchlist.yaml — an agent-proposed name carries no more authority
+     than one a human typed by hand into `watchlist add`
 ```
 
-AI must never be allowed to write a trusted `(company, ats, slug)` mapping
-without a deterministic check against real returned job data — this is not a
-style preference, it's what the false-positive discriminator above found in
-practice. **Not implemented** — this section exists so the next attempt starts
-from where this one stopped, not from zero.
+No browser, no search engine as a CareerOS dependency — `ats_resolve.py`
+uses only `httpx` (already installed) and a regex over the fetched HTML,
+reusing `ats_scrapers.resolve.resolve_careers_url`'s own host table. A host
+agent's web search, if available, only widens which candidate NAMES get
+proposed; it never substitutes for the deterministic careers-page/ATS/job
+validation above, and its absence degrades discovery quietly (fewer/less-
+current proposals), never into an error.
+
+**Two failure modes this also had to solve, not just the happy path:**
+- **ATS-change drift.** A company's own ATS mapping is treated as mutable
+  state, not a one-time fact: after 3 consecutive not-found scrapes, an
+  entry with a stored `website` is re-resolved (same `ats_resolve.py`) before
+  being marked stale — a Lever→Ashby migration self-heals, appends one
+  `history[]` record, and keeps scraping through the new adapter the same
+  run. `Job.make_id` keys on provider id + company + title + location, not
+  the ATS platform, so a migration produces byte-identical job ids and the
+  existing dedupe suppresses re-surfacing with zero new code.
+- **Currently-unsupported ATS.** A company whose ATS this install has no
+  adapter for is never silently dropped — it's persisted in
+  `discovery_candidates.json` as `pending_unsupported_ats` with its
+  resolved ats/slug/website retained. Every later `watchlist discover` run
+  cheaply rechecks (one local `ScraperRegistry.has_scraper` call, zero HTTP)
+  and auto-promotes it the moment support exists, using the mapping already
+  on file. Still unsupported after 30 days re-triggers a fresh careers-page
+  resolve too, in case the company itself changed ATS.
+
+AI is never allowed to write a trusted `(company, ats, slug)` mapping without
+the deterministic check above — the same rule the closed Playwright POC
+above established in practice, now enforced in code (`_passes_quality_bar`,
+`_scrape_entry`), not just doc prose.

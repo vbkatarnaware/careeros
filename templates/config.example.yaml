@@ -24,11 +24,12 @@
 # separate setup. Without the pip extra installed, it degrades to a skipped
 # result with the exact install command, never a crash.
 #
-# DEFAULT ATS COVERAGE: all 33 genuine multi-tenant ATS platforms the
-# dataset offers (see `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact
-# list and what's deliberately excluded — government portals, single-
-# company scrapers, regional non-English-market platforms, and sources
-# this project already evaluated and rejected). This is a real cost, not
+# DEFAULT ATS COVERAGE: 35 ATS platforms the dataset offers (see
+# `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact list, the live PM-title
+# measurement behind each inclusion/exclusion, and what's deliberately
+# excluded — government portals, single-company scrapers [with one measured
+# exception], regional non-English-market platforms, and sources this
+# project already evaluated and rejected). This is a real cost, not
 # free: ~2GB+ downloaded and several minutes of discovery time on every
 # run (Workday alone measured 380s/1.3GB live). Deliberate "maximum
 # coverage first, then narrow" choice for a fresh clone. Override with a
@@ -51,10 +52,12 @@
 providers:
   ats-dataset: { enabled: true }         # free, no signup — your main source
   fantastic-jobs: { enabled: false }     # optional paid alternative — detail in api: below
-  # Layer 2A: a small, hand-curated list of specific companies scraped
-  # live (.careeros/watchlist.yaml, see templates/watchlist.example.yaml)
-  # for companies ats-dataset's snapshot doesn't carry at all. Opt-in —
-  # an empty/missing watchlist is a normal, zero-cost state, so enabling
+  # Layer 2A: a list of specific companies scraped live
+  # (.careeros/watchlist.yaml, see templates/watchlist.example.yaml),
+  # hand-added (`careeros watchlist add`) or profile-driven auto-
+  # discovered (`careeros watchlist discover`), for companies
+  # ats-dataset's snapshot doesn't carry at all. Opt-in — an
+  # empty/missing watchlist is a normal, zero-cost state, so enabling
   # this with no entries yet is harmless. See
   # careeros/providers/ats_watchlist.py's docstring before using it.
   ats-watchlist: { enabled: false }

@@ -507,57 +507,57 @@ not trigger a search.
 
 1. Read the FULL `.careeros/profile.yaml`, not a fixed subset of fields —
    `targets`, `role_priorities`, `work_mode_priority`, `location`,
-   `deal_breakers`, `comp`, and anything else present are all fair game as
-   targeting/exclusion signal. This step must work unmodified for any
-   OSS user's profile schema, including fields that don't exist yet.
+   `deal_breakers`, `comp`, `preferences` (industries, company_stage,
+   target_companies, exclude_companies, exclude_industries), and anything
+   else present are all fair game as targeting/exclusion signal. This step
+   must work unmodified for any OSS user's profile schema, including
+   fields that don't exist yet.
 2. Using today's kept/considered jobs as analogy ("companies like the ones
-   that worked today, for these roles/geography/comp expectations"),
-   reason toward AT MOST 3 candidate companies. Web search if the host
-   provides it; if not, reason from the profile + today's evidence alone
-   and skip gracefully — this step must never hard-fail for lacking a
-   search tool, and must never become a generalized crawler.
-3. **Reference registry is authoritative for "already known."** Run
-   `careeros registry find <name>` for each candidate — a match means this
-   company is already in the free hosted snapshot; do not propose it,
-   full stop, regardless of whether Layer 1 currently surfaces a job for
-   it. Also check the current `.careeros/watchlist.yaml` — skip anything
-   already tracked there.
-4. Check `.careeros/discovery_candidates.json` (agent-maintained, see
-   below) for this company's last outcome. Skip a company with a
-   `status: unresolved` entry unless `last_checked_at` is 30+ days old OR
-   you have a concrete reason to believe it changed (e.g. evidence today
-   that it moved careers platforms) — record that reason if you re-check
-   early. A missing or unparseable file is just an empty history, not a
-   failure — never let a bad read block this step.
-5. For each surviving candidate, run
-   `careeros watchlist add <name> [--url ... | --ats ... --slug ...]` —
-   the existing deterministic validation path. **Never hand-write a
-   watchlist entry and never accept your own guess as verified** — an
-   UNRESOLVED result from that command is the real answer for this
-   company today.
-6. Update `.careeros/discovery_candidates.json` yourself (plain JSON,
-   normalized company name as key) for every candidate you looked at this
-   run:
-   ```json
-   {
-     "acme corp": {"status": "unresolved", "last_checked_at": "2026-08-10", "reason": "no detectable ATS"}
-   }
+   that worked today, for these roles/geography/comp expectations") plus
+   `preferences`, reason toward **up to 15** candidate companies. Web
+   search if the host provides it; if not, reason from the profile +
+   today's evidence alone and skip gracefully — this step must never
+   hard-fail for lacking a search tool, and must never become a
+   generalized crawler. Rank by industry/sector fit, company stage,
+   explicit target/exclude lists, India-vs-global balance, remote posture,
+   likelihood of relevant openings, and segment diversity — prefer a
+   company that fills a genuine coverage gap over a merely large one.
+3. For each candidate you have a plausible website/domain for, run ONE
+   call:
    ```
-   Only `unresolved` outcomes need an entry — a company that resolved is
-   already tracked in `watchlist.yaml` itself (checking there again next
-   time is enough, no need to duplicate that state here), and a company
-   skipped because it's already in the registry/watchlist doesn't need
-   recording either, since step 3 answers that live, every time, for free.
+   careeros watchlist discover --candidate "Name=https://domain.com" [--candidate "..." ...] --max-add 5
+   ```
+   This single deterministic command does everything steps 3-6 of the old
+   version of this section used to ask you to do by hand: skips anything
+   already on the watchlist (a company also present in the reference
+   registry is noted, not skipped — registry presence isn't the same
+   claim as Layer 1 job coverage, so it still gets validated live),
+   respects the 30-day recheck window on a recently-unresolved company,
+   resolves the real ATS from the company's own careers page, validates
+   against real live job data, and only THEN writes a watchlist entry —
+   capped at 5 additions this run even if more candidates qualify. **You never
+   hand-write a watchlist entry and never accept your own guess as
+   verified** — an UNRESOLVED result from this command is the real answer
+   for that company today, and `--max-add` silently reaching its cap for a
+   qualifying candidate is normal, not an error.
+4. A company whose ATS is detected but not yet supported is not lost —
+   the command keeps it as `pending_unsupported_ats` in
+   `.careeros/discovery_candidates.json` with its resolved mapping intact,
+   and automatically promotes it on a future run the moment support
+   exists, with no re-discovery needed. Nothing for you to do here beyond
+   knowing it's not a bug if a plausible company doesn't show up in
+   `watchlist.yaml` today.
 
 **On explicit request** ("find more companies like X"), run this same
 procedure mid-conversation, any time — not gated to `daily`. A
 user-supplied company/URL always goes straight to `careeros watchlist add`
-regardless of this step; skip steps 1-2 (there's nothing to reason toward,
-the candidate is already named) but still run steps 3-6.
+(not `discover`) regardless of this step, since there's nothing to reason
+toward — the candidate is already named.
 
-Report at the end of this step: how many candidates were considered, how
-many were skipped as already-known (registry/watchlist/recent-unresolved),
-how many were verified vs. came back UNRESOLVED. Zero candidates on a
+Report at the end of this step exactly what the command itself reports:
+how many candidates were considered, how many were skipped as
+already-known, how many were added, how many are pending on ATS support,
+and how many came back unresolved/rejected. Zero candidates added on a
 given day is a normal, expected outcome, not a failure to report as one —
 same principle as Step 10's zero-selected-jobs case.
 

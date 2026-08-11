@@ -363,6 +363,138 @@ def test_fetch_first_run_does_not_report_migration(tmp_path, monkeypatch):
     assert not any("migration" in w for w in result.warnings)
 
 
+# ── ATS-change auto-recovery (website-driven re-resolve on stale) ────────
+
+@requires_ats_scrapers
+def test_fetch_recovers_ats_after_three_not_found_when_website_on_file(tmp_path, monkeypatch):
+    """The real gap this module fixes: a stored mapping 404s three times in
+    a row, but the entry has a `website` — re-resolve it instead of giving
+    up. A different (ats, slug) comes back -> watchlist.yaml is rewritten,
+    scraping continues through the new adapter THIS run (no extra day
+    dark), and exactly one history entry is appended (not two — see
+    `_attempt_ats_recovery`'s docstring on the duplicate-append bug this
+    guards against)."""
+    from ats_scrapers.exceptions import CompanyNotFoundError
+
+    from careeros.ats_resolve import ResolvedAts
+
+    monkeypatch.chdir(tmp_path)
+    _write_profile(tmp_path, _profile())
+    _write_watchlist(tmp_path, [
+        {"name": "Acme", "ats": "lever", "slug": "acme", "website": "https://acme.example"}
+    ])
+
+    def scrape_side_effect(entry):
+        if entry.ats == "lever":
+            raise CompanyNotFoundError("not found")
+        if entry.ats == "ashby":
+            return "ashby", [_row()]
+        raise AssertionError(f"unexpected entry {entry}")
+
+    with patch("careeros.providers.ats_watchlist._scrape_entry", side_effect=scrape_side_effect), \
+         patch("careeros.ats_resolve.resolve_company_ats", return_value=ResolvedAts("ashby", "acme", "https://acme.example")):
+        for _ in range(2):
+            PROVIDER.fetch(_cfg())  # two ordinary not-found runs
+        result = PROVIDER.fetch(_cfg())  # third -> hits threshold -> recovers
+
+    assert result.items != []  # recovered mapping's jobs are used THIS run, not lost a day
+    assert any("ATS re-resolved after repeated not-found -> ashby" in w for w in result.warnings)
+
+    key = entry_key(WatchlistEntry(name="Acme", ats="lever", slug="acme", careers_url=None))
+    # entry_key is built from the entry as loaded from watchlist.yaml (still "lever" before this
+    # run's rewrite reaches disk), so look it up the same way the provider itself did.
+    with open(tmp_path / ".careeros" / "watchlist_state.json") as f:
+        state = json.load(f)
+    assert key in state
+    s = state[key]
+    assert s["consecutive_failures"] == 0
+    assert s["verification_status"] == "live"
+    assert s["ats"] == "ashby"
+    assert s["history"] == [
+        {"ats": "lever", "detected_at": s["last_checked_at"], "evidence": "re-resolved after 3 consecutive not-found"}
+    ]  # exactly one entry — the shared success-tail's own migration check must not double-append
+
+    with open(tmp_path / ".careeros" / "watchlist.yaml") as f:
+        companies = (yaml.safe_load(f) or {}).get("companies", [])
+    assert companies[0]["ats"] == "ashby"
+    assert companies[0]["slug"] == "acme"
+    assert "careers_url" not in companies[0]
+
+
+@requires_ats_scrapers
+def test_fetch_recovery_skipped_without_website_stays_stale(tmp_path, monkeypatch):
+    """Backward compat: an entry with no `website` (every hand-written entry
+    predating this feature) behaves exactly as before — no recovery
+    attempt, `resolve_company_ats` never even imported/called."""
+    from ats_scrapers.exceptions import CompanyNotFoundError
+
+    monkeypatch.chdir(tmp_path)
+    _write_profile(tmp_path, _profile())
+    _write_watchlist(tmp_path, [{"name": "Ghost Co", "ats": "greenhouse", "slug": "ghost"}])
+
+    with patch("careeros.providers.ats_watchlist._scrape_entry", side_effect=CompanyNotFoundError("not found")), \
+         patch("careeros.ats_resolve.resolve_company_ats") as mock_resolve:
+        for _ in range(3):
+            result = PROVIDER.fetch(_cfg())
+
+    mock_resolve.assert_not_called()
+    key = entry_key(WatchlistEntry(name="Ghost Co", ats="greenhouse", slug="ghost"))
+    with open(tmp_path / ".careeros" / "watchlist_state.json") as f:
+        state = json.load(f)
+    assert state[key]["verification_status"] == "stale"
+    assert any("marked stale" in w for w in result.warnings)
+
+
+@requires_ats_scrapers
+def test_fetch_recovery_unresolvable_website_stays_stale(tmp_path, monkeypatch):
+    """A website that no longer resolves to any ATS (company genuinely gone,
+    not migrated) falls back to the ordinary stale path."""
+    from ats_scrapers.exceptions import CompanyNotFoundError
+
+    monkeypatch.chdir(tmp_path)
+    _write_profile(tmp_path, _profile())
+    _write_watchlist(tmp_path, [
+        {"name": "Ghost Co", "ats": "greenhouse", "slug": "ghost", "website": "https://ghost.example"}
+    ])
+
+    with patch("careeros.providers.ats_watchlist._scrape_entry", side_effect=CompanyNotFoundError("not found")), \
+         patch("careeros.ats_resolve.resolve_company_ats", return_value=None):
+        for _ in range(3):
+            result = PROVIDER.fetch(_cfg())
+
+    key = entry_key(WatchlistEntry(name="Ghost Co", ats="greenhouse", slug="ghost"))
+    with open(tmp_path / ".careeros" / "watchlist_state.json") as f:
+        state = json.load(f)
+    assert state[key]["verification_status"] == "stale"
+    assert any("marked stale" in w for w in result.warnings)
+
+
+@requires_ats_scrapers
+def test_fetch_recovery_same_mapping_stays_stale(tmp_path, monkeypatch):
+    """Re-resolving lands on the exact same (ats, slug) already stored — the
+    company genuinely doesn't exist there anymore, not a migration -> still
+    stale, no false-positive "recovery"."""
+    from ats_scrapers.exceptions import CompanyNotFoundError
+
+    from careeros.ats_resolve import ResolvedAts
+
+    monkeypatch.chdir(tmp_path)
+    _write_profile(tmp_path, _profile())
+    _write_watchlist(tmp_path, [
+        {"name": "Ghost Co", "ats": "greenhouse", "slug": "ghost", "website": "https://ghost.example"}
+    ])
+
+    with patch("careeros.providers.ats_watchlist._scrape_entry", side_effect=CompanyNotFoundError("not found")), \
+         patch("careeros.ats_resolve.resolve_company_ats", return_value=ResolvedAts("greenhouse", "ghost", "https://ghost.example")):
+        for _ in range(3):
+            result = PROVIDER.fetch(_cfg())
+
+    key = entry_key(WatchlistEntry(name="Ghost Co", ats="greenhouse", slug="ghost"))
+    with open(tmp_path / ".careeros" / "watchlist_state.json") as f:
+        state = json.load(f)
+    assert state[key]["verification_status"] == "stale"
+
+
 # ── multi-board: the core reason entry_key exists ────────────────────────
 
 @requires_ats_scrapers

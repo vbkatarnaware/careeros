@@ -72,21 +72,45 @@ from careeros.providers.base import ProviderResult
 # reads its extras via `.get(key, _DEFAULT)` instead. ──────────────────────
 #
 # The OSS default (2026-08-09): every genuine multi-tenant ATS platform in
-# the upstream dataset — 33 of the 65 available `by_ats` sources. Excluded
+# the upstream dataset — 35 of the 65 available `by_ats` sources. Excluded
 # deliberately, by category, not by omission:
-#   - single-company scrapers (amazon, apple, google, meta, tesla, uber,
-#     bytedance, tiktok) — each returns exactly one employer's postings,
-#     not a general ATS platform; add individually if you want one.
+#   - single-company scrapers (apple, google, meta, tesla, uber, bytedance,
+#     tiktok) — each returns exactly one employer's postings, not a general
+#     ATS platform; add individually if you want one. `amazon` is the one
+#     measured exception below — company count alone is the wrong signal
+#     for whether a category rule is worth its exception.
 #   - government/public employment portals (eures, bundesagentur,
 #     arbetsformedlingen, jobbankca) — not company ATS.
 #   - regional non-English-market platforms (beisen[_legacy], hrmos, wanted,
 #     gupy, programathor, manfred, getonbrd, join_com, thehub, jobsch,
-#     moka, herp, welcometothejungle) — narrow geographic/language fit for
-#     a global default; add if your search targets that market.
+#     moka, herp) — narrow geographic/language fit for a global default;
+#     add if your search targets that market. Live-measured 2026-08-11
+#     against a real Product-Manager-titled search: the SIX largest of
+#     these by registry company count (join_com — 23,547 companies, 29.5%
+#     of the entire 79,906-row registry alone — plus herp/hrmos/gupy/
+#     beisen/moka) combined yield 252 PM titles and ZERO India rows.
+#     `join_com` alone: 87 PM titles, 100% German-speaking Europe
+#     ("(m/w/d)" gender notation throughout). Company count is the wrong
+#     ranking metric for whether an excluded platform matters — see the two
+#     inclusions below, found by measuring PM-title yield directly instead.
 #   - job-board aggregators (remoteok, weworkremotely — this project's own
 #     providers/README.md already documents both "evaluated and removed" in
 #     v1.7 for poor conversion; wellfound, ycombinator, builtin, mercor —
 #     thin/unreliable coverage per the upstream project's own docs).
+#
+# `welcometothejungle` and `amazon` were ADDED 2026-08-11 on the same
+# live-measured basis: `welcometothejungle` carries 1,274 PM titles (more
+# than any enabled slice except workday/greenhouse) across 88,611 rows —
+# mostly FR/US/GB, a real gain for the global/remote half of a mixed
+# India+global search. `amazon` is a genuine exception to the single-
+# company-scraper exclusion above: 632 PM titles, 2,937 India rows, 67
+# India PM roles — a measurable ~9% lift to this dataset's total India PM
+# reach (759 titles across all 33 platforms before this change). Neither
+# would have surfaced from a company-count ranking (`amazon`/
+# `welcometothejungle` have zero/near-zero registry rows, since neither is
+# a multi-tenant platform in the reference-registry sense) — both were
+# found by measuring PM-title yield per slice directly. See
+# `docs/ats-registry.md` for the full measurement.
 #
 # REAL COST of this default: ~2GB+ downloaded and several minutes of
 # discovery time on every run (Workday alone, the largest single platform,
@@ -96,12 +120,13 @@ from careeros.providers.base import ProviderResult
 # own config.yaml to use a smaller/faster set (see providers/README.md for
 # a worked example).
 _DEFAULT_SLICES = [
-    "ashby", "avature", "bamboohr", "breezy", "cornerstone", "darwinbox",
-    "dayforce", "eightfold", "gem", "greenhouse", "icims", "jazzhr",
-    "jobvite", "keka", "lever", "oracle", "pageup", "paycom", "paylocity",
-    "personio", "phenom", "pinpoint", "recruitee", "recruiterbox",
-    "rippling", "smartrecruiters", "softgarden", "successfactors", "taleo",
-    "teamtailor", "ukg", "workable", "workday",
+    "amazon", "ashby", "avature", "bamboohr", "breezy", "cornerstone",
+    "darwinbox", "dayforce", "eightfold", "gem", "greenhouse", "icims",
+    "jazzhr", "jobvite", "keka", "lever", "oracle", "pageup", "paycom",
+    "paylocity", "personio", "phenom", "pinpoint", "recruitee",
+    "recruiterbox", "rippling", "smartrecruiters", "softgarden",
+    "successfactors", "taleo", "teamtailor", "ukg", "welcometothejungle",
+    "workable", "workday",
 ]
 # Measured live 2026-08-08 against the real dataset: `posted_at` is the
 # ORIGINAL listing date of a still-open posting, not a "new today" signal
