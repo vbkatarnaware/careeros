@@ -43,6 +43,13 @@ _URL_RE = re.compile(r"""https?://[^\s"'<>)]+""", re.IGNORECASE)
 # shape providers/darwinbox.py's own _resolve_tenant already parses.
 _DARWINBOX_RE = re.compile(r"https?://([a-z0-9-]+)\.darwinbox\.(in|com)", re.IGNORECASE)
 
+# zoho_recruit: same situation as darwinbox — no scraper in the installed
+# ats_scrapers package and no reusable OSS alternative (research pass,
+# 2026-08-11, see docs/ats-registry.md), so this project's own bespoke
+# fetcher (providers/zoho_recruit.py) is the only path. Same tenant-hostname
+# shape that module's own _resolve_tenant already parses.
+_ZOHO_RECRUIT_RE = re.compile(r"https?://([a-z0-9-]+)\.zohorecruit\.(in|com)", re.IGNORECASE)
+
 _DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -78,6 +85,10 @@ def _resolve_from_html(html: str) -> Optional[tuple[str, str]]:
     if dbx:
         tenant, tld = dbx.group(1).lower(), dbx.group(2).lower()
         return "darwinbox", f"{tenant}.{tld}"
+    zoho = _ZOHO_RECRUIT_RE.search(html)
+    if zoho:
+        tenant, tld = zoho.group(1).lower(), zoho.group(2).lower()
+        return "zoho_recruit", f"{tenant}.{tld}"
     return None
 
 

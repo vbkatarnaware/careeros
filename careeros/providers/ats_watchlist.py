@@ -208,6 +208,15 @@ def _scrape_entry(entry: WatchlistEntry) -> tuple[str | None, list[dict[str, Any
         rows = [clean_row(r) for r in fetch_darwinbox_jobs(entry.slug, company_name=entry.name)]
         return "darwinbox", rows
 
+    # zoho_recruit: same shape as darwinbox above — no scraper in the
+    # installed ats-scrapers version, no OSS alternative found (research
+    # pass, 2026-08-11, see docs/ats-registry.md), bespoke plain-httpx
+    # replica of the public career-site endpoint instead.
+    if entry.ats == "zoho_recruit" and entry.slug:
+        from careeros.providers.zoho_recruit import fetch_zoho_recruit_jobs
+        rows = [clean_row(r) for r in fetch_zoho_recruit_jobs(entry.slug, company_name=entry.name)]
+        return "zoho_recruit", rows
+
     if entry.careers_url:
         try:
             scraper = get_scraper_for_url(entry.careers_url)

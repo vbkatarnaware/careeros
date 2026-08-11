@@ -190,6 +190,69 @@ country mapping), wired into `ats_watchlist._scrape_entry` for
 if the real API contract ever changes, this fails the same way any other
 adapter does (`ScraperError`), not silently.
 
+## Zoho Recruit — an India-priority ATS gap, closed the same way as Darwinbox
+
+Investigated 2026-08-11 as a dedicated research pass (no code changes until
+the evidence was in): does a ready-made, reusable Zoho Recruit job scraper
+already exist? **No.** GitHub/PyPI/npm search turned up one candidate
+actually targeting it — `github.com/Himaanshuuuu04/Job_Scraper` (MIT,
+last pushed 2025-09-21, 3 stars, 0 issues/PRs) — but it uses browser
+automation against generic/unverified CSS selectors, which cannot work:
+Zoho Recruit's v2 career sites are client-rendered SPAs whose initial HTML
+carries **zero job data** (verified directly — a real tenant's `/jobs/
+Careers` page is 1.7MB of CSS/JS bundles, no job content). Every other
+Zoho-Recruit-adjacent OSS project found (`humantech/zoho-recruit-api`,
+`@parthikhm/n8n-nodes-zoho-recruit`, `snovart/zoho_recruit`) is an
+OAuth-authenticated client for a company managing its *own* Recruit
+account, not a mechanism for discovering jobs at an arbitrary company —
+excluded per the same rule this project already applies: an authenticated
+customer API is never evidence that public scraping is supported. The two
+commercial products found (JobsPipe, jobo.world) both confirm "scrape each
+public career page" is the actual state of the art; neither publishes how.
+
+**The real mechanism**, found by pulling and reading Zoho's own
+career-site JavaScript bundle directly:
+
+```
+GET https://{tenant}.zohorecruit.{in,com}/recruit/v2/public/Job_Openings?pagename=Careers
+```
+
+No auth, no cookies — the exact request an anonymous visitor's browser
+makes to render the page. Live-tested with plain `httpx` against 6
+independent real tenants across both regional domains:
+
+| tenant | domain | jobs | `Date_Opened`/`Job_Description` exposed? |
+|---|---|---:|---|
+| Hannah Solar | `.zohorecruit.com` (US) | 6 | No |
+| BruntWork | `.zohorecruit.com` | 9 | No |
+| OTSI Global | `.zohorecruit.com` | 27 | **Yes** |
+| WorkBetterNow | `.zohorecruit.com` | 15 | **Yes** |
+| Talenture | `.zohorecruit.com` (Nigeria ops) | 7 | No |
+| APCER Life Sciences | `.zohorecruit.in` (**India**) | 2 | No |
+
+Every tenant returned real, correctly-typed job data (title, city/state/
+country, employment type, direct apply URL) with zero auth. **Measured
+limitation, not a bug**: `Job_Description` and `Date_Opened` are
+per-tenant career-site display settings, not always public — only 2 of 6
+tenants exposed both. A tenant that doesn't expose `Date_Opened` gets
+`posted_at: None` on every job, which `row_is_fresh()` correctly drops —
+the same "no description, no posted_at → filtered out" outcome recorded
+above for Darwinbox's own (worse) case, except here it's tenant-configurable
+rather than universal. Title/location/company/apply-url/employment_type
+stay reliable regardless; whether a specific tenant clears the freshness
+filter is real per-tenant variance this module can't control.
+
+Given the contract works over plain httpx with zero new dependencies (same
+justification as Darwinbox), `careeros/providers/zoho_recruit.py` ships a
+small bespoke client, wired into `ats_watchlist._scrape_entry` for `ats:
+zoho_recruit` entries and into `ats_resolve.py`'s embedded-link supplement
+(alongside the darwinbox pattern) so a company whose own careers page links
+to a `*.zohorecruit.{in,com}` board resolves automatically. Only the
+default career-site page name ("Careers") is tried — a tenant that renamed
+its page is out of scope for now, same as any other unhandled edge case:
+it fails the same way any other adapter does (`ScraperError`/
+`CompanyNotFoundError`), never silently.
+
 ## `global_remote` does not mean "confirmed India-eligible"
 
 Measured 2026-08-10 across 517 real jobs tagged `global_remote` by

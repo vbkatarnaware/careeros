@@ -311,6 +311,25 @@ def test_scrape_entry_routes_darwinbox_to_bespoke_fetcher(monkeypatch):
 
 
 @requires_ats_scrapers
+def test_scrape_entry_routes_zoho_recruit_to_bespoke_fetcher(monkeypatch):
+    """zoho_recruit has no ats-scrapers adapter either, and no reusable OSS
+    alternative was found (research pass, 2026-08-11) — bespoke plain-httpx
+    replacement (careeros/providers/zoho_recruit.py), same shape as
+    darwinbox above."""
+    from careeros.providers.ats_watchlist import WatchlistEntry, _scrape_entry
+
+    with patch(
+        "careeros.providers.zoho_recruit.fetch_zoho_recruit_jobs",
+        return_value=[{"title": "Staff Engineer", "company": "acme"}],
+    ) as mock_fetch:
+        resolved_ats, rows = _scrape_entry(WatchlistEntry(name="Acme", ats="zoho_recruit", slug="acme"))
+
+    mock_fetch.assert_called_once_with("acme", company_name="Acme")
+    assert resolved_ats == "zoho_recruit"
+    assert rows == [{"title": "Staff Engineer", "company": "acme"}]
+
+
+@requires_ats_scrapers
 def test_fetch_malformed_entry_is_validation_failed(tmp_path, monkeypatch):
     """An entry with neither careers_url nor ats+slug can never resolve —
     real `_scrape_entry`, no mock."""
