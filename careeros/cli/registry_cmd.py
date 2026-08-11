@@ -248,12 +248,13 @@ def _days_since(iso_date: str, today: str) -> int | None:
 
 
 def _has_adapter(ats: str) -> bool:
-    """darwinbox is a special case throughout this codebase (see
-    `_scrape_entry`): it has no member in the installed `ats_scrapers`
-    package's ATSType enum at all, so `ScraperRegistry.has_scraper` would
-    wrongly say "unsupported" for a platform this project actually does
-    support, via `providers/darwinbox.py`'s bespoke fetcher."""
-    if ats == "darwinbox":
+    """darwinbox and zoho_recruit are special cases throughout this
+    codebase (see `_scrape_entry`): neither has a member in the installed
+    `ats_scrapers` package's ATSType enum at all, so `ScraperRegistry.
+    has_scraper` would wrongly say "unsupported" for a platform this
+    project actually does support, via `providers/darwinbox.py` and
+    `providers/zoho_recruit.py`'s own bespoke fetchers."""
+    if ats in ("darwinbox", "zoho_recruit"):
         return True
     from ats_scrapers.scrapers.base import ScraperRegistry
     return ScraperRegistry.has_scraper(ats)

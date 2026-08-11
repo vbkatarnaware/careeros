@@ -152,6 +152,27 @@ discovery (v2.2)" section for the full design writeup.
   candidates from `discovery_candidates.json`; previously only visible via
   `cat`.
 
+### Added — Zoho Recruit adapter
+
+- **`careeros/providers/zoho_recruit.py`** — closes an India-priority ATS
+  gap the same way `providers/darwinbox.py` did: a research pass (2026-08-11,
+  see `docs/ats-registry.md`) found no reusable OSS Zoho Recruit scraper —
+  the one candidate targeting it uses browser automation against a
+  static-HTML assumption that can't work (Zoho's v2 career sites are
+  client-rendered SPAs with zero job data in the initial HTML) — but found
+  and verified a real public, unauthenticated JSON endpoint
+  (`GET .../recruit/v2/public/Job_Openings?pagename=Careers`) by reading
+  Zoho's own career-site JavaScript directly. Live-verified against 6
+  independent tenants across both regional domains (`.zohorecruit.com` and
+  `.zohorecruit.in`, including an India tenant). Wired into
+  `ats_watchlist._scrape_entry` (`ats: zoho_recruit`) and `ats_resolve.py`'s
+  embedded-link supplement, same pattern as darwinbox. **Known, measured
+  limitation**: `Job_Description`/`Date_Opened` are per-tenant-configurable
+  career-site fields — only 2 of the 6 tenants tested exposed them; a
+  tenant that doesn't gets `posted_at: None` on every job, which
+  `row_is_fresh()` correctly (not a bug) filters out. Title, company,
+  location, apply URL, and employment type stay reliable regardless.
+
 ### Removed
 
 - **`greenhouse`/`lever`/`ashby` providers and the SQLite ATS registry**

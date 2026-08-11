@@ -71,6 +71,19 @@ def test_resolve_company_ats_finds_darwinbox_supplement(monkeypatch):
     assert result == ResolvedAts("darwinbox", "mpl.in", "https://mpl.example")
 
 
+def test_resolve_company_ats_finds_zoho_recruit_supplement(monkeypatch):
+    """zoho_recruit has no member in the installed ats_scrapers' ATSType
+    enum either (same situation as darwinbox) -- this is the other pattern
+    ats_resolve.py adds on top, verified live against 6 real tenants
+    (see docs/ats-registry.md)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, html='<a href="https://acme.zohorecruit.in/jobs/Careers">Careers</a>')
+
+    _patch_client(monkeypatch, handler)
+    result = resolve_company_ats("https://acme.example")
+    assert result == ResolvedAts("zoho_recruit", "acme.in", "https://acme.example")
+
+
 def test_resolve_company_ats_returns_none_when_unresolvable(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, html="<html>just a marketing site, no ats link anywhere</html>")
