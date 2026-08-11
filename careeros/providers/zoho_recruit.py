@@ -40,6 +40,14 @@ freshly-set-up Zoho Recruit career site uses) is tried. A tenant that
 renamed its page is out of scope for now — same "fails the same way"
 posture Darwinbox's module takes for its own unhandled edge cases, not a
 silent guess.
+
+v2.2.2: also supports Zoho Recruit's custom-domain career sites — a real,
+documented Zoho Recruit feature, not company-specific. Verified live on
+Zoho's own careers.zohocorp.com: it fails the normal `{tenant}.zohorecruit.
+{tld}` lookup (`ORG_NOT_FOUND`, since its public API is only reachable via
+the custom domain itself) but succeeds when queried directly. See
+`_looks_like_custom_domain` and `careeros/ats_resolve.py`'s
+`_ZOHO_RECRUIT_CDN_SIGNATURE_RE`.
 """
 
 from __future__ import annotations
@@ -78,6 +86,17 @@ _COUNTRY_ISO = {
     "singapore": "SG", "united arab emirates": "AE",
     "germany": "DE", "france": "FR", "ireland": "IE",
 }
+
+
+def _looks_like_custom_domain(raw: str) -> bool:
+    """A custom-domain Zoho Recruit career site (a real, documented Zoho
+    Recruit feature — see ats_resolve.py's _ZOHO_RECRUIT_CDN_SIGNATURE_RE
+    docstring for the live-verified evidence, Zoho's own careers.
+    zohocorp.com) is passed here as a full hostname (e.g.
+    "careers.zohocorp.com"), distinct from the normal tenant[.tld] shape
+    (e.g. "acme" or "acme.in") — a tenant plus its .in/.com suffix has at
+    most one dot; a real custom domain has two or more."""
+    return raw.strip().count(".") >= 2
 
 
 def _resolve_tenant(slug: str) -> tuple[str, str]:
@@ -176,9 +195,20 @@ def fetch_zoho_recruit_jobs(slug: str, *, company_name: str | None = None, timeo
     already handle, so no new except-branch is needed there. A single
     unpaginated request: the public endpoint rejects `page`/`per_page`
     query params outright (`EXTRA_PARAM_FOUND`, verified live), so it
-    always returns the tenant's complete published job list in one call."""
-    tenant, tld = _resolve_tenant(slug)
-    base_url = f"https://{tenant}.zohorecruit.{tld}"
+    always returns the tenant's complete published job list in one call.
+
+    A `slug` that's a full custom domain (see `_looks_like_custom_domain`)
+    is queried directly on that domain instead of being routed through
+    `.zohorecruit.{in,com}` — a real Zoho Recruit career-site feature
+    (verified live on Zoho's own careers.zohocorp.com), not specific to
+    any one company."""
+    raw_slug = slug.strip()
+    if _looks_like_custom_domain(raw_slug):
+        tenant = raw_slug
+        base_url = f"https://{raw_slug}"
+    else:
+        tenant, tld = _resolve_tenant(raw_slug)
+        base_url = f"https://{tenant}.zohorecruit.{tld}"
     api_url = f"{base_url}/recruit/v2/public/Job_Openings"
 
     try:

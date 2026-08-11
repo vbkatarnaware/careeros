@@ -253,6 +253,74 @@ its page is out of scope for now, same as any other unhandled edge case:
 it fails the same way any other adapter does (`ScraperError`/
 `CompanyNotFoundError`), never silently.
 
+## Resolver recovery — three real bugs found by measuring, not assuming (2026-08-11)
+
+A 96-company real-world Layer 2A run (a candidate list supplied for a Senior
+PM / India+global profile) resolved only 15 and left 61 "unresolved". Before
+building an AI research fallback for that gap — the original ask — every
+failure class was reproduced against live endpoints first. Three deterministic
+bugs, not a capability gap, explained most of it:
+
+**The reference registry's own mapping was discarded.** `_resolve_via_registry`
+already returns `(canonical_name, ats, slug, url)` — `watchlist discover` only
+ever used `[0]`. When the careers-page resolver found no embedded ATS link
+(common: `chargebee.com/careers`, `postman.com/careers`, `whatfix.com/careers`
+all return HTTP 200 with zero ATS links in the raw HTML — client-rendered
+SPAs), the candidate was marked UNRESOLVED without ever trying the mapping
+already sitting in the synced registry. Verified live: 10/10 sampled registry
+mappings scraped real jobs through the existing adapter (PhonePe 79 jobs, CRED
+4, Meesho 52, Postman 109, Zepto 3, Slice 42, CloudSEK 24, Observe.AI 19,
+MobiKwik 3, Whatfix 30). Fixed: the careers-page miss now falls through to the
+registry mapping if one exists, validated through the exact same live-scrape +
+quality-bar gate as any other candidate — never trusted on the registry's
+say-so alone.
+
+**Greenhouse's own embed-widget link was misread.** A careers page that only
+links `boards.greenhouse.io/embed/job_board/js?for=cloudsek` (a real, working
+board) had its tenant misread as `"embed"` — `resolve_careers_url`'s upstream
+logic takes the first URL path segment, and `embed` is a valid-looking slug
+that just happens to be wrong; the real one is in the `?for=` query param.
+Both CloudSEK and Observe.AI resolved this way. Fixed in `ats_resolve.py`: the
+`embed` case is now specifically corrected by reading `?for=`, falling back to
+scanning the rest of the page if that param is absent.
+
+**Darwinbox's own marketing subdomains were mistaken for a tenant board.**
+`darwinbox.com`'s own `/careers` page links `explore.darwinbox.com`,
+`blog.darwinbox.com`, and `academy.darwinbox.com` — none of them tenant
+boards — before any real tenant link in document order, and the old regex
+took the first `*.darwinbox.*` host match unconditionally. Verified every real
+tenant board (LeadSquared, and Darwinbox's own actual `dbx.darwinbox.in`
+tenant) has `/ms/candidate` in its path, while no marketing subdomain ever
+does. Fixed: `_resolve_from_html` now requires that discriminator before
+accepting a darwinbox match.
+
+**A transient failure was recorded as a permanent, factual claim.** Perfios
+resolved cleanly (`darwinbox/perfios.in`) on one live attempt and read-timed-out
+minutes later on a second — `resolve_company_ats` returns `None` identically
+for "fetched fine, no ATS link" and "every request failed at the network
+level," and the old code wrote both as `"reason": "no detectable ATS"` with
+the normal 30-day retry TTL. Fixed: `resolve_company_ats_or_fetch_failure`
+(a new function alongside the unchanged `resolve_company_ats`, so every other
+caller — `watchlist add`, ATS-change recovery — is unaffected) reports whether
+at least one page was genuinely reached. A total network failure is now
+recorded as `fetch_failed` with a 1-day retry TTL instead of the 30-day one.
+
+**Re-running the identical 96 candidates after the fix, isolated scratch
+environment, same synced registry, same profile:**
+
+| | Added | Remaining unresolved/pending |
+|---|---:|---:|
+| Before | 15 | 81 |
+| After | **34** | 62 (58 genuinely unresolved + 4 correctly `fetch_failed`, not poisoned for 30d) |
+
+More than double the recovery, purely from fixing bugs in the existing
+deterministic path — no AI, no new dependency, no loosened filter. Of the
+62 still-unresolved records, 22 had a registry mapping that was tried and
+genuinely failed validation (a real rejection, not a guess) and 23 had no
+evidence at all — companies whose careers page is a JS SPA with no registry
+entry, the residual gap an AI/web-research fallback (deferred, not built
+this pass — see the plan) would actually need to close.
+
 ## `global_remote` does not mean "confirmed India-eligible"
 
 Measured 2026-08-10 across 517 real jobs tagged `global_remote` by

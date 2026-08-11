@@ -93,12 +93,13 @@ def registry_stats():
     typer.echo(f"  last_synced_at: {meta['last_synced_at']}")
 
 
-def _resolve_via_registry(cfg, name: str) -> tuple[str, str | None, str | None] | None:
+def _resolve_via_registry(cfg, name: str) -> tuple[str, str | None, str | None, str | None] | None:
     """The one reference-registry lookup, shared by `watchlist add` (a miss
-    here is a hard failure, since it has no other way to find an ats/slug)
-    and `watchlist discover` (a hit here is ADVISORY only — registry
-    presence is not the same claim as Layer 1 job coverage, see that
-    command). Returns `(canonical_name, ats, slug)` on a match, else `None`.
+    here is a hard failure, since it has no other way to find an ats/slug),
+    `watchlist discover`'s advisory registry-presence note, AND (v2.2.1) as
+    a fallback ATS source when careers-page resolution comes up empty — see
+    `watchlist discover`'s use of the `url` field below. Returns
+    `(canonical_name, ats, slug, url)` on a match, else `None`.
 
     `registry_mod.find_company` is a SUBSTRING search (a convenience lookup
     for `registry find`, see its own docstring) and returns its best
@@ -115,7 +116,7 @@ def _resolve_via_registry(cfg, name: str) -> tuple[str, str | None, str | None] 
     probe = normalize_name(name)
     if normalize_name(canonical) != probe and slug != probe:
         return None
-    return canonical, m.get("ats"), m.get("slug")
+    return canonical, m.get("ats"), m.get("slug"), m.get("url")
 
 
 def _is_duplicate(existing: list[WatchlistEntry], canonical_name: str, ats: str | None) -> bool:
@@ -189,7 +190,7 @@ def watchlist_add(
                 "and no --url/--ats+--slug given. Supply one to try a specific mapping."
             )
             raise typer.Exit(1)
-        canonical_name, candidate_ats, candidate_slug = resolved
+        canonical_name, candidate_ats, candidate_slug, _registry_url = resolved
         source = "reference_registry"
         typer.echo(f"[watchlist:add] found in reference registry: {canonical_name!r} -> {candidate_ats}/{candidate_slug}")
 
@@ -222,6 +223,13 @@ def watchlist_add(
 _DISCOVERY_CANDIDATES_FILENAME = "discovery_candidates.json"
 _DISCOVERY_TTL_DAYS = 30
 _DISCOVERY_FRESHNESS_DAYS = 90
+# A `fetch_failed` record (every careers-page request failed at the network
+# level this run — see resolve_company_ats_or_fetch_failure) gets a much
+# shorter TTL than a genuine `unresolved`: a transient timeout must not
+# poison a candidate for a month the way a real "no ATS link found" should.
+# Verified live 2026-08-11: the same company (Perfios) resolved cleanly on
+# one attempt and read-timed-out minutes later.
+_FETCH_FAILED_TTL_DAYS = 1
 
 
 def _load_discovery_candidates(path: Path) -> dict[str, dict]:
@@ -245,6 +253,21 @@ def _days_since(iso_date: str, today: str) -> int | None:
         return (date.fromisoformat(today) - date.fromisoformat(iso_date)).days
     except ValueError:
         return None  # unparseable -- caller treats this conservatively
+
+
+def _evidence_fields(resolution_source: str | None, evidence_url: str | None) -> dict:
+    """Only attaches the two keys when there's something to attach — a
+    candidate that never resolved at all (`resolved is None`) has no
+    evidence to record. Makes the funnel auditable: whether the B1
+    registry-mapping fallback is actually earning its keep is a direct
+    read of how many `discovery_candidates.json` records carry
+    `resolution_source: "reference_registry"` versus `"careers_page"`."""
+    fields: dict = {}
+    if resolution_source is not None:
+        fields["resolution_source"] = resolution_source
+    if evidence_url is not None:
+        fields["evidence_url"] = evidence_url
+    return fields
 
 
 def _has_adapter(ats: str) -> bool:
@@ -307,9 +330,25 @@ def watchlist_discover(
 
     Per candidate: already-in-registry check -> already-on-watchlist check
     -> 30-day unresolved-recheck TTL -> ATS resolution
-    (careeros/ats_resolve.py, reusing the company's own careers page) ->
-    live scrape -> quality bar (>=1 role-matching job posted in the last
-    ~90 days) -> append, capped at --max-add.
+    (careeros/ats_resolve.py, reusing the company's own careers page, THEN —
+    v2.2.1 — the reference registry's own (ats, slug) if the careers page
+    itself exposed no ATS link; a real 79,906-row measurement, 2026-08-11:
+    56 of 81 "unresolved" candidates in one real run had a working registry
+    mapping that was simply never tried) -> live scrape -> quality bar
+    (>=1 role-matching job posted in the last ~90 days) -> append, capped
+    at --max-add. Either resolution path goes through the SAME live-scrape
+    + quality-bar gate below — a registry-sourced mapping is validated
+    exactly like a careers-page one, never trusted on the registry's say-so
+    alone.
+
+    A candidate whose careers page couldn't even be reached this run
+    (timeout/DNS/connection error on every attempt, distinct from a real
+    200 response with no ATS link — see `resolve_company_ats_or_fetch_
+    failure`) is recorded as `fetch_failed` with a 1-day retry TTL, not the
+    normal 30-day `unresolved` one — a transient network hiccup must not
+    silently poison a candidate for a month (measured live 2026-08-11: the
+    same company resolved cleanly on one attempt and read-timed-out minutes
+    later).
 
     A company whose ATS resolves to a real platform this install just
     doesn't have an adapter for is NOT rejected and forgotten — it's kept
@@ -327,7 +366,7 @@ def watchlist_discover(
     from ats_scrapers.exceptions import CompanyNotFoundError, ScraperError
     from ats_scrapers.fetch import MalformedJSONError
 
-    from careeros.ats_resolve import ResolvedAts, resolve_company_ats
+    from careeros.ats_resolve import ResolvedAts, resolve_company_ats_or_fetch_failure
     from careeros.providers.ats_dataset import _DEFAULT_TITLE_EXCLUSIONS
 
     cfg = _config()
@@ -387,6 +426,9 @@ def watchlist_discover(
 
         record = discovery_state.get(norm)
         resolved: ResolvedAts | None = None
+        resolution_source: str | None = None
+        evidence_url: str | None = None
+        fetched_ok = True
 
         if record is not None and record.get("status") == "pending_unsupported_ats":
             # A known company/ATS mapping, just waiting on adapter support —
@@ -412,12 +454,47 @@ def watchlist_discover(
                 typer.echo(f"[watchlist:discover] {name!r}: recently unresolved (within {_DISCOVERY_TTL_DAYS}d) — skipping.")
                 already_known += 1
                 continue
+        elif record is not None and record.get("status") == "fetch_failed":
+            # Much shorter TTL than a genuine unresolved — a network hiccup
+            # must not suppress a candidate for a month (see
+            # resolve_company_ats_or_fetch_failure's docstring; measured
+            # live 2026-08-11: Perfios resolved cleanly on one attempt and
+            # read-timed-out minutes later).
+            age = _days_since(record.get("last_checked_at", ""), today)
+            if age is not None and age < _FETCH_FAILED_TTL_DAYS:
+                typer.echo(f"[watchlist:discover] {name!r}: fetch failed recently (within {_FETCH_FAILED_TTL_DAYS}d) — skipping.")
+                already_known += 1
+                continue
 
         if resolved is None:
-            resolved = resolve_company_ats(website)
+            resolved, fetched_ok = resolve_company_ats_or_fetch_failure(website)
+            if resolved is not None:
+                resolution_source, evidence_url = "careers_page", resolved.matched_url
+            elif registry_match is not None and registry_match[1] and registry_match[2]:
+                # B1 fix: the careers page itself exposed no ATS link, but
+                # the reference registry already has a working (ats, slug)
+                # for this exact company — measured live 2026-08-11: 56 of
+                # 81 "unresolved" candidates in one real run were exactly
+                # this case, the registry mapping simply never tried.
+                # Still goes through the SAME live-scrape + quality-bar
+                # validation below; a stale/wrong registry mapping is
+                # rejected like any other failed resolution, never trusted
+                # on the registry's say-so alone.
+                registry_url = registry_match[3] or website
+                resolved = ResolvedAts(registry_match[1], registry_match[2], registry_url)
+                resolution_source, evidence_url = "reference_registry", registry_url
+                typer.echo(
+                    f"[watchlist:discover] {name!r}: no ATS link on the careers page — trying the "
+                    f"reference registry's mapping ({resolved.ats}/{resolved.slug}) instead."
+                )
+
         if resolved is None:
-            typer.echo(f"[watchlist:discover] {name!r}: UNRESOLVED — no detectable ATS at {website}")
-            discovery_state[norm] = {"status": "unresolved", "last_checked_at": today, "reason": "no detectable ATS"}
+            if fetched_ok:
+                typer.echo(f"[watchlist:discover] {name!r}: UNRESOLVED — no detectable ATS at {website}")
+                discovery_state[norm] = {"status": "unresolved", "last_checked_at": today, "reason": "no detectable ATS"}
+            else:
+                typer.echo(f"[watchlist:discover] {name!r}: FETCH FAILED — could not reach {website} this run, will retry soon")
+                discovery_state[norm] = {"status": "fetch_failed", "last_checked_at": today, "reason": "network/timeout failure on every attempt"}
             rejected += 1
             continue
 
@@ -429,6 +506,7 @@ def watchlist_discover(
             discovery_state[norm] = {
                 "status": "pending_unsupported_ats", "ats": resolved.ats, "slug": resolved.slug,
                 "website": website, "last_checked_at": today,
+                **_evidence_fields(resolution_source, evidence_url),
             }
             pending_unsupported += 1
             continue
@@ -438,12 +516,18 @@ def watchlist_discover(
             resolved_ats, rows = _scrape_entry(wc)
         except CompanyNotFoundError as e:
             typer.echo(f"[watchlist:discover] {name!r}: UNRESOLVED — {resolved.ats}/{resolved.slug} not found: {e}")
-            discovery_state[norm] = {"status": "unresolved", "last_checked_at": today, "reason": f"not found on {resolved.ats}"}
+            discovery_state[norm] = {
+                "status": "unresolved", "last_checked_at": today, "reason": f"not found on {resolved.ats}",
+                **_evidence_fields(resolution_source, evidence_url),
+            }
             rejected += 1
             continue
         except (WatchlistConfigError, MalformedJSONError, ScraperError) as e:
             typer.echo(f"[watchlist:discover] {name!r}: UNRESOLVED — could not validate: {e}")
-            discovery_state[norm] = {"status": "unresolved", "last_checked_at": today, "reason": str(e)[:200]}
+            discovery_state[norm] = {
+                "status": "unresolved", "last_checked_at": today, "reason": str(e)[:200],
+                **_evidence_fields(resolution_source, evidence_url),
+            }
             rejected += 1
             continue
 
@@ -452,7 +536,10 @@ def watchlist_discover(
                 f"[watchlist:discover] {name!r}: UNRESOLVED — {resolved.ats}/{resolved.slug} has "
                 f"{len(rows)} job(s) but none role-matching within {_DISCOVERY_FRESHNESS_DAYS}d"
             )
-            discovery_state[norm] = {"status": "unresolved", "last_checked_at": today, "reason": "no role-matching job within freshness window"}
+            discovery_state[norm] = {
+                "status": "unresolved", "last_checked_at": today, "reason": "no role-matching job within freshness window",
+                **_evidence_fields(resolution_source, evidence_url),
+            }
             rejected += 1
             continue
 

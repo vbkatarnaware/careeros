@@ -16,7 +16,11 @@ import pytest
 httpx = pytest.importorskip("httpx")
 from ats_scrapers.exceptions import CompanyNotFoundError, ScraperError  # noqa: E402
 
-from careeros.providers.zoho_recruit import _resolve_tenant, fetch_zoho_recruit_jobs  # noqa: E402
+from careeros.providers.zoho_recruit import (  # noqa: E402
+    _looks_like_custom_domain,
+    _resolve_tenant,
+    fetch_zoho_recruit_jobs,
+)
 
 _JOB = {
     "id": "724561000014793056",
@@ -87,6 +91,29 @@ def test_fetch_uses_in_tld_when_given(monkeypatch):
     _patch_client(monkeypatch, handler)
     rows = fetch_zoho_recruit_jobs("apcerls.in")
     assert len(rows) == 1
+
+
+def test_fetch_queries_custom_domain_directly_not_zohorecruit_subdomain(monkeypatch):
+    """Regression (live finding, Zoho's own careers.zohocorp.com): a
+    custom-domain slug is queried on that domain directly -- the normal
+    tenant.zohorecruit.{tld} construction must never apply to it."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "careers.zohocorp.com"
+        return httpx.Response(200, json={"code": "success", "data": [_JOB]})
+
+    _patch_client(monkeypatch, handler)
+    rows = fetch_zoho_recruit_jobs("careers.zohocorp.com", company_name="Zoho")
+    assert len(rows) == 1
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("careers.zohocorp.com", True),   # real custom domain -- 2 dots
+    ("acme", False),                  # bare tenant -- 0 dots
+    ("acme.in", False),               # tenant + TLD -- 1 dot
+    ("acme.com", False),              # tenant + TLD -- 1 dot
+])
+def test_looks_like_custom_domain(raw, expected):
+    assert _looks_like_custom_domain(raw) is expected
 
 
 def test_fetch_raises_company_not_found_on_the_one_verified_shape(monkeypatch):
