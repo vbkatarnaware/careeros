@@ -1,8 +1,10 @@
-# Layer 2A: a small, hand-curated list of specific companies to scrape
-# directly, for companies the free Layer 1 hosted dataset (ats-dataset
-# provider) doesn't carry at all. See careeros/providers/ats_watchlist.py's
-# module docstring for the full design and why this is deliberately
-# targeted, not automated company discovery.
+# Layer 2A: the list of specific companies to scrape directly, for
+# companies the free Layer 1 hosted dataset (ats-dataset provider) doesn't
+# carry at all. Entries land here either hand-added (`careeros watchlist
+# add`) or profile-driven auto-discovered (`careeros watchlist discover`)
+# — see careeros/providers/ats_watchlist.py's module docstring and
+# docs/ats-registry.md's "Automated discovery (v2.2)" section for the
+# full design.
 #
 # This is entirely OPTIONAL and OFF by default (an empty/missing file is a
 # normal state — enable the `ats-watchlist` provider in config.yaml only

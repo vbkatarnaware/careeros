@@ -3,15 +3,19 @@ specific companies scraped directly via `ats-scrapers`' per-platform
 adapters (https://github.com/kalil0321/ats-scrapers, MIT), as a companion
 to the Layer 1 hosted snapshot (ats_dataset.py).
 
-Layer 2A is TARGETED, not automated discovery. It only ever scrapes
-companies the user explicitly named in `.careeros/watchlist.yaml`. This is
-a deliberate scope line: Layer 2B (search-driven, "find me companies I
-don't know about") is NOT built here — the project plan measured
-`resolve_careers_url()` at 1/12 and static HTML fingerprinting at 1/6
-against real missing-company careers pages (most are JS SPAs), which is
-too low-yield to justify the added surface without stronger evidence. If
-that evidence shows up later, 2B is a separate, explicitly-gated addition,
-not something this module silently grows into.
+This PROVIDER is TARGETED, not discovery: `fetch()` only ever scrapes
+companies already sitting in `.careeros/watchlist.yaml`, exactly as before.
+
+v2.2 adds automated, profile-driven discovery on top — `careeros watchlist
+discover` (careeros/cli/registry_cmd.py) proposes candidates from the
+user's profile, resolves each one's ATS via `careeros/ats_resolve.py`
+(fetch the company's own careers page, look for an embedded ATS link —
+measurably better than URL-shape matching alone, see docs/ats-registry.md),
+validates against real live job data, and only THEN appends to
+`watchlist.yaml` — this provider never sees an unvalidated entry. That
+module is a separate, explicitly-bounded seam (bounded evaluate/add
+ceilings, quality bar, 30-day re-check TTL — see its own docstring), not
+something this provider silently grew into; `fetch()` itself is unchanged.
 
 What this buys over Layer 1: reach for companies NOT in the hosted
 snapshot at all. It does NOT meaningfully improve freshness for companies
@@ -63,6 +67,7 @@ from typing import Any
 
 import yaml
 
+from careeros.companies import normalize_name
 from careeros.config import Config
 from careeros.models import dumps
 from careeros.providers.ats_dataset import (
@@ -92,6 +97,13 @@ class WatchlistEntry:
     careers_url: str | None = None
     source: str = "manual"
     added_at: str | None = None
+    # v2.2: the company's own domain — absent on hand-written entries
+    # (backward compatible, defaults None), populated by `watchlist
+    # discover` (careeros/cli/registry_cmd.py). Its only consumer is the
+    # re-resolve-on-stale logic in `AtsWatchlistProvider.fetch` below: an
+    # entry with no `website` behaves exactly as it always has (goes
+    # `stale` after 3 not-found, stays that way until a human fixes it).
+    website: str | None = None
 
 
 def entry_key(entry: WatchlistEntry) -> str:
@@ -116,7 +128,7 @@ def load_watchlist(path: Path) -> list[WatchlistEntry]:
         entries.append(WatchlistEntry(
             name=raw["name"], ats=raw.get("ats"), slug=raw.get("slug"),
             careers_url=raw.get("careers_url"), source=raw.get("source", "manual"),
-            added_at=raw.get("added_at"),
+            added_at=raw.get("added_at"), website=raw.get("website"),
         ))
     return entries
 
@@ -221,6 +233,65 @@ def _scrape_entry(entry: WatchlistEntry) -> tuple[str | None, list[dict[str, Any
     return resolved_ats_value, rows
 
 
+def _replace_watchlist_entry_ats(path: Path, entry_name: str, *, new_ats: str, new_slug: str) -> None:
+    """Rewrites ONE company's `ats`/`slug` in-place in `watchlist.yaml`,
+    matched by normalized name — used only by ATS-change recovery below,
+    where the entry's OWN stored ats/slug/careers_url are exactly what just
+    proved stale. Any prior `careers_url` is dropped: the fresh resolution
+    supersedes it, and keeping a stale URL alongside a new ats/slug would
+    make `_scrape_entry` prefer the (still broken) URL path over the corrected
+    ats+slug (see that function's resolution order)."""
+    if not path.exists():
+        return
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    companies = data.get("companies") or []
+    target_norm = normalize_name(entry_name)
+    for c in companies:
+        if normalize_name(c.get("name", "")) == target_norm:
+            c["ats"] = new_ats
+            c["slug"] = new_slug
+            c.pop("careers_url", None)
+            break
+    data["companies"] = companies
+    with open(path, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+def _attempt_ats_recovery(entry: WatchlistEntry, watchlist_path: Path) -> tuple[str, str] | None:
+    """Called only when an entry has just hit the staleness threshold AND
+    has a `website` on file. Re-resolves the company's ATS from its own
+    domain (same mechanism `watchlist discover` uses to find it in the
+    first place — see `careeros/ats_resolve.py`); if that yields a
+    DIFFERENT mapping than what's stored, persists it and returns the
+    freshly-scraped `(resolved_ats, rows)` for THIS run to use immediately,
+    so the entry doesn't sit dark for a full extra day. Returns `None` for
+    every other outcome (unresolvable, same mapping, or the corrected
+    mapping still fails to scrape) — the caller falls back to marking the
+    entry `stale` exactly as it did before this existed."""
+    from ats_scrapers.exceptions import CompanyNotFoundError, ScraperError
+    from ats_scrapers.fetch import MalformedJSONError
+
+    from careeros.ats_resolve import resolve_company_ats
+
+    try:
+        resolved = resolve_company_ats(entry.website)
+    except Exception:
+        return None
+    if resolved is None:
+        return None
+    if resolved.ats == entry.ats and resolved.slug == entry.slug:
+        return None  # same mapping we already have — genuinely gone, not migrated
+
+    try:
+        rescraped_ats, rows = _scrape_entry(WatchlistEntry(name=entry.name, ats=resolved.ats, slug=resolved.slug))
+    except (CompanyNotFoundError, WatchlistConfigError, MalformedJSONError, ScraperError):
+        return None  # the "corrected" mapping doesn't actually work either
+
+    _replace_watchlist_entry_ats(watchlist_path, entry.name, new_ats=resolved.ats, new_slug=resolved.slug)
+    return rescraped_ats or resolved.ats, rows
+
+
 class AtsWatchlistProvider:
     id = "ats-watchlist"
 
@@ -280,14 +351,45 @@ class AtsWatchlistProvider:
                 entry_state["consecutive_failures"] = entry_state.get("consecutive_failures", 0) + 1
                 entry_state["last_checked_at"] = today
                 if entry_state["consecutive_failures"] >= _DEAD_AFTER_CONSECUTIVE_FAILURES:
-                    entry_state["verification_status"] = "stale"
-                    warnings.append(
-                        f"{entry.name}: not found {entry_state['consecutive_failures']}x in a "
-                        f"row — marked stale in {state_path}, check the mapping"
-                    )
+                    # v2.2: before giving up, try re-resolving the ATS from
+                    # the company's own website — catches exactly the "this
+                    # company migrated ATS platforms" case, not just "this
+                    # company genuinely stopped existing on this ATS". Only
+                    # possible for entries `watchlist discover` populated
+                    # `website` on; a hand-written entry with no `website`
+                    # behaves exactly as it always has.
+                    recovered = _attempt_ats_recovery(entry, watchlist_path) if entry.website else None
+                    if recovered is not None:
+                        resolved_ats, rows = recovered
+                        history = entry_state.setdefault("history", [])
+                        history.append({
+                            "ats": entry.ats, "detected_at": today,
+                            "evidence": f"re-resolved after {entry_state['consecutive_failures']} consecutive not-found",
+                        })
+                        warnings.append(
+                            f"{entry.name}: ATS re-resolved after repeated not-found -> {resolved_ats}"
+                        )
+                        entry_state["consecutive_failures"] = 0
+                        # Set now, not left to the shared success tail below —
+                        # that tail does its OWN previous-ats-vs-resolved-ats
+                        # migration check, and `entry_state["ats"]` still
+                        # holds the OLD value at this point; leaving it stale
+                        # would make that check fire a SECOND, duplicate
+                        # history entry for the same migration this branch
+                        # already recorded above.
+                        entry_state["ats"] = resolved_ats
+                        # falls through to the shared success handling below,
+                        # using `resolved_ats`/`rows` from the recovery scrape
+                    else:
+                        entry_state["verification_status"] = "stale"
+                        warnings.append(
+                            f"{entry.name}: not found {entry_state['consecutive_failures']}x in a "
+                            f"row — marked stale in {state_path}, check the mapping"
+                        )
+                        continue
                 else:
                     warnings.append(f"{entry.name}: not found ({e})")
-                continue
+                    continue
             except WatchlistConfigError as e:
                 # Never transient — retrying won't help until the entry
                 # itself is fixed by hand. Does NOT touch

@@ -186,6 +186,12 @@ class Profile:
     product_philosophy: str = ""
     projects_philosophy: str = ""
     work_mode_priority: list[str] = field(default_factory=list)
+    # v2.2: company-level discovery targeting only (industries, company_stage,
+    # target_companies, exclude_companies, exclude_industries) — read by
+    # careeros/ats_resolve.py + `watchlist discover`, never by Gate/Evaluate/
+    # constraints. See schemas/profile.schema.json's own docstring on this
+    # field for the full rationale.
+    preferences: dict = field(default_factory=dict)
     summary_variants: list[dict] = field(default_factory=list)
     projects: list[dict] = field(default_factory=list)
     skills: list[dict] = field(default_factory=list)

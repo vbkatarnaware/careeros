@@ -218,6 +218,52 @@ but no `spreadsheet_id` set), never on Sheets/Drive being off.
 - Comp target range and floor. → `comp`.
 - Is there a years-of-experience floor below which a JD is still a fair
   target, not a downlevel? → `deal_breakers.min_years_ok`.
+- **Any industries, sectors, or company stages you want to prioritize or
+  avoid? Any specific companies you're targeting, or ones to skip?** →
+  `preferences.industries`, `preferences.company_stage`,
+  `preferences.target_companies`, `preferences.exclude_companies`,
+  `preferences.exclude_industries` (all optional — leave any/all empty if
+  nothing comes to mind; discovery falls back to role + geography alone).
+  This is COMPANY-DISCOVERY targeting signal only — it drives which
+  companies Step 7.5 (next) and `skills/daily.md`'s ongoing discovery
+  propose, and never affects how any individual job is scored.
+
+## Step 7.5 — Seed the company watchlist (agentic, bounded, optional)
+
+Non-blocking — if this turns up nothing, say so in one line and move on to
+Step 8; never let this delay finishing onboarding.
+
+Using `preferences.industries` + `location` + `targets` + seniority from
+what was just captured, propose **up to 30** candidate companies from your
+own knowledge, augmented by a host web-search capability **only if your
+host provides one** — no search capability just means fewer/less-current
+candidates, never a failure, never a warning, and no host-specific tool
+should be named here (this file runs unmodified on Claude Code, Codex,
+Antigravity, Gemini CLI, or any other host).
+
+Rank candidates by: industry/sector fit, company stage/size match, the
+explicit target/exclude lists, a rough India-vs-global balance matching
+`work_mode_priority`, remote posture, likelihood of relevant current or
+near-future openings, and avoiding over-concentrating on one segment.
+Prefer companies likely to fill a genuine coverage gap over simply large,
+well-known ones.
+
+For each candidate you have a plausible website/domain for, call:
+
+```
+careeros watchlist discover --candidate "Company Name=https://company-domain.com" [--candidate "..." ...] --max-add 15
+```
+
+This is the ONLY thing that actually adds a company — it deterministically
+resolves the real ATS from the company's own careers page and validates
+against real live job data before writing anything (see that command's
+own help text for the full pipeline). A candidate you can't find a
+plausible domain for is simply not passed — never guess a domain or an
+ATS mapping yourself.
+
+If anything gets added, tell the candidate how many companies were found,
+enable `providers.ats-watchlist` in `.careeros/config.yaml` if it wasn't
+already, and mention `careeros watchlist list` shows the result.
 
 ## Step 8 — Experience — the facts graph
 

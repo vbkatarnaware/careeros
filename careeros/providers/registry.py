@@ -30,12 +30,17 @@ disabled but kept registered here, which is the entire rollback mechanism:
 flip two booleans in config.yaml, nothing else to restore.
 
 v2.0 (Layer 2A watchlist): `ats-watchlist` (careeros/providers/
-ats_watchlist.py) — a small, user-supplied list of specific companies
-scraped live via the same `ats-scrapers` package's per-platform adapters,
-for companies the Layer 1 hosted snapshot doesn't carry at all. Opt-in and
-disabled by default (an empty watchlist is a normal, zero-cost state); see
-that module's docstring for what it deliberately does NOT do (generic
-automated company discovery).
+ats_watchlist.py) — a user-supplied list of specific companies scraped
+live via the same `ats-scrapers` package's per-platform adapters, for
+companies the Layer 1 hosted snapshot doesn't carry at all. Opt-in and
+disabled by default (an empty watchlist is a normal, zero-cost state).
+
+v2.2 (automated discovery): `careeros watchlist discover`
+(careeros/cli/registry_cmd.py) + careeros/ats_resolve.py add profile-
+driven, bounded, deterministically-validated company discovery ON TOP of
+the watchlist — this provider's own `fetch()` is unchanged, it still only
+ever scrapes what's already in `.careeros/watchlist.yaml`. See
+docs/ats-registry.md's "Automated discovery (v2.2)" section.
 """
 
 from __future__ import annotations

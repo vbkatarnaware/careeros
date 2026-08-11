@@ -60,6 +60,33 @@
       "items": { "type": "string" },
       "description": "Ordered work-mode preference, tier 1 (index 0) = highest, e.g. ['global_remote', 'india_remote', 'navi_mumbai_onsite', 'mumbai_onsite']. A RANKING signal (affects ordering/logistics scoring), not a filter — the only work-mode FILTER is the onsite-city hard constraint in deal_breakers/location."
     },
+    "preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Company-level discovery targeting signal — DATA read only by Layer 2A company discovery (careeros/ats_resolve.py, `careeros watchlist discover`, skills/start.md Step 7.5, skills/daily.md Step 14) to decide which companies to propose/prioritize. Deliberately NOT read by Gate, Evaluate, or constraints — it never affects a job's score or eligibility, only which companies get scraped in the first place. All fields optional; an absent `preferences` block means discovery ranks candidates on role/geography alone, same as before this field existed.",
+      "properties": {
+        "industries": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Sectors/domains to prioritize when proposing companies, e.g. ['fintech', 'edtech', 'ai infrastructure']. Free text, not an enum — the engine has no hardcoded industry list."
+        },
+        "company_stage": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Preferred company maturity, e.g. ['seed', 'series-a', 'growth', 'public']. Free text."
+        },
+        "target_companies": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Specific companies to prioritize discovering/tracking even if not otherwise inferred from industries/stage."
+        },
+        "exclude_companies": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Companies discovery should never propose (e.g. a current/former employer, a competitor of one). Read as AGENT guidance during onboarding/daily candidate proposal (skills/start.md Step 7.5, skills/daily.md Step 14), same as every other field in this block — not enforced by CareerOS's own deterministic code path (`careeros/ats_resolve.py`, `watchlist discover`), which has no knowledge of `preferences` at all. An agent that ignores this list and proposes an excluded company as a `--candidate` is not blocked by any code-level check."
+        },
+        "exclude_industries": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Sectors to avoid when proposing companies, e.g. ['gambling', 'defense']. Free text."
+        }
+      }
+    },
     "deal_breakers": {
       "type": "object",
       "additionalProperties": false,

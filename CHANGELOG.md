@@ -54,6 +54,104 @@ jobs/day as configured, 537 once both were fixed.
   then role-priority title match, then recency) — no ML, auditable in
   `05_gate/_selection_meta.json`.
 
+### Added — v2.2: one discovery system, multiple company sources
+
+Layer 1 (`ats-dataset`) and Layer 2A (`ats-watchlist`) already shared one
+filter/scoring pipeline; what was missing was a way for Layer 2A to grow
+itself instead of staying a hand-typed list forever, without hardcoding any
+one user's role/geography. This closes that gap while keeping the two
+layers' distinct acquisition modes (bulk snapshot vs. live per-company
+scrape) exactly as they were — see `docs/ats-registry.md`'s "Automated
+discovery (v2.2)" section for the full design writeup.
+
+- **`Profile.preferences`** (`schemas/profile.schema.json`, `models.py`) —
+  optional `industries`/`company_stage`/`target_companies`/
+  `exclude_companies`/`exclude_industries` string arrays. Discovery-
+  targeting signal only, read by nothing else — a profile without it loads
+  exactly as before.
+- **`careeros/ats_resolve.py`** — one deterministic company->ATS resolver
+  (fetch the company's own careers page over plain `httpx`, extract
+  embedded ATS links, resolve each through `ats_scrapers.resolve`'s own
+  host table), reused by `watchlist discover`, `watchlist add`, and
+  ATS-change recovery below. No browser, no search engine, never guesses:
+  an unresolvable company returns `None`.
+- **`careeros watchlist discover`** (`cli/registry_cmd.py`) — profile-driven
+  automatic company discovery. Per candidate: skip if already on the
+  watchlist (a reference-registry hit is noted, not skipped — registry
+  presence isn't the same claim as Layer 1 job coverage, see the "Fixed"
+  entry below), skip a recently-unresolved candidate within a 30-day TTL,
+  resolve its ATS, live-scrape, require >=1 role-matching job posted
+  within ~90 days (deliberately not geo-eligibility, which stays a
+  downstream per-job constraint) before appending. `--max-add` is a
+  code-enforced ceiling, never a quota — an agent proposing candidate
+  names carries no more authority than a human typing `watchlist add` by
+  hand; nothing is written without live
+  validation against real job data.
+- **ATS-change auto-recovery** (`providers/ats_watchlist.py`) — an entry
+  that hits the existing 3-consecutive-not-found staleness threshold and
+  has a `website` on file is re-resolved before being marked stale; a
+  genuine migration (e.g. Lever -> Ashby) updates the stored mapping,
+  appends one `history[]` record, and keeps scraping the same run instead
+  of sitting dark until a human fixes it. `Job.make_id` keys on provider id
+  + company + title + location, not the ATS platform, so a migration
+  produces byte-identical job ids and existing dedupe suppresses re-
+  surfacing with no new code.
+- **`pending_unsupported_ats`** (`discovery_candidates.json`) — a company
+  whose ATS resolves to a real platform this install has no adapter for is
+  kept, not dropped: its ats/slug/website are retained, and every later
+  `watchlist discover` run cheaply rechecks local adapter support (zero
+  HTTP) and auto-promotes it the moment support exists, using the mapping
+  already on file. Still unsupported after 30 days re-triggers a fresh
+  careers-page resolve, in case the company itself changed ATS.
+- **`welcometothejungle` and `amazon`** added to `ats-dataset`'s default 35
+  enabled platforms (up from 33) — live-measured 2026-08-11: 1,274 and 632
+  PM-titled postings respectively, with `amazon` alone adding ~9% to this
+  dataset's total India PM reach. See `docs/ats-registry.md`'s "ATS
+  platform coverage audit" for the full measurement, including which
+  larger-by-company-count platforms were confirmed low-yield and correctly
+  stay excluded.
+
+### Fixed
+
+- **`_attempt_ats_recovery` importing `MalformedJSONError` from the wrong
+  module** (`providers/ats_watchlist.py`) — caught by the new recovery
+  tests added alongside the feature above: the real exception lives in
+  `ats_scrapers.fetch`, not `ats_scrapers.exceptions`, so any recovery
+  attempt whose corrected mapping raised it would have crashed instead of
+  falling back to `stale` as designed.
+- **Reference-registry lookup used substring matching as a hard skip gate**
+  (`cli/registry_cmd.py`) — `watchlist discover`/`watchlist add` treated
+  any substring hit from `registry.find_company` (a convenience search,
+  not an identity check) as "this company is already covered," so short
+  names silently matched unrelated companies (`"Ramp"` → *Trampoline
+  Systems*, `"Gem"` → *Gemini Data*) and were skipped or, for `watchlist
+  add`, silently adopted the wrong ats/slug. `_resolve_via_registry` now
+  requires an exact normalized name or slug match. Separately, a genuine
+  registry hit is no longer a hard skip in `watchlist discover` — registry
+  presence isn't the same claim as Layer 1 job coverage (this project's
+  own Swiggy investigation, `docs/ats-registry.md`, is exactly that case:
+  registered, but confirmed absent from its ATS's dataset slice) — it's
+  now reported and the candidate still gets validated live.
+- **Ledger reported same-source dedupe collapses as cross-layer
+  duplicates** (`pipeline/ledger.py`'s `compute_run_source_stats`) —
+  `dedupe_cross_location`'s dominant use is collapsing ONE provider's own
+  multi-country reposts, not cross-layer overlap, but every such collapse
+  was counted into `duplicate_of_other_source` regardless of whether the
+  survivor's source actually differed. Measured live: 89 same-source
+  `ats-dataset` collapses in a single run would have reported as "89
+  duplicates of ats-dataset" on the `ats-dataset` entry itself. Now
+  excluded when `dropped_source == survivor_source`.
+- **Discovery quality bar ignored the user's own `title_exclusions`
+  config** (`cli/registry_cmd.py`'s `_passes_quality_bar`) — hardcoded the
+  default exclusion list instead of reading `providers.ats-watchlist.
+  title_exclusions`, the same block `AtsWatchlistProvider.fetch` reads, so
+  a company could be auto-added on a job title the user's own config would
+  filter out once scraped daily.
+- **`pending_unsupported_ats` candidates had no user-visible surface** —
+  `watchlist list` now shows parked pending/unresolved discovery
+  candidates from `discovery_candidates.json`; previously only visible via
+  `cat`.
+
 ### Removed
 
 - **`greenhouse`/`lever`/`ashby` providers and the SQLite ATS registry**

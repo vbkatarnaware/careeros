@@ -328,7 +328,15 @@ def compute_run_source_stats(cfg: Config, date: str) -> list[SourceLedgerEntry]:
             else:
                 omit_count[source] += 1
 
-    # Cross-layer duplicate attribution: dropped_source -> {survivor_source: count}.
+    # CROSS-layer duplicate attribution only: dropped_source -> {survivor_source: count}.
+    # A same-source collapse (the DOMINANT case — dedupe_cross_location exists
+    # primarily to collapse one provider's own multi-country reposts, see that
+    # function's docstring) is not evidence Layer 2A found nothing Layer 1
+    # didn't already have; it must never land in a field named
+    # `duplicate_of_OTHER_source`, or this metric reports a large false
+    # "Layer 2A only duplicates Layer 1" number the first time same-source
+    # reposts collapse (measured live: 89 same-source ats-dataset collapses
+    # in a single run, pre-dating this guard).
     duplicate_of_source: dict[str, Counter] = {}
     for d in dropped_records:
         if d.get("_drop_reason") != "cross-location":
@@ -337,6 +345,8 @@ def compute_run_source_stats(cfg: Config, date: str) -> list[SourceLedgerEntry]:
         if not survivor_source:
             continue
         dropped_source = d.get("source") or UNATTRIBUTED_TIER
+        if dropped_source == survivor_source:
+            continue
         duplicate_of_source.setdefault(dropped_source, Counter())[survivor_source] += 1
 
     # Force ats-watchlist into the report whenever it genuinely ran today,

@@ -109,20 +109,22 @@ spend-capping without touching `discover`.
   ```yaml
   ats-dataset:
     enabled: true
-    ats: [keka, greenhouse, lever, ashby]  # override — default is all 33 (see below)
+    ats: [keka, greenhouse, lever, ashby]  # override — default is all 35 (see below)
     limit: 100                # daily total, same semantics as every other provider
     max_age_days: 30
     title_exclusions: [intern, internship, trainee, marketing, social media, assistant]
   ```
 
-  **`ats` defaults to all 33 genuine multi-tenant ATS platforms** the
-  dataset offers — see `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact
-  list and what's deliberately excluded (government portals, single-
-  company scrapers like `amazon`/`apple`, regional non-English-market
-  platforms, and sources this project already evaluated and rejected —
-  `remoteok`/`weworkremotely`, see "Evaluated and removed" below). This is
-  a real cost: ~2GB+ downloaded and several minutes of discovery time on
-  every run (Workday alone measured 380s / 1.3GB RSS live). Override `ats:`
+  **`ats` defaults to 35 ATS platforms** the dataset offers — see
+  `ats_dataset.py`'s `_DEFAULT_SLICES` for the exact list, the live
+  PM-title measurement behind each inclusion/exclusion, and what's
+  deliberately excluded (government portals, single-company scrapers like
+  `apple` — `amazon` is a measured exception, included — regional
+  non-English-market platforms, and sources this project already evaluated
+  and rejected — `remoteok`/`weworkremotely`, see "Evaluated and removed"
+  below). This is a real cost: ~2GB+ downloaded and several minutes of
+  discovery time on every run (Workday alone measured 380s / 1.3GB RSS
+  live). Override `ats:`
   with a smaller list for a faster run — the config block above shows an
   example.
 
@@ -158,16 +160,18 @@ git-history dig.
   split 50/50 across the two endpoints. `api.tier_limits` overrides
   individual tiers explicitly.
 
-- **`ats-watchlist`** (`ats_watchlist.py`, v2.0) — Layer 2A: a small,
-  hand-curated list of specific companies (`.careeros/watchlist.yaml`)
-  scraped live via `ats-scrapers`' own 50+ per-platform adapters, for
-  companies the `ats-dataset` snapshot doesn't carry at all. Opt-in,
-  disabled by default (an empty watchlist is a normal, zero-cost state).
-  Deliberately targeted, not automated discovery — see that module's
-  docstring, and **[docs/ats-registry.md](../../docs/ats-registry.md)**
-  for the full design and the reference-registry lookup
-  (`careeros registry sync` / `find`) that helps you avoid adding a
-  company that's already in the Layer 1 snapshot.
+- **`ats-watchlist`** (`ats_watchlist.py`, v2.0) — Layer 2A: a list of
+  specific companies (`.careeros/watchlist.yaml`), hand-added
+  (`watchlist add`) or profile-driven auto-discovered (`watchlist
+  discover`, v2.2), scraped live via `ats-scrapers`' own 50+ per-platform
+  adapters, for companies the `ats-dataset` snapshot doesn't carry at
+  all. Opt-in, disabled by default (an empty watchlist is a normal,
+  zero-cost state). The PROVIDER itself stays targeted — it only ever
+  scrapes what's already on the list — see that module's docstring, and
+  **[docs/ats-registry.md](../../docs/ats-registry.md)** for the full
+  design and the reference-registry lookup (`careeros registry sync` /
+  `find`), an advisory check (not a hard requirement) that helps you spot
+  a company that may already be in the Layer 1 snapshot.
   <br>*(v1.8's hand-written `greenhouse`/`lever`/`ashby` providers + a
   SQLite board registry were removed 2026-08-10 — every seeded board was
   permanently `status='unverified'` and those providers only ever read
