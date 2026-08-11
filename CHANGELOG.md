@@ -173,6 +173,49 @@ discovery (v2.2)" section for the full design writeup.
   `row_is_fresh()` correctly (not a bug) filters out. Title, company,
   location, apply URL, and employment type stay reliable regardless.
 
+### Fixed — resolver recovery (measured, not assumed)
+
+A 96-company real-world Layer 2A run resolved only 15 of 96 candidates. Before
+building the AI research fallback that gap seemed to call for, every failure
+class was reproduced against live endpoints — three deterministic bugs, not a
+capability gap, explained most of it. See `docs/ats-registry.md`'s "Resolver
+recovery" section for the full investigation.
+
+- **`watchlist discover` discarded the reference registry's own ATS mapping**
+  when the careers-page resolver found nothing (common — many careers pages
+  are client-rendered SPAs with zero ATS links in the raw HTML). Verified
+  live: 10/10 sampled registry mappings scraped real jobs through the
+  existing adapter. Now falls through to the registry mapping before giving
+  up, validated through the exact same live-scrape + quality-bar gate as any
+  other candidate.
+- **Greenhouse's own embed-widget link (`.../embed/job_board/js?for=<slug>`)
+  had its tenant misread as the literal `"embed"`** — the real slug is in
+  the `?for=` query param, not the first URL path segment. Affected real,
+  working boards (CloudSEK, Observe.AI). Now corrected specifically for this
+  shape in `ats_resolve.py`.
+- **Darwinbox's own marketing subdomains (`explore.`, `blog.`, `academy.`)
+  could be mistaken for a real tenant board** when they appeared earlier in
+  document order than the actual tenant link — happened on darwinbox.com's
+  own `/careers` page. Every real tenant board has `/ms/candidate` in its
+  path; no marketing subdomain does. `ats_resolve.py` now requires that
+  discriminator.
+- **A transient network failure was recorded identically to a genuine
+  "no ATS found," poisoning the candidate for the normal 30-day retry TTL.**
+  Verified live: the same company (Perfios) resolved cleanly on one attempt
+  and read-timed-out minutes later. New `resolve_company_ats_or_fetch_failure`
+  (existing `resolve_company_ats` unchanged, so `watchlist add` and
+  ATS-change recovery are unaffected) distinguishes the two; a total fetch
+  failure now gets a 1-day retry TTL via a new `fetch_failed` status instead
+  of the 30-day one.
+
+Re-running the identical 96 candidates after these fixes (isolated scratch
+environment, same synced registry, same profile, no filter loosened):
+**34 added (up from 15), 62 remaining unresolved/pending (down from 81)** —
+more than double the recovery from bug fixes alone, no AI involved. An
+agent-driven research fallback for the residual gap (candidates with no
+registry mapping and a JS-only careers page) was deliberately deferred, not
+built this pass.
+
 ### Removed
 
 - **`greenhouse`/`lever`/`ashby` providers and the SQLite ATS registry**

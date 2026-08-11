@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+Fixture for test_fetch_via_browser_smoke_real_browser (test_ats_resolve.py).
+
+Mirrors the real motivating finding this test exists for: the target ATS
+link is built from string PARTS by the script below at runtime, never
+written as one literal string anywhere in this file -- deliberately, so a
+raw-bytes/regex scan of this file (what the HTTP tier does) finds nothing,
+and only a real browser that actually EXECUTES the script produces the
+link, via page.content(). The test itself asserts the ATS host's name
+never appears as a literal substring on disk -- so do not write it out
+literally in this comment either.
+-->
+<html>
+  <body>
+    <div id="root">Loading careers...</div>
+    <script>
+      // Every fragment below is short enough that no ATS platform name
+      // appears as a contiguous substring anywhere in this file on disk --
+      // only once the browser actually runs this script and concatenates
+      // them does the real host name exist anywhere.
+      var scheme = "https" + "://";
+      var host = "job-boards" + "." + "green" + "house" + "." + "io";
+      var slug = "gong" + "io";
+      var url = scheme + host + "/" + slug;
+      document.getElementById("root").innerHTML =
+        '<a href="' + url + '">Apply</a>';
+    </script>
+  </body>
+</html>
