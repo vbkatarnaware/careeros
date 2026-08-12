@@ -63,6 +63,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # SUN PHARMA/DWD, see providers/README.md's "Evaluated and removed" era
     # notes — needs more than the title to catch).
     "gate_description_max_chars": 900,
+    # v2.1: batch size for Evaluate's own _input_N.json files — mirrors
+    # gate_batch_size's already-proven pattern. Added after a real token
+    # audit (2026-08-12): Evaluate used to write ONE unbatched _input.json
+    # regardless of size, which left the calling agent to invent its own
+    # chunking — on a 326-job run that produced a 2-level nested
+    # orchestrator-then-sub-agent fanout (each layer re-reading the full
+    # eval prompt + profile.yaml), burning session/token budget for zero
+    # extra reasoning quality and causing real mid-run failures with no
+    # saved output. Batching this the same way Gate already does (proven at
+    # 50/batch, zero nesting, zero failures across 400 jobs) removes the
+    # incentive to nest: one flat agent call per batch is enough.
+    "eval_batch_size": 50,
     # 2026-08-10: fixing the geography reachability gap and enabling
     # global_remote raises the eligible-job count well past what a
     # single-employer's posting volume used to keep in check (measured: one
@@ -318,6 +330,7 @@ class Config:
     gate_batch_size: int
     description_max_chars: int
     gate_description_max_chars: int = 900
+    eval_batch_size: int = 50
     max_jobs_per_company_per_run: int | None = None
     gate_max_jobs: int | None = None
     discovery_max_workers: int = 4
@@ -443,6 +456,7 @@ def load_config(path: Path | str = ".careeros/config.yaml") -> Config:
         gate_batch_size=merged["gate_batch_size"],
         description_max_chars=merged["description_max_chars"],
         gate_description_max_chars=merged.get("gate_description_max_chars", 900),
+        eval_batch_size=merged.get("eval_batch_size", 50),
         max_jobs_per_company_per_run=merged.get("max_jobs_per_company_per_run"),
         gate_max_jobs=merged.get("gate_max_jobs"),
         discovery_max_workers=merged.get("discovery_max_workers", 4),

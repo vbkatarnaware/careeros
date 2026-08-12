@@ -69,7 +69,7 @@ def test_arithmetic_violation_blocks_and_does_not_cache(tmp_path, monkeypatch):
     date = "2026-08-01"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         f.write(dumps([{"job": {"id": "bad-1"}, "job_hash": "hash-1"}]))
     _seed(cfg, date, "bad-1")
 
@@ -98,7 +98,7 @@ def test_clean_batch_writes_calibration_json_and_caches(tmp_path, monkeypatch):
     date = "2026-08-01"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         f.write(dumps([{"job": {"id": "good-1"}, "job_hash": "hash-2"}]))
     _seed(cfg, date, "good-1")
 
@@ -133,7 +133,7 @@ def test_stale_leftover_from_earlier_same_date_attempt_is_ignored(tmp_path, monk
     date = "2026-08-01"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         f.write(dumps([{"job": {"id": "current-1"}, "job_hash": "hash-3"}]))
     _seed(cfg, date, "current-1")
 
@@ -174,7 +174,7 @@ def test_legitimate_cache_hit_is_counted_but_not_calibration_judged(tmp_path, mo
     date = "2026-08-01"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         f.write(dumps([{"job": {"id": "fresh-1"}, "job_hash": "hash-4"}]))
     _seed(cfg, date, "fresh-1", company="FreshCo")
     _seed(cfg, date, "cache-hit-1", company="CachedCo")

@@ -1,15 +1,25 @@
 <!--
 Stage: evaluate. Invoked via `careeros evaluate --prepare` / `--finalize`.
-Input:  .careeros/runs/<date>/06_evaluate/_input.json (list of {job, job_hash})
-Output: .careeros/runs/<date>/06_evaluate/<job-id>.json, one per input entry,
-        matching schemas/eval.schema.json exactly.
+Input:  .careeros/runs/<date>/06_evaluate/_input_N.json (one file per batch,
+        each a list of {job, job_hash} — see config.eval_batch_size, default
+        50). Batched as of v2.1 of the EVALUATE STAGE ITSELF (the CLI code
+        in careeros/cli/gate_evaluate.py), independent of which PROMPT
+        version (v1 here, or v2) is configured — the input-file shape
+        changed for every prompt version at once, since it's a property of
+        the stage's Python code, not of this file.
+Output: .careeros/runs/<date>/06_evaluate/<job-id>.json, one per input entry
+        across ALL batches, matching schemas/eval.schema.json exactly.
 
 This is the ONLY stage that writes fit judgment. Every later artifact
 (daily report, resume, cover letter, deep report, application answers)
 reads this file's output and must never re-score, re-rank, or override it.
 
 SUPERSEDED by prompts/eval_v2.md (config.prompts.eval defaults to "v2" now).
-Kept for cache/version history — a run pinned to `eval: v1` still works.
+Kept for cache/version history — a run pinned to `eval: v1` still works, and
+still reads/writes the same _input_N.json / <job-id>.json shape prompts/
+eval_v2.md's own header documents (this file's RUBRIC content below is what
+differs between v1 and v2, not the input/output file shapes, which the
+stage's Python code controls identically regardless of prompt version).
 -->
 
 # Final Evaluation — Career Ops rubric, JSON output only (v1, superseded)

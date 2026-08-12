@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -54,6 +55,49 @@ def _gate_input_job(job: dict, max_chars: int) -> dict:
     description = job.get("description")
     if description and len(description) > max_chars:
         job = {**job, "description": description[:max_chars].rstrip() + "…"}
+    return job
+
+
+# HTML tags/entities in a job description are pure markup noise for a
+# reasoning stage — same semantic content either way, fewer tokens without
+# it. Deterministic (no reasoning involved, so this doesn't touch the
+# "reasoning stages must be reasoned, never scripted" rule — it's payload
+# hygiene, not a judgment call), and applied to a COPY only, same pattern
+# as `_gate_input_job` above: the stored Job / cache identity (job_hash,
+# computed from the untouched original) is never affected.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HTML_ENTITY_RE = re.compile(r"&(nbsp|amp|lt|gt|quot|#39);")
+_HTML_ENTITY_MAP = {
+    "nbsp": " ", "amp": "&", "lt": "<", "gt": ">", "quot": '"', "#39": "'",
+}
+_WHITESPACE_RUN_RE = re.compile(r"[ \t]{2,}")
+
+
+def strip_html(text: str) -> str:
+    """Best-effort HTML->plain-text for a job description: drop tags,
+    unescape the handful of entities actually seen in real postings,
+    collapse the whitespace runs tag-removal leaves behind. Not a full HTML
+    parser (no need — job descriptions are simple marketing-style markup,
+    never nested scripts/styles), so this stays a few cheap regex passes
+    rather than pulling in a dependency for it."""
+    if not text:
+        return text
+    without_tags = _HTML_TAG_RE.sub(" ", text)
+    unescaped = _HTML_ENTITY_RE.sub(lambda m: _HTML_ENTITY_MAP[m.group(1)], without_tags)
+    return _WHITESPACE_RUN_RE.sub(" ", unescaped).strip()
+
+
+def _evaluate_input_job(job: dict) -> dict:
+    """A copy of one eligible.json job dict with `description` HTML-stripped
+    for the Evaluate agent's eyes only — same non-mutating-copy convention
+    as `_gate_input_job`. Unlike Gate, this does NOT additionally truncate
+    `description`; Evaluate reads it at full `description_max_chars` depth,
+    unchanged from before this stage started batching."""
+    description = job.get("description")
+    if description:
+        stripped = strip_html(description)
+        if stripped != description:
+            job = {**job, "description": stripped}
     return job
 
 
@@ -301,10 +345,24 @@ def _evaluate_prepare(cfg: Config, date: str) -> None:
     prompt_version = cfg.prompts.get("eval", "v1")
     cache = Cache(cfg.cache_dir)
 
+    stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
+
     to_evaluate = []
     cache_hits = 0
-    stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
+    already_done = 0
     for job_id in kept_ids:
+        out_path = stage_dir / f"{job_id}.json"
+        if out_path.exists():
+            # v2.1: automatic retry/checkpoint — re-running --prepare after
+            # a batch died mid-run (or partially finished) must never
+            # redo a job whose output already exists on disk from an
+            # earlier attempt THIS SAME DATE, whether that was written by
+            # a completed agent call or by the cache-hit branch below on a
+            # prior --prepare call. This is what makes --prepare idempotent
+            # and safely re-runnable: call it again and it produces a
+            # fresh, SMALLER batch of only what's still missing.
+            already_done += 1
+            continue
         job = jobs_by_id[job_id]
         job_hash = Job.from_dict(job).content_hash()
         key = eval_cache_key(job_hash, profile.version, prompt_version)
@@ -318,21 +376,43 @@ def _evaluate_prepare(cfg: Config, date: str) -> None:
             # downstream stage (threshold/artifacts/drive/sheets/summary) fails
             # to find the matching Job — found live 2026-07-10 on a real cache
             # hit (Motive PM) that silently displaced today's own evaluation.
-            with open(stage_dir / f"{job_id}.json", "w") as f:
+            with open(out_path, "w") as f:
                 f.write(dumps({**cached, "id": job_id}))
             cache_hits += 1
         else:
-            to_evaluate.append({"job": job, "job_hash": job_hash})
+            to_evaluate.append({"job": _evaluate_input_job(job), "job_hash": job_hash})
 
-    input_path = stage_dir / "_input.json"
-    if to_evaluate:
+    # v2.1: batched into _input_N.json files, same pattern as Gate's own
+    # already-proven _gate_prepare -- see config.eval_batch_size's comment
+    # for why (this replaces the single unbatched _input.json that used to
+    # leave chunking up to whichever agent read it, which is how a 326-job
+    # run turned into a 2-level nested sub-agent tree).
+    #
+    # A retry re-run (see the already_done skip above) always starts from a
+    # clean set of _input_N.json files: the RETRY safety comes entirely
+    # from checking output files, not from accumulating input files, so any
+    # _input_N.json left over from an earlier --prepare call this date is
+    # stale the moment this call computes a fresh `to_evaluate` list --
+    # left in place, it would re-list already-done job ids in a later
+    # --finalize's expected_ids, which is harmless (they already have
+    # valid output) but muddies the fresh-vs-cached split calibration
+    # relies on. Removed unconditionally before writing this call's batches.
+    for stale in stage_dir.glob("_input_*.json"):
+        stale.unlink()
+
+    batch_size = cfg.eval_batch_size
+    batches = [to_evaluate[i:i + batch_size] for i in range(0, len(to_evaluate), batch_size)]
+    input_paths = []
+    for i, batch in enumerate(batches):
+        input_path = stage_dir / f"_input_{i}.json"
         with open(input_path, "w") as f:
-            f.write(dumps(to_evaluate))
+            f.write(dumps(batch))
+        input_paths.append(input_path)
 
     # eval_v2.md reads the FULL profile.yaml (unlike gate's headline-only
-    # subset), so it's counted once per prepare call alongside the job batch.
+    # subset), so it's counted once per prepare call alongside the job batches.
     estimated_tokens = (
-        runmeta.estimate_tokens(input_path, cfg.profile_path) if to_evaluate else 0
+        runmeta.estimate_tokens(*input_paths, cfg.profile_path) if input_paths else 0
     )
     runmeta.write_stage_meta(cfg.runs_dir, date, "evaluate", {
         "prepared_at": time.time(), "cache_hits": cache_hits, "cache_misses": len(to_evaluate),
@@ -340,28 +420,41 @@ def _evaluate_prepare(cfg: Config, date: str) -> None:
     })
 
     prompt_path = cfg.prompt_path("eval")
+    retry_note = f", {already_done} already have output on disk (skipped, not re-sent)" if already_done else ""
     typer.echo(
         f"[evaluate:prepare] {len(kept_ids)} gated jobs: {cache_hits} cache hits (written directly), "
-        f"{len(to_evaluate)} need evaluation.\n\n"
+        f"{len(to_evaluate)} need evaluation -> {len(batches)} batch(es) of up to {batch_size}{retry_note}.\n\n"
         + (
             f"AGENT INSTRUCTIONS:\n"
             f"Read {prompt_path} and .careeros/profile.yaml.\n"
-            f"For each entry in 06_evaluate/_input.json, write 06_evaluate/<id>.json\n"
-            f"matching schemas/eval.schema.json (set job_hash from the input entry,\n"
-            f"profile_version={profile.version}, prompt_version=\"{prompt_version}\").\n"
+            f"For each 06_evaluate/_input_N.json batch, write one 06_evaluate/<id>.json\n"
+            f"PER JOB IN THAT BATCH, matching schemas/eval.schema.json (set job_hash\n"
+            f"from the input entry, profile_version={profile.version}, prompt_version=\"{prompt_version}\").\n"
+            f"Handle each batch directly in ONE call — do not spawn further sub-agents\n"
+            f"per batch; {batch_size} jobs is already the right size for a single call.\n"
+            f"If a batch's agent call fails before writing anything, just re-run\n"
+            f"`careeros evaluate --prepare --date {date}` — it only re-sends jobs that\n"
+            f"still lack an output file, so retrying costs nothing already done.\n"
             f"Then run:\n  careeros evaluate --finalize --date {date}"
-            if to_evaluate else "Nothing to do — run `careeros evaluate --finalize` to finalize."
+            if to_evaluate else "Nothing new to do — run `careeros evaluate --finalize` to finalize."
         )
     )
 
 
 def _evaluate_finalize(cfg: Config, date: str) -> None:
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    input_path = stage_dir / "_input.json"
+    # v2.1: expected_ids is the UNION of every _input_N.json batch this
+    # date's most recent --prepare wrote (see _evaluate_prepare) — plural
+    # now that Evaluate batches like Gate does. A job whose output already
+    # existed on disk before this --prepare call (a retry/checkpoint case)
+    # deliberately does NOT appear in any _input_N.json, so it won't be in
+    # expected_ids either -- it's picked up below by the same glob scan
+    # that already handled genuine cache hits, since both are "a
+    # <id>.json this run's gate kept but this --prepare didn't re-send."
     expected_ids = set()
-    if input_path.exists():
+    for input_path in sorted(stage_dir.glob("_input_*.json")):
         with open(input_path) as f:
-            expected_ids = {e["job"]["id"] for e in json.load(f)}
+            expected_ids |= {e["job"]["id"] for e in json.load(f)}
 
     # v2.0: today's-relevant-ids, so a same-date re-run's stale leftovers get
     # ignored rather than silently folded back in. Found live 2026-07-31: a
@@ -381,11 +474,12 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
         with open(gate_path) as f:
             relevant_ids |= {r["id"] for r in json.load(f) if r.get("keep")}
 
-    # `fresh_records`: written THIS run, from this run's own _input.json.
-    # This is the population calibration judges -- cache hits are already-
-    # accepted prior work and must never be re-judged (re-judging a cache
-    # hit means a batch's calibration verdict depends on what ELSE happened
-    # to be cached that day, which is not reproducible).
+    # `fresh_records`: written THIS run, from this run's own _input_N.json
+    # batches. This is the population calibration judges -- cache hits (and
+    # prior-attempt survivors, see below) are already-accepted prior work
+    # and must never be re-judged (re-judging one means a batch's
+    # calibration verdict depends on what ELSE happened to already exist
+    # that day, which is not reproducible).
     fresh_records: list[dict] = []
     fresh_paths: dict[int, Path] = {}
     missing = []
@@ -400,11 +494,21 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
 
     if missing:
         typer.echo(f"[evaluate:finalize] Missing output for: {', '.join(missing)}", err=True)
-        typer.echo("Agent: write the missing files, then re-run --finalize.")
+        typer.echo(
+            "Agent: this means at least one batch failed before writing anything. "
+            f"Re-run `careeros evaluate --prepare --date {date}` — it automatically "
+            "regenerates a fresh, smaller batch containing ONLY these missing jobs "
+            "(everything already written is left alone), then evaluate just that "
+            "batch and re-run --finalize."
+        )
         raise typer.Exit(1)
 
-    # Legitimate cache hits: written during --prepare for a job this run's
-    # gate kept, but not in _input.json because the cache already had it.
+    # Records this --prepare call didn't re-send but that already existed on
+    # disk when it ran: genuine cache hits (job_hash already in the eval
+    # cache) AND prior-attempt survivors (a job a previous --prepare/agent
+    # pass this same date already wrote, picked up here by the retry logic
+    # in _evaluate_prepare rather than being re-sent). Both are equally
+    # already-accepted prior work for calibration purposes.
     cache_hit_records: list[dict] = []
     cache_hit_paths: dict[int, Path] = {}
     for path in sorted(stage_dir.glob("*.json")):

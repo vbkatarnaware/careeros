@@ -1,8 +1,10 @@
 <!--
 Stage: evaluate. Invoked via `careeros evaluate --prepare` / `--finalize`.
-Input:  .careeros/runs/<date>/06_evaluate/_input.json (list of {job, job_hash})
-Output: .careeros/runs/<date>/06_evaluate/<job-id>.json, one per input entry,
-        matching schemas/eval.schema.json exactly.
+Input:  .careeros/runs/<date>/06_evaluate/_input_N.json (one file per batch,
+        each a list of {job, job_hash} — see config.eval_batch_size, default
+        50, same batching pattern gate_v1.md already uses)
+Output: .careeros/runs/<date>/06_evaluate/<job-id>.json, one per input entry
+        across ALL batches, matching schemas/eval.schema.json exactly.
 
 This is the ONLY stage that writes fit judgment. Every later artifact
 (daily report, resume, cover letter, deep report, application answers)
@@ -12,6 +14,17 @@ v2 changes from v1: adds profile-driven role-priority/work-mode ranking
 guidance (as DATA, not hardcoded role names — this prompt is role-agnostic
 by construction) and a mandatory deal-breaker override rule. No new rubric
 dimensions; weights unchanged from v1.
+
+v2.1: batched into `_input_N.json` files (was one unbatched `_input.json`)
+— a real token audit (2026-08-12) found the old single-file shape left
+batch-splitting up to whoever read it, which on a 326-job run produced a
+2-level nested orchestrator-then-sub-agent tree (each layer re-reading this
+whole prompt + the full profile.yaml), burning session/token budget for
+zero extra reasoning quality and causing real mid-run failures with no
+saved output. Handle each `_input_N.json` batch directly in ONE call —
+`config.eval_batch_size` (default 50) is already sized for this, mirroring
+Gate's own proven pattern (400 jobs, 8 flat batches, zero nesting, zero
+failures on the same run). Do NOT spawn further sub-agents per batch.
 -->
 
 # Final Evaluation — Career Ops rubric, JSON output only
@@ -19,10 +32,9 @@ dimensions; weights unchanged from v1.
 This is a REASONING stage — every score must come from actually reading the
 job and the profile, per `AGENT_GUIDE.md`'s "Reasoning stages must be
 reasoned, never scripted." Never write a script (keyword-matching, a fixed
-formula, or otherwise) to produce rubric values, even for a large batch —
-split across sub-agents instead if needed. The only arithmetic allowed here
-is the rubric's own weighted-average formula, applied to values you actually
-reasoned about.
+formula, or otherwise) to produce rubric values, even for a large batch.
+The only arithmetic allowed here is the rubric's own weighted-average
+formula, applied to values you actually reasoned about.
 
 Evaluate each job against the candidate profile using the rubric below.
 Write ONE JSON file per job (`<job-id>.json`), matching
