@@ -62,7 +62,7 @@ def test_skip_recommendation_above_threshold_is_clamped(tmp_path, monkeypatch):
     date = "2026-07-12"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         json.dump([{"job": {"id": "onsite-utah-job"}, "job_hash": "hash-1"}], f)
 
     # This is exactly today's bug pattern: a genuinely strong fit (role/
@@ -94,7 +94,7 @@ def test_apply_recommendation_is_never_clamped(tmp_path, monkeypatch):
     date = "2026-07-12"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         json.dump([{"job": {"id": "remote-good-job"}, "job_hash": "hash-2"}], f)
 
     record = _eval_record("remote-good-job", "hash-2", score=4.6, recommendation="apply")
@@ -119,7 +119,7 @@ def test_skip_recommendation_below_threshold_is_untouched(tmp_path, monkeypatch)
     date = "2026-07-12"
 
     stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
-    with open(stage_dir / "_input.json", "w") as f:
+    with open(stage_dir / "_input_0.json", "w") as f:
         json.dump([{"job": {"id": "weak-fit-job"}, "job_hash": "hash-3"}], f)
 
     record = _eval_record("weak-fit-job", "hash-3", score=2.1, recommendation="skip")

@@ -10,11 +10,24 @@ enforced here as pass/fail, NOT as rubric weights.
 Only OBJECTIVE constraints live here. Role fit stays an AI reasoning task
 (gate + evaluate) — this module never inspects the title or judges seniority.
 
-Three objective rules:
+Four objective rules:
 - Location: an onsite/hybrid role in a KNOWN city outside the profile's
   accepted onsite cities is a hard reject. Remote (any geography) always
   passes. Unknown work arrangement, or onsite with an unknown/missing city,
   passes (we don't reject on missing data — let the AI gate decide).
+- Region-restricted remote (v2.1, structured field only): reject a
+  "remote" role whose STRUCTURED `location` string names exactly one
+  non-India region ("Remote-EMEA", "Latin America - Remote", etc.) and
+  never mentions India/worldwide/global/anywhere. Added after a real token
+  audit (2026-08-12) found this the single largest AI-Gate drop reason
+  across several batches, at zero AI cost when the signal is already in
+  the structured field. Deliberately narrow — see
+  `_region_restricted_remote`'s docstring for why this does NOT read the
+  JD body: that's exactly the class of case `AGENT_GUIDE.md`'s
+  never-scripted-reasoning rule protects, and where this same audit found
+  the gate/evaluate stages catching real nuance a regex can't (an
+  ambiguous "Senior/Staff" title, a JD stating a restriction the location
+  field itself doesn't show).
 - Salary: reject ONLY when a confidently-computed annual-INR equivalent is
   below the profile's floor. Unknown/unparseable salary NEVER rejects — most
   postings omit salary, and rejecting on absence would nuke the pipeline.
@@ -115,6 +128,43 @@ def _accepted_onsite_cities(profile: Profile) -> list[str]:
     return [c.lower() for c in (profile.location or {}).get("onsite_ok", [])]
 
 
+# v2.1: structured `location` field only — narrow, explicit token list,
+# same discipline as _WORK_AUTH_EXCLUSION_RE above (no broad heuristics,
+# no timezone-name guessing). Requires "remote" and a named region to
+# co-occur within a short span, matching the real observed shapes
+# ("Remote-EMEA", "Latin America - Remote", "Remote (Colombia)", "Remote:
+# United States") rather than a bare country name anywhere in the string.
+_REGION_TOKEN = (
+    r"(?:usa?|united states|canada|uk|emea|europe|latam|latin america|apac"
+    r"|iberia|colombia|argentina|brazil|mexico|philippines|poland|spain"
+    r"|romania|serbia|russia)"
+)
+_REGION_RESTRICTED_REMOTE_RE = re.compile(
+    rf"\bremote\b.{{0,20}}\b{_REGION_TOKEN}\b|\b{_REGION_TOKEN}\b.{{0,20}}\bremote\b",
+    re.IGNORECASE,
+)
+# Any of these anywhere in the location string means the restriction above
+# doesn't actually exclude the candidate (India is explicitly an option, or
+# the role is open beyond the named region) — checked FIRST, so a string
+# like "Remote within India, Canada or US" is never rejected.
+_INDIA_OR_GLOBAL_RE = re.compile(r"\bindia\b|\bworldwide\b|\bglobal\b|\banywhere\b", re.IGNORECASE)
+
+
+def _region_restricted_remote(job: Job) -> str | None:
+    """The matched region phrase if `job.location` (the structured field
+    only — never `description`) names exactly one non-India region
+    alongside "remote", else None. See this module's docstring and the
+    rule comment above for the scope line and why JD body text is
+    deliberately out of reach here."""
+    if job.remote is False:
+        return None
+    loc = job.location or ""
+    if not loc or _INDIA_OR_GLOBAL_RE.search(loc):
+        return None
+    m = _REGION_RESTRICTED_REMOTE_RE.search(loc)
+    return m.group(0) if m else None
+
+
 def _work_authorization_excludes(job: Job, profile: Profile) -> bool:
     """True only for an EXPLICIT work-authorization exclusion, and only when
     the candidate actually needs visa sponsorship (`profile.location.
@@ -146,6 +196,17 @@ def evaluate_constraints(job: Job, profile: Profile, fx_rates: dict[str, float])
                 f"onsite/hybrid in '{job.location}', "
                 f"outside accepted onsite location(s): {', '.join(profile.location.get('onsite_ok', []))}"
             )
+
+    # ---- Region-restricted remote (structured field only) ----
+    # Same gating as work-authorization below: only meaningful for a
+    # candidate who actually needs sponsorship/isn't already a local hire
+    # in the named region — a candidate who doesn't need it is unaffected
+    # by what a posting's location field restricts, same reasoning as
+    # `_work_authorization_excludes`.
+    if (profile.location or {}).get("visa_sponsorship_required"):
+        region = _region_restricted_remote(job)
+        if region:
+            reasons.append(f"remote restricted to a single non-India region per location field: '{region}'")
 
     # ---- Salary ----
     floor_lpa = (profile.comp or {}).get("floor_lpa")

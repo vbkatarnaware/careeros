@@ -108,7 +108,7 @@ def test_cache_miss_still_goes_to_input_json(tmp_path, monkeypatch):
 
     _evaluate_prepare(cfg, date)
 
-    input_path = runmeta.stage_dir(cfg.runs_dir, date, "evaluate") / "_input.json"
+    input_path = runmeta.stage_dir(cfg.runs_dir, date, "evaluate") / "_input_0.json"
     assert input_path.exists()
     with open(input_path) as f:
         to_evaluate = json.load(f)
