@@ -20,6 +20,123 @@ from careeros.models import Job, Profile, dumps
 
 _ROTATION_STATE_FILENAME = "gate_rotation.json"
 
+# ── Evaluate token-safety halt (P0, 2026-08-13) ──────────────────────────
+# Real measurement (2026-08-13 canary + full run, 213 jobs across 5 batches):
+# tokens/job ranged 4,340-5,283 on batches >=40 jobs, 10,609 on the natural
+# 13-job tail batch (fixed-cost dilution, not a red flag). These thresholds
+# are calibrated against that real distribution, not guessed:
+#   - RED_ABSOLUTE (15,000) matches/exceeds the old fully-nested baseline
+#     (measured 19,952 tok/job) -- a strong signal something regressed
+#     toward the pre-optimization architecture, regardless of batch size.
+#   - The large-batch RED/YELLOW zones only apply at >= 25 jobs, so the
+#     natural small last-batch-of-the-day never false-alarms.
+_USAGE_LOG_FILENAME = "_usage_log.json"
+_HALT_FLAG_FILENAME = "_HALT_TOKEN_SAFETY.json"
+# P1, secondary safeguard: the dispatched Evaluate agent is instructed (see
+# _evaluate_prepare's printed AGENT INSTRUCTIONS) to write this file itself
+# if it ever spawns a sub-agent. This is ADVISORY / SELF-REPORTED, not a
+# security guarantee — CareerOS's Python layer has no way to observe the
+# dispatching agent's own tool calls, so nothing here can detect nesting
+# that isn't voluntarily reported. It's a real improvement over pure verbal
+# instruction (a halt-worthy signal becomes a checkable file instead of a
+# hope), but it is not enforcement.
+_NESTING_FLAG_FILENAME = "_NESTING_DETECTED.json"
+_RED_TOKENS_PER_JOB_ABSOLUTE = 15000
+_RED_TOKENS_PER_JOB_LARGE_BATCH = 9000
+_YELLOW_TOKENS_PER_JOB_LARGE_BATCH = 6500
+_LARGE_BATCH_MIN_JOBS = 25
+
+
+def _usage_zone(tokens_per_job: float, batch_jobs: int) -> str:
+    """green/yellow/red, per the real-data-calibrated thresholds above."""
+    if tokens_per_job >= _RED_TOKENS_PER_JOB_ABSOLUTE:
+        return "red"
+    if batch_jobs >= _LARGE_BATCH_MIN_JOBS:
+        if tokens_per_job > _RED_TOKENS_PER_JOB_LARGE_BATCH:
+            return "red"
+        if tokens_per_job > _YELLOW_TOKENS_PER_JOB_LARGE_BATCH:
+            return "yellow"
+    return "green"
+
+
+def _evaluate_halt_check(stage_dir: Path) -> None:
+    """Called at the very start of `_evaluate_prepare`, before any other
+    work — refuses to hand out another batch if either safeguard has
+    already fired for this date. Both flags are plain files a human clears
+    by deleting after investigating; neither is auto-cleared, and nothing
+    in this codebase retries or overrides one automatically."""
+    halt_path = stage_dir / _HALT_FLAG_FILENAME
+    if halt_path.exists():
+        halt = json.load(open(halt_path))
+        typer.echo(
+            f"[evaluate:prepare] HALTED (token safety) — {halt.get('reason', 'red zone')}. "
+            f"Investigate before continuing — do not blindly retry. "
+            f"Delete {halt_path} once you've confirmed it's safe to resume.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    nesting_path = stage_dir / _NESTING_FLAG_FILENAME
+    if nesting_path.exists():
+        flag = json.load(open(nesting_path))
+        typer.echo(
+            f"[evaluate:prepare] HALTED (nesting detected) — {flag.get('detail', 'a dispatched batch reported spawning a sub-agent')}. "
+            f"This is a self-reported signal (advisory, not a security guarantee) — "
+            f"investigate before continuing. Delete {nesting_path} once resolved.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+
+def _evaluate_record_usage(cfg: Config, date: str, *, tokens: int, jobs: int) -> None:
+    """Smallest-possible mechanism for the token-safety halt: the
+    orchestrating agent calls this once per dispatched Evaluate batch with
+    the real `subagent_tokens` and job count from that batch's completion
+    report. CareerOS's own code has no other way to see real token usage
+    (see runmeta.estimate_tokens's docstring) — this is deliberately a
+    manual report-in, not a claim of automatic instrumentation.
+
+    Recording a RED-zone batch halts every future `--prepare` call for this
+    date until a human deletes the flag file — see `_evaluate_halt_check`.
+    This function never retries or auto-recovers a red batch itself."""
+    stage_dir = runmeta.stage_dir(cfg.runs_dir, date, "evaluate")
+    log_path = stage_dir / _USAGE_LOG_FILENAME
+    log = json.load(open(log_path)) if log_path.exists() else []
+
+    tokens_per_job = tokens / jobs if jobs else 0.0
+    zone = _usage_zone(tokens_per_job, jobs)
+    entry = {
+        "batch_index": len(log), "tokens": tokens, "jobs": jobs,
+        "tokens_per_job": round(tokens_per_job, 1), "zone": zone,
+        "recorded_at": time.time(),
+    }
+    log.append(entry)
+    with open(log_path, "w") as f:
+        f.write(dumps(log))
+
+    typer.echo(f"[evaluate:record-usage] batch {entry['batch_index']}: "
+               f"{jobs} jobs, {tokens} tokens ({tokens_per_job:.0f}/job) -> {zone}.")
+
+    if zone == "red":
+        halt_path = stage_dir / _HALT_FLAG_FILENAME
+        reason = (
+            f"batch {entry['batch_index']} entered the red zone at "
+            f"{tokens_per_job:.0f} tokens/job over {jobs} jobs "
+            f"(thresholds: {_RED_TOKENS_PER_JOB_LARGE_BATCH}/job for batches "
+            f">= {_LARGE_BATCH_MIN_JOBS} jobs, {_RED_TOKENS_PER_JOB_ABSOLUTE}/job always)"
+        )
+        with open(halt_path, "w") as f:
+            f.write(dumps({
+                "reason": reason, "batch_index": entry["batch_index"],
+                "tokens_per_job": tokens_per_job, "halted_at": time.time(),
+            }))
+        typer.echo(
+            f"[evaluate:record-usage] RED ZONE — {reason}. Halting further Evaluate "
+            f"batches for {date}. Do not dispatch another batch or retry automatically — "
+            f"investigate first. Delete {halt_path} once you've confirmed it's safe.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
 
 # ── gate (AI stage: prepare / finalize) ──────────────────────────────────
 
@@ -312,6 +429,12 @@ def evaluate(
     date: str = typer.Option(None, help="Run date, default today"),
     prepare: bool = typer.Option(False, "--prepare"),
     finalize: bool = typer.Option(False, "--finalize"),
+    record_usage: bool = typer.Option(
+        False, "--record-usage",
+        help="Record one dispatched batch's real token usage (requires --tokens/--jobs) "
+             "and enforce the token-safety halt if it lands in the red zone."),
+    tokens: int = typer.Option(None, help="Real subagent_tokens reported for the batch (with --record-usage)"),
+    jobs: int = typer.Option(None, help="Jobs evaluated in that batch (with --record-usage)"),
 ):
     """[dev] Final Evaluation: score against the profile, cache-checked.
     Writes 06_evaluate/<job-id>.json — the source of truth every later
@@ -319,16 +442,23 @@ def evaluate(
     cfg = _config()
     date = date or _today()
 
-    if prepare:
+    if record_usage:
+        if tokens is None or jobs is None:
+            typer.echo("--record-usage requires --tokens and --jobs.", err=True)
+            raise typer.Exit(1)
+        _evaluate_record_usage(cfg, date, tokens=tokens, jobs=jobs)
+    elif prepare:
         _evaluate_prepare(cfg, date)
     elif finalize:
         _evaluate_finalize(cfg, date)
     else:
-        typer.echo("Pass --prepare or --finalize.", err=True)
+        typer.echo("Pass --prepare, --finalize, or --record-usage.", err=True)
         raise typer.Exit(1)
 
 
 def _evaluate_prepare(cfg: Config, date: str) -> None:
+    _evaluate_halt_check(runmeta.stage_dir(cfg.runs_dir, date, "evaluate"))
+
     gate_path = runmeta.stage_dir(cfg.runs_dir, date, "gate") / "gated.json"
     eligible_path = runmeta.stage_dir(cfg.runs_dir, date, "constraints") / "eligible.json"
     if not gate_path.exists() or not eligible_path.exists():
@@ -432,6 +562,10 @@ def _evaluate_prepare(cfg: Config, date: str) -> None:
             f"from the input entry, profile_version={profile.version}, prompt_version=\"{prompt_version}\").\n"
             f"Handle each batch directly in ONE call — do not spawn further sub-agents\n"
             f"per batch; {batch_size} jobs is already the right size for a single call.\n"
+            f"If you ever do spawn a sub-agent for any reason, first write\n"
+            f"06_evaluate/{_NESTING_FLAG_FILENAME} with a one-line \"detail\" field explaining\n"
+            f"why — this halts further batches until a human reviews it (self-reported,\n"
+            f"not enforced).\n"
             f"If a batch's agent call fails before writing anything, just re-run\n"
             f"`careeros evaluate --prepare --date {date}` — it only re-sends jobs that\n"
             f"still lack an output file, so retrying costs nothing already done.\n"
@@ -628,12 +762,99 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
     profile = _load_profile(cfg)
     prompt_version = cfg.prompts.get("eval", "v1")
     cache = Cache(cfg.cache_dir)
-    for record in all_records:
+
+    conflicts_path = stage_dir / "_stability_conflicts.json"
+    prior_conflicts = json.load(open(conflicts_path)) if conflicts_path.exists() else []
+    # A (job_id, old_recommendation, new_recommendation) triple already on
+    # disk means this exact conflict was already surfaced to a human on an
+    # earlier --finalize call for this date -- re-running --finalize (part
+    # of this stage's own documented idempotent-retry contract, same as the
+    # missing-output path) must never re-append it. The authoritative-file
+    # preservation below still re-applies every call regardless of whether
+    # the conflict is new, since that's a safety property, not an audit-log
+    # entry -- only the PERSISTED ARTIFACT is deduplicated.
+    seen_conflict_keys = {
+        (c.get("job_id"), c.get("old_recommendation"), c.get("new_recommendation"))
+        for c in prior_conflicts
+    }
+
+    conflicts_this_call: list[dict] = []
+    new_conflict_entries: list[dict] = []
+    for idx, record in enumerate(all_records):
         key = eval_cache_key(record["job_hash"], profile.version, prompt_version)
+        existing = cache.get("evaluate", key)
+        # Decision-stability guard (P0, 2026-08-13): a genuine re-evaluation
+        # of already-cached content (--replay, a cache-bypassing re-run, a
+        # manual retry) can land a DIFFERENT recommendation than what's
+        # already cached, purely from real Sonnet run-to-run score variance
+        # near the 4.0 threshold (measured live: the same job scored 4.1 in
+        # one pass and 3.6/3.0 in independent re-runs of identical content —
+        # see the 2026-08-13 stability investigation). Silently overwriting
+        # the cache on a recommendation flip would let that noise quietly
+        # change a candidate's Apply/Skip outcome with no record it happened.
+        # A same-recommendation score drift is NOT a conflict — only a
+        # crossed Apply/Skip boundary is, since that's the actual decision
+        # that matters downstream.
+        if existing and existing.get("recommendation") != record.get("recommendation"):
+            cache_file = cfg.cache_dir / "evaluate" / f"{key}.json"
+            old_cached_at = cache_file.stat().st_mtime if cache_file.exists() else None
+            conflict_entry = {
+                "job_id": record.get("id"), "job_hash": record.get("job_hash"),
+                "old_score": existing.get("score"), "old_recommendation": existing.get("recommendation"),
+                "old_cached_at": old_cached_at,
+                "new_score": record.get("score"), "new_recommendation": record.get("recommendation"),
+                "detected_at": time.time(),
+            }
+            conflicts_this_call.append(conflict_entry)
+            dedupe_key = (conflict_entry["job_id"], conflict_entry["old_recommendation"], conflict_entry["new_recommendation"])
+            if dedupe_key not in seen_conflict_keys:
+                new_conflict_entries.append(conflict_entry)
+                seen_conflict_keys.add(dedupe_key)
+
+            # Preserve the existing authoritative decision EVERYWHERE, not
+            # just the cache — the unreviewed new evaluation must never
+            # flow into threshold/artifacts/apply/sheets, which all read
+            # 06_evaluate/<id>.json directly, not the cache. `id`/`job_hash`
+            # come from TODAY's record (the same stale-id defensive merge
+            # _evaluate_prepare's own cache-hit path already applies, since
+            # a content-keyed cache entry can carry an `id` from whenever
+            # it was first evaluated); every other field — score,
+            # recommendation, rubric, strengths, weaknesses, summaries —
+            # comes from the cached, already-accepted evaluation. This runs
+            # on every occurrence of the conflict, not only the first, so a
+            # repeated --finalize call keeps re-asserting the authoritative
+            # value even though it stops re-appending to the audit trail.
+            authoritative = {**existing, "id": record.get("id"), "job_hash": record.get("job_hash")}
+            all_records[idx] = authoritative
+            path = record_paths.get(idx)
+            if path is not None:
+                with open(path, "w") as f:
+                    json.dump(authoritative, f, indent=2, sort_keys=True)
+            continue
         cache.put("evaluate", key, record)
+
+    if new_conflict_entries:
+        with open(conflicts_path, "w") as f:
+            f.write(dumps(prior_conflicts + new_conflict_entries))
+    if conflicts_this_call:
+        typer.echo(
+            f"[evaluate:finalize] STABILITY CONFLICT — {len(conflicts_this_call)} "
+            f"job(s) crossed the Apply/Skip boundary vs. their existing cached "
+            f"evaluation ({len(new_conflict_entries)} newly recorded). The existing "
+            f"authoritative decision was preserved in both the cache and today's "
+            f"06_evaluate/<id>.json — the unreviewed new evaluation was NOT used. "
+            f"See {conflicts_path} for job IDs, old/new scores, and timestamps.",
+            err=True,
+        )
 
     meta = runmeta.read_stage_meta(cfg.runs_dir, date, "evaluate")
     elapsed = time.time() - meta["prepared_at"] if "prepared_at" in meta else 0.0
+
+    stability_headline = (
+        [f"stability:{len(conflicts_this_call)} job(s) crossed the Apply/Skip boundary vs. cache "
+         f"— existing decision preserved, see 06_evaluate/_stability_conflicts.json"]
+        if conflicts_this_call else []
+    )
 
     typer.echo(f"[evaluate:finalize] {len(all_records)} evaluations valid and cached.")
     runmeta.record_stage(cfg.runs_dir, date, "evaluate",
@@ -641,7 +862,7 @@ def _evaluate_finalize(cfg: Config, date: str) -> None:
                           seconds=elapsed, prompt_version=prompt_version,
                           cache_hits=meta.get("cache_hits", 0), cache_misses=meta.get("cache_misses", 0),
                           estimated_tokens=meta.get("estimated_tokens", 0),
-                          errors=warn_headlines)
+                          errors=warn_headlines + stability_headline)
 
 
 def _fail_calibration(blocked: list[calibration.Finding], date: str) -> None:

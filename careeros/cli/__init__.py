@@ -129,7 +129,13 @@ from careeros.cli.calibrate import calibrate  # noqa: E402,F401
 from careeros.cli.discover import discover  # noqa: E402,F401
 from careeros.cli.doctor import _CheckStatus, _run_doctor_checks, _run_doctor_live_checks, doctor  # noqa: E402,F401
 from careeros.cli.drive import backfill_drive  # noqa: E402,F401
-from careeros.cli.gate_evaluate import _evaluate_finalize, _evaluate_prepare  # noqa: E402,F401
+from careeros.cli.gate_evaluate import (  # noqa: E402,F401
+    _evaluate_finalize,
+    _evaluate_halt_check,
+    _evaluate_prepare,
+    _evaluate_record_usage,
+    _usage_zone,
+)
 from careeros.cli.ledger_cmd import ledger  # noqa: E402,F401
 from careeros.cli.perjob import job, publish  # noqa: E402,F401
 from careeros.cli.pipeline import constraints, dedupe, normalize, threshold  # noqa: E402,F401
