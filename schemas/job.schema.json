@@ -76,6 +76,10 @@
       "type": ["array", "null"],
       "items": { "type": "string" },
       "description": "v2.0: which discovery query tier(s) surfaced this job (e.g. ['global_remote']), set at normalize time from raw.json's 'provenance'. A list because dedupe unions tiers across a collapsed cross-location duplicate. Purely descriptive for the learning ledger (careeros/pipeline/outcomes.py) — excluded from Job.content_hash() and never read by gate/evaluate/constraints, so it can't influence a fit judgment."
+    },
+    "eligibility_note": {
+      "type": ["string", "null"],
+      "description": "v2.2: work-authorization/eligibility sentence(s) recovered from the FULL, pre-truncation description at normalize time (see careeros/pipeline/constraints.py's extract_eligibility_note), so text living past the description_max_chars cut still reaches constraints.py's deterministic work-auth check. Excluded from Job.content_hash() and never read by gate/evaluate — enforcement only, never a fit signal."
     }
   }
 }

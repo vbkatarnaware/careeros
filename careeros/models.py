@@ -70,6 +70,18 @@ class Job:
     # learning ledger (careeros/pipeline/outcomes.py) — never read by
     # gate/evaluate/constraints, so it can't influence a fit judgment.
     tiers: Optional[list[str]] = None
+    # v2.2 (2026-08-14): work-authorization/eligibility sentence(s) pulled
+    # out of the FULL, pre-truncation description at normalize time — see
+    # careeros/pipeline/constraints.py's `extract_eligibility_note`. Exists
+    # because `description` is truncated to `description_max_chars` (median
+    # eligibility-language position in a real JD: 84% depth), so an explicit
+    # exclusion living past the cut was previously discarded before
+    # constraints.py's work-auth check ever saw it. Deliberately excluded
+    # from `content_hash()` below (same reasoning as `tiers`): it never
+    # feeds gate/evaluate/a fit judgment, it only feeds the deterministic
+    # constraints hard-reject, so a new/changed note must never bust the
+    # eval cache.
+    eligibility_note: Optional[str] = None
 
     @staticmethod
     def make_id(source: str, company: str, title: str, location: Optional[str]) -> str:

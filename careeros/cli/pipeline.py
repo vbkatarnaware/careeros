@@ -82,6 +82,21 @@ def normalize(date: str = typer.Option(None, help="Run date, default today")):
 PROCESSED_TTL_DAYS = 30
 
 
+def _india_preference(job: Job, profile) -> int:
+    """`dedupe_cross_location`'s `prefer_key` for production: 1 if the job's
+    structured `location` names India or one of the profile's accepted
+    onsite cities, else 0 — so a cross-location collapse prefers the
+    India-compatible copy over whichever copy simply appeared first in
+    provider order. See `dedupe_cross_location`'s docstring for the real
+    2026-08-14 bug this fixes (2 `India`-located postings lost to a
+    `Sydney, Australia` twin under first-occurrence-wins alone)."""
+    loc = (job.location or "").lower()
+    onsite_cities = [c.lower() for c in (profile.location or {}).get("onsite_ok", [])]
+    if "india" in loc or any(city in loc for city in onsite_cities):
+        return 1
+    return 0
+
+
 @app.command(hidden=True)
 def dedupe(
     date: str = typer.Option(None, help="Run date, default today"),
@@ -119,6 +134,7 @@ def dedupe(
     with open(jobs_path) as f:
         jobs = [Job.from_dict(d) for d in json.load(f)]
 
+    profile = _load_profile(cfg)
     start = time.time()
     unique, dropped_in_run = dedupe_in_run(jobs)
     # v2.1: record which SOURCE survived over which, for every cross-location
@@ -134,6 +150,7 @@ def dedupe(
 
     unique, dropped_cross_location = dedupe_cross_location(
         unique, on_duplicate=_record_cross_location_duplicate,
+        prefer_key=lambda j: _india_preference(j, profile),
     )
 
     if replay:

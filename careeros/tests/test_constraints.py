@@ -7,7 +7,9 @@ can never come back silently."""
 from __future__ import annotations
 
 from careeros.models import Salary
-from careeros.pipeline.constraints import annual_inr, evaluate_constraints
+from careeros.pipeline.constraints import (
+    _WORK_AUTH_TEXT_RE, annual_inr, evaluate_constraints, extract_eligibility_note,
+)
 from careeros.tests.conftest import FX_RATES, make_job, make_profile
 
 
@@ -278,3 +280,106 @@ def test_onsite_mumbai_job_unaffected_by_work_auth_rule():
     profile = _sponsorship_profile()
     job = make_job(remote=False, location="Mumbai, Maharashtra, India", description="")
     assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+# ── eligibility_note reaches the same rejection path as description ─────
+# v2.2: `extract_eligibility_note` recovers text from the TRUNCATED-AWAY
+# tail of a real description into Job.eligibility_note; this proves that
+# recovered text is actually enforced, exactly like description text.
+
+def test_eligibility_note_explicit_exclusion_rejects():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote", description="Great team.",
+                    eligibility_note="Must be authorized to work in the U.S.")
+    result = evaluate_constraints(job, profile, FX_RATES)
+    assert not result.passed
+    assert "work-authorization" in result.reasons[0]
+
+
+def test_eligibility_note_none_never_rejects():
+    profile = _sponsorship_profile()
+    job = make_job(remote=True, location="Remote", description="Great team.",
+                    eligibility_note=None)
+    assert evaluate_constraints(job, profile, FX_RATES).passed
+
+
+# ── extract_eligibility_note (P0.2: recover text from the truncated tail) ─
+
+def test_extract_eligibility_note_none_when_not_truncated():
+    desc = "Short posting. Must be authorized to work in the US."
+    assert extract_eligibility_note(desc, max_chars=4000) is None
+
+
+def test_extract_eligibility_note_none_when_empty():
+    assert extract_eligibility_note(None, max_chars=4000) is None
+    assert extract_eligibility_note("", max_chars=4000) is None
+
+
+def test_extract_eligibility_note_none_when_tail_has_no_match():
+    desc = ("Great team, fast-growing startup. " * 200) + "No eligibility statement here at all."
+    assert len(desc) > 4000
+    assert extract_eligibility_note(desc, max_chars=4000) is None
+
+
+def test_extract_eligibility_note_recovers_text_past_the_cut():
+    """The exact real-world shape this exists for: n8n's sponsorship clause
+    sat at char ~9,000 of a 13,782-char description, well past the 4,000-char
+    truncation point."""
+    filler = "Great team, fast-growing startup. " * 150  # > 4000 chars
+    desc = filler + "We can sponsor visas to Germany; for any other country, " \
+        "you must be authorized to work in the US without sponsorship."
+    note = extract_eligibility_note(desc, max_chars=4000)
+    assert note is not None
+    assert "authorized to work in the US" in note
+
+
+def test_extract_eligibility_note_dedupes_repeated_matches():
+    filler = "Great team, fast-growing startup. " * 150
+    phrase = "must be authorized to work in the US"
+    desc = filler + f"{phrase}. Reminder: {phrase}."
+    note = extract_eligibility_note(desc, max_chars=4000)
+    assert note.count("authorized to work in the US") == 1
+
+
+# ── _WORK_AUTH_TEXT_RE: real false positives found in the 2026-08-14 audit
+# must NOT match (they broke the OLD single-pattern regex against free text)
+
+def test_text_re_does_not_match_timezone_line():
+    """The exact real string that would have hard-rejected an actual
+    `India (Remote)` posting (xohealthinc) under the old loose pattern."""
+    text = "Must be able to support USA business hours, with flexibility for cross-functional meetings."
+    assert _WORK_AUTH_TEXT_RE.search(text) is None
+
+
+def test_text_re_does_not_match_benefits_only_qualifier():
+    text = "Vision & Dental Insurance (U.S. only) Chance to earn equity Maternity & Paternity leave"
+    assert _WORK_AUTH_TEXT_RE.search(text) is None
+
+
+def test_text_re_does_not_match_compensation_range_boilerplate():
+    text = ("Compensation ranges are established using national benchmarking data "
+            "and apply across all geographic locations within the United States.")
+    assert _WORK_AUTH_TEXT_RE.search(text) is None
+
+
+# ── _WORK_AUTH_TEXT_RE: real true positives found in the same audit must
+# still match after the tightening (regression guard)
+
+_REAL_TRUE_POSITIVES = [
+    "Applicants must be legally authorized to work in the United States at the time of application.",
+    "Must be authorized to work in the United States and have lived in the US for 3 or more consecutive years.",
+    "Candidates must be legally authorized to work in the U.S. Please note that we are unable to "
+    "provide visa sponsorship for this position.",
+    "the employer will provide the federal government with your Form I-9 information to confirm "
+    "that you are authorized to work in the U.S.",
+    "Must be authorized to work in the U.S. without the need for current or future employer sponsorship.",
+    "participates in E-Verify and will provide the federal government with your Form I-9 information "
+    "to confirm that you are authorized to work in the United States.",
+    "Applicants must be currently authorized to work in the United States on a full-time basis. "
+    "This position is not eligible for employer visa sponsorship.",
+]
+
+
+def test_text_re_matches_real_true_positives():
+    for text in _REAL_TRUE_POSITIVES:
+        assert _WORK_AUTH_TEXT_RE.search(text) is not None, text

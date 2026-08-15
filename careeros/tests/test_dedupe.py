@@ -272,6 +272,108 @@ def test_dedupe_cross_location_on_duplicate_none_is_backward_compatible():
     assert [j.id for j in dropped] == ["b"]
 
 
+# ── prefer_key (v2.2): survivor choice can override first-occurrence ─────
+# Real bug this fixes: 2 `India`-located postings collapsed into a
+# `Sydney, Australia` twin under first-occurrence-wins alone, because
+# ats-dataset has no india_remote tier to guarantee India-first ordering.
+
+def test_dedupe_cross_location_prefer_key_none_keeps_first_occurrence():
+    """Default (prefer_key omitted) is unchanged: first occurrence wins even
+    when a later, differently-scored duplicate exists."""
+    desc = "Same role description text repeated for length. " * 5
+    jobs = [
+        make_job(id="sydney", company="Acme", title="PM", location="Sydney, Australia", description=desc),
+        make_job(id="india", company="Acme", title="PM", location="India", description=desc),
+    ]
+    unique, dropped = dedupe_cross_location(jobs)
+    assert [j.id for j in unique] == ["sydney"]
+
+
+def test_dedupe_cross_location_prefer_key_promotes_strictly_higher_scored_copy():
+    """The actual fix: an India-preference prefer_key makes the LATER
+    (India) copy survive over the FIRST (Sydney) one."""
+    desc = "Same role description text repeated for length. " * 5
+    jobs = [
+        make_job(id="sydney", company="Acme", title="PM", location="Sydney, Australia", description=desc),
+        make_job(id="india", company="Acme", title="PM", location="India", description=desc),
+    ]
+    prefer = lambda j: 1 if "india" in (j.location or "").lower() else 0
+    unique, dropped = dedupe_cross_location(jobs, prefer_key=prefer)
+    assert [j.id for j in unique] == ["india"]
+    assert [j.id for j in dropped] == ["sydney"]
+
+
+def test_dedupe_cross_location_prefer_key_tie_keeps_first_occurrence():
+    """A tie (both score 0, or both score equally) must NOT flip the
+    survivor -- only a STRICTLY higher prefer_key promotes the later copy."""
+    desc = "Same role description text repeated for length. " * 5
+    jobs = [
+        make_job(id="first", company="Acme", title="PM", location="Germany", description=desc),
+        make_job(id="second", company="Acme", title="PM", location="France", description=desc),
+    ]
+    prefer = lambda j: 1 if "india" in (j.location or "").lower() else 0  # neither matches
+    unique, dropped = dedupe_cross_location(jobs, prefer_key=prefer)
+    assert [j.id for j in unique] == ["first"]
+
+
+def test_dedupe_cross_location_prefer_key_on_duplicate_fires_survivor_first():
+    """on_duplicate must still fire with (survivor, dropped) in that order
+    even when prefer_key promotes the SECOND job to survivor."""
+    desc = "Same role description text repeated for length. " * 5
+    jobs = [
+        make_job(id="sydney", company="Acme", title="PM", location="Sydney, Australia", description=desc),
+        make_job(id="india", company="Acme", title="PM", location="India", description=desc),
+    ]
+    prefer = lambda j: 1 if "india" in (j.location or "").lower() else 0
+    calls = []
+    dedupe_cross_location(jobs, on_duplicate=lambda s, d: calls.append((s.id, d.id)), prefer_key=prefer)
+    assert calls == [("india", "sydney")]
+
+
+def test_dedupe_cross_location_prefer_key_unions_tiers_regardless_of_survivor():
+    desc = "Same role description text repeated for length. " * 5
+    jobs = [
+        make_job(id="sydney", company="Acme", title="PM", location="Sydney, Australia",
+                  description=desc, tiers=["global_remote"]),
+        make_job(id="india", company="Acme", title="PM", location="India",
+                  description=desc, tiers=["default"]),
+    ]
+    prefer = lambda j: 1 if "india" in (j.location or "").lower() else 0
+    unique, _ = dedupe_cross_location(jobs, prefer_key=prefer)
+    assert unique[0].id == "india"
+    assert unique[0].tiers == ["default", "global_remote"]
+
+
+# ── HTML/entity normalization before the cross-location key (v2.2) ───────
+# Real bug this fixes: the same Airwallex role from ats-dataset (markdown)
+# and ats-watchlist (HTML) never collapsed -- their raw first-300-char
+# prefixes differed even though the underlying prose was identical.
+
+def test_dedupe_cross_location_collapses_html_vs_markdown_duplicate():
+    html_desc = "<p>Airwallex is the only unified payments platform for global businesses.</p>" * 4
+    md_desc = "Airwallex is the only unified payments platform for global businesses. " * 4
+    jobs = [
+        make_job(id="from-dataset", source="ats-dataset", company="airwallex",
+                  title="Senior Product Manager, Transaction Monitoring", description=md_desc),
+        make_job(id="from-watchlist", source="ats-watchlist", company="airwallex",
+                  title="Senior Product Manager, Transaction Monitoring", description=html_desc),
+    ]
+    unique, dropped = dedupe_cross_location(jobs)
+    assert len(unique) == 1
+    assert len(dropped) == 1
+
+
+def test_dedupe_cross_location_html_normalization_unescapes_entities():
+    a = "Sales &amp; Marketing team &mdash; we&#39;re growing fast. " * 4
+    b = "Sales & Marketing team — we're growing fast. " * 4
+    jobs = [
+        make_job(id="a", company="Acme", title="PM", description=a),
+        make_job(id="b", company="Acme", title="PM", description=b),
+    ]
+    unique, dropped = dedupe_cross_location(jobs)
+    assert len(unique) == 1
+
+
 def test_dedupe_in_run_tiers_none_when_neither_job_has_tiers():
     from careeros.models import Job
     a1 = Job(id="a", source="fantastic-jobs", title="PM", company="Acme", apply_url="https://x")

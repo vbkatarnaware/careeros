@@ -39,12 +39,22 @@ pure and testable without any Sheets/network dependency.
 
 from __future__ import annotations
 
+import html
 import json
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
 from careeros.models import Job
+
+# v2.2 (2026-08-14): strips HTML tags before the cross-location key's
+# description-prefix comparison — see `_cross_location_key`'s docstring for
+# why. Deliberately simple (no new dependency): job descriptions here are
+# already-fetched ATS text, not arbitrary untrusted HTML, so a tag-strip +
+# entity-unescape is enough to normalize "the same JD prose, two providers'
+# markup" without pulling in a full HTML parser.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _union_tiers(survivor: Job, dropped_dup: Job) -> None:
@@ -72,33 +82,59 @@ def dedupe_in_run(jobs: list[Job]) -> tuple[list[Job], list[Job]]:
     return unique, dropped
 
 
+def _normalize_description_prefix(description: str | None, length: int = 300) -> str:
+    """Strip HTML tags and unescape entities BEFORE taking the prefix and
+    collapsing whitespace — v2.2, real bug: the same role posted via two
+    different providers (`ats-dataset` markdown vs. `ats-watchlist` HTML)
+    never collapsed, because the first 300 raw chars of "<p>Airwallex
+    is..." and "Airwallex is..." differ even though the underlying prose is
+    identical. Tags are stripped from the FULL description first, not just
+    the first 300 raw chars, so a tag-heavy opening (long `<script>`/style
+    wrapper) doesn't shift real prose past the comparison window."""
+    text = html.unescape(_HTML_TAG_RE.sub(" ", description or ""))
+    return " ".join(text[:length].split()).lower()
+
+
 def _cross_location_key(job: Job) -> tuple[str, str, str]:
     """Company + title + the first 300 chars of the description, normalized
-    (case/whitespace-insensitive). The description prefix is included, not
-    just company+title, so two genuinely different simultaneous openings that
-    happen to share a title (e.g. two "Software Engineer" reqs in different
-    cities) aren't wrongly collapsed — verified live that same-role reposts
-    across countries share an identical description prefix (only trailing,
-    country-specific boilerplate differs), while unrelated postings don't.
+    (case/whitespace/HTML-markup-insensitive). The description prefix is
+    included, not just company+title, so two genuinely different simultaneous
+    openings that happen to share a title (e.g. two "Software Engineer" reqs
+    in different cities) aren't wrongly collapsed — verified live that
+    same-role reposts across countries share an identical description prefix
+    (only trailing, country-specific boilerplate differs), while unrelated
+    postings don't.
     """
     company = (job.company or "").strip().lower()
     title = (job.title or "").strip().lower()
-    desc_prefix = " ".join((job.description or "")[:300].split()).lower()
+    desc_prefix = _normalize_description_prefix(job.description)
     return (company, title, desc_prefix)
 
 
 def dedupe_cross_location(
     jobs: list[Job],
     *, on_duplicate: Optional[Callable[[Job, Job], None]] = None,
+    prefer_key: Optional[Callable[[Job], int]] = None,
 ) -> tuple[list[Job], list[Job]]:
     """Returns (unique, dropped): collapses the same role posted once per
-    country/office into a single entry. Keeps the FIRST occurrence in list
-    order — since `discover` runs segmented queries in `profile.work_mode_
-    priority` order and appends results in that same sequence, the surviving
-    copy is naturally the one from the candidate's highest-priority work-mode
-    tier (e.g. a role also posted in a lower-priority country is dropped in
-    favor of the same role's higher-priority-tier posting), with zero extra
-    ranking logic needed here.
+    country/office into a single entry. Without `prefer_key`, keeps the
+    FIRST occurrence in list order — since `discover` runs segmented queries
+    in `profile.work_mode_priority` order and appends results in that same
+    sequence, the surviving copy is naturally the one from the candidate's
+    highest-priority work-mode tier, with zero extra ranking logic needed.
+
+    `prefer_key`, if given, breaks that tie: on a collision, the copy with
+    the STRICTLY higher `prefer_key(job)` becomes the survivor (a tie, or
+    `prefer_key` omitted, keeps the original first-occurrence behavior byte-
+    for-byte — every existing caller/test that doesn't pass it is
+    unaffected). Added v2.2 after a real 2026-08-14 audit found the "first
+    occurrence == highest priority" assumption above is stale against the
+    bulk `ats-dataset` provider, which has no `india_remote` tier at all (its
+    tiers are `global_remote`/`default`/`onsite` only): 2 real `India`-
+    located postings collapsed into a `Sydney, Australia` twin purely because
+    the Sydney copy happened to appear first in provider order. See
+    `careeros/cli/pipeline.py`'s `dedupe` command for the real India/
+    `onsite_ok`-based `prefer_key` used in production.
 
     `on_duplicate(survivor, dropped_dup)`, if given, fires once per collapse
     — the only point where both the surviving and dropped Job are in scope
@@ -109,19 +145,27 @@ def dedupe_cross_location(
     job survived over a Layer 2A one (or vice versa) — see
     `pipeline/ledger.py`'s `compute_run_source_stats` for what reads it.
     """
-    seen_keys: dict[tuple[str, str, str], Job] = {}
+    seen_index: dict[tuple[str, str, str], int] = {}
     unique: list[Job] = []
     dropped: list[Job] = []
     for job in jobs:
         key = _cross_location_key(job)
-        if key in seen_keys:
-            survivor = seen_keys[key]
-            _union_tiers(survivor, job)
-            if on_duplicate is not None:
-                on_duplicate(survivor, job)
-            dropped.append(job)
+        if key in seen_index:
+            idx = seen_index[key]
+            current = unique[idx]
+            if prefer_key is not None and prefer_key(job) > prefer_key(current):
+                _union_tiers(job, current)
+                if on_duplicate is not None:
+                    on_duplicate(job, current)
+                unique[idx] = job
+                dropped.append(current)
+            else:
+                _union_tiers(current, job)
+                if on_duplicate is not None:
+                    on_duplicate(current, job)
+                dropped.append(job)
         else:
-            seen_keys[key] = job
+            seen_index[key] = len(unique)
             unique.append(job)
     return unique, dropped
 
