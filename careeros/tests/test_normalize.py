@@ -58,3 +58,30 @@ def test_normalize_all_rejected_record_does_not_desync_provenance_alignment():
     assert len(jobs) == 2
     assert jobs[0].tiers == ["global_remote"]
     assert jobs[1].tiers == ["onsite"]
+
+
+# ── eligibility_note recovery (v2.2) ─────────────────────────────────────
+
+def test_normalize_one_recovers_eligibility_note_from_truncated_tail():
+    filler = "Great team, fast-growing startup. " * 150  # > 4000 chars
+    desc = filler + "Must be authorized to work in the US without sponsorship."
+    job = normalize_one(_raw("PM", description=desc), _FakeProvider(), source="fake",
+                         description_max_chars=4000)
+    assert job.eligibility_note is not None
+    assert "authorized to work in the US" in job.eligibility_note
+    # the kept `description` itself must NOT contain the recovered phrase --
+    # it really was past the truncation cut.
+    assert "authorized to work in the US" not in job.description
+
+
+def test_normalize_one_eligibility_note_none_when_description_short():
+    job = normalize_one(_raw("PM", description="Must be authorized to work in the US."),
+                         _FakeProvider(), source="fake", description_max_chars=4000)
+    assert job.eligibility_note is None  # already visible in the kept description
+
+
+def test_normalize_one_eligibility_note_none_when_nothing_matches():
+    filler = "Great team, fast-growing startup. " * 150
+    job = normalize_one(_raw("PM", description=filler), _FakeProvider(), source="fake",
+                         description_max_chars=4000)
+    assert job.eligibility_note is None

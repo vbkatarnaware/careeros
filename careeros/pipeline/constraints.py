@@ -44,6 +44,22 @@ Four objective rules:
   role is confirmed open to India; this rule and the Gate together are what
   actually enforce that.
 
+  v2.2 (2026-08-14): this check now also reaches `job.eligibility_note` —
+  sentence(s) `normalize.py` recovered from the FULL, pre-truncation
+  description via `extract_eligibility_note` below, since a real audit
+  found eligibility language sits at a median 84% depth in a JD while
+  `description_max_chars` (4000) discards 72% of postings' tails. Widening
+  the reach to free text (as opposed to the short, ATS-curated `location`
+  field) surfaced 2 real false positives in that same audit — "Must be
+  able to support USA business hours" (a timezone line, on an actual
+  `India (Remote)` posting) and "(U.S. only)" on a benefits/insurance
+  line — so the free-text pattern set (`_WORK_AUTH_TEXT_RE`) is narrower
+  than the structured-field one (`_WORK_AUTH_LOCATION_RE`): it drops the
+  bare "___ only"/"within the United States" phrasings (too fragile
+  outside a short curated field) and requires an explicit residency verb
+  for the "must be/reside/live" phrasing, rather than "any words within 30
+  chars of a country name".
+
 Used in two places for a belt-and-suspenders guarantee: as its own pipeline
 stage (so hard-rejects never reach the AI gate, saving tokens), and re-checked
 inside threshold.partition_evals (so even if the AI mislabels a job "apply",
@@ -65,7 +81,12 @@ from careeros.models import Job, Profile
 # deliberately left for the AI Gate rather than guessed at here — a looser
 # pattern (region names, timezone mentions) was tried during that
 # measurement and produced false positives on genuinely-open roles.
-_WORK_AUTH_EXCLUSION_RE = re.compile(
+#
+# Applies to the STRUCTURED `location` field only — short and ATS-curated,
+# so a bare "US only"/"within the United States" phrase is a reliable,
+# deliberate restriction tag (same trust level `_region_restricted_remote`
+# below already gives this field). Unchanged since v2.0.
+_WORK_AUTH_LOCATION_RE = re.compile(
     r"authorized to work in the (?:US|U\.S\.|United States)"
     r"|must (?:be|reside|live) .{0,30}(?:United States|USA|US\b|UK\b|Canada|EU\b|Europe)"
     r"|\bUS[- ]only\b|\bU\.S\.[- ]only\b|\bUnited States only\b"
@@ -74,6 +95,31 @@ _WORK_AUTH_EXCLUSION_RE = re.compile(
     r"|eligible to work in the (?:US|UK|EU|United States|Canada)"
     r"|work authorization in the (?:US|United States)"
     r"|legally authorized to work in the United States",
+    re.IGNORECASE,
+)
+
+# Applies to free text (`job.description` and the `eligibility_note`
+# `extract_eligibility_note` recovers from the truncated tail) — narrower
+# than `_WORK_AUTH_LOCATION_RE` above. v2.2 (2026-08-14): free text is
+# noisier than the structured field, so this set drops the bare "___
+# only"/"within the United States" phrasings entirely (measured false
+# positives: "(U.S. only)" on a benefits/insurance line; "apply across all
+# geographic locations within the United States" on pay-benchmarking
+# boilerplate) and requires an explicit residency verb for the "must
+# be/reside/live" phrasing rather than "any words within 30 chars of a
+# country name" (measured false positive: "Must be able to support USA
+# business hours" — a timezone line, matched on an actual `India (Remote)`
+# posting). The "authorized/eligible to work in"/"legally authorized"/"work
+# authorization in" phrasings are unchanged from the location-field
+# pattern — measured 0 false positives and covered every real true
+# positive found in that same audit.
+_WORK_AUTH_TEXT_RE = re.compile(
+    r"authorized to work in the (?:US|U\.S\.|United States)"
+    r"|eligible to work in the (?:US|UK|EU|United States|Canada)"
+    r"|work authorization in the (?:US|United States)"
+    r"|legally authorized to work in the United States"
+    r"|must (?:be\s+(?:currently\s+)?(?:based|located|residing|a resident)\s+(?:in|of)"
+    r"|reside in|live in)\s+(?:the\s+)?(?:United States|USA|US\b|UK\b|Canada|EU\b|Europe)",
     re.IGNORECASE,
 )
 
@@ -165,17 +211,43 @@ def _region_restricted_remote(job: Job) -> str | None:
     return m.group(0) if m else None
 
 
+def extract_eligibility_note(full_description: str | None, max_chars: int) -> str | None:
+    """Pull any work-authorization-exclusion phrase(s) out of the part of a
+    FULL, pre-truncation job description that `normalize.py`'s
+    `description_max_chars` cut is about to discard, so they still reach
+    `_work_authorization_excludes` below. Deliberately reuses
+    `_WORK_AUTH_TEXT_RE` — the exact pattern that later decides whether to
+    reject — rather than a separate "looks eligibility-y" detector, so
+    extraction and enforcement can never drift apart.
+
+    Returns None when there's nothing past the cut (the description isn't
+    actually truncated) or nothing in the discarded tail matches — most
+    jobs, since this is a targeted recovery, not a second copy of the
+    description."""
+    if not full_description or len(full_description) <= max_chars:
+        return None
+    tail = full_description[max_chars:]
+    matches = [m.group(0) for m in _WORK_AUTH_TEXT_RE.finditer(tail)]
+    if not matches:
+        return None
+    return " | ".join(dict.fromkeys(matches))  # de-dup, preserve first-seen order
+
+
 def _work_authorization_excludes(job: Job, profile: Profile) -> bool:
     """True only for an EXPLICIT work-authorization exclusion, and only when
     the candidate actually needs visa sponsorship (`profile.location.
     visa_sponsorship_required`) — a candidate who doesn't need sponsorship
     is never affected by this rule regardless of what a posting says.
-    See `_WORK_AUTH_EXCLUSION_RE`'s comment for the measurement behind the
-    pattern set's scope."""
+    See `_WORK_AUTH_LOCATION_RE`/`_WORK_AUTH_TEXT_RE`'s comments for the
+    measurement behind each pattern set's scope, and why the structured
+    `location` field and free text (`description` + `eligibility_note`)
+    are checked with different-width patterns."""
     if not (profile.location or {}).get("visa_sponsorship_required"):
         return False
-    haystack = f"{job.location or ''} {job.description or ''}"
-    return bool(_WORK_AUTH_EXCLUSION_RE.search(haystack))
+    if _WORK_AUTH_LOCATION_RE.search(job.location or ""):
+        return True
+    text_haystack = f"{job.description or ''} {job.eligibility_note or ''}"
+    return bool(_WORK_AUTH_TEXT_RE.search(text_haystack))
 
 
 def evaluate_constraints(job: Job, profile: Profile, fx_rates: dict[str, float]) -> ConstraintResult:
